@@ -41,14 +41,10 @@ final class VideoDurationProbe
 
         try {
             return self::fromReader(
-                static function (int $offset, int $length) use ($handle): string {
-                    if ($length < 1 || fseek($handle, $offset) !== 0) {
-                        return '';
-                    }
-
-                    return (string) fread($handle, $length);
-                },
-                (int) data_get(fstat($handle) ?: [], 'size', 0),
+                static fn (int $offset, int $length): string => fseek($handle, $offset) === 0
+                    ? (string) fread($handle, $length)
+                    : '',
+                (int) data_get(fstat($handle), 'size', 0),
             );
         } finally {
             fclose($handle);
@@ -74,73 +70,74 @@ final class VideoDurationProbe
             : [...$meta, 'duration' => round($duration, 2)];
     }
 
+    /**
+     * `moov` holds `mvhd`, and `mvhd` holds the duration. Each step returns
+     * null when its atom is missing, and the next step passes that through.
+     */
     private function duration(): ?float
     {
-        $moov = $this->payload('moov', 0, $this->size);
-        $mvhd = $moov === null ? null : $this->payload('mvhd', ...$moov);
-
-        return $mvhd === null ? null : $this->seconds(...$mvhd);
+        return $this->seconds($this->payload('mvhd', $this->payload('moov', [0, $this->size])));
     }
 
     /**
-     * Payload bounds of the first `$type` atom between `$from` and `$to`.
+     * Payload bounds of the first `$type` atom laid out within `$within`.
      *
+     * @param  array{int, int}|null  $within
      * @return array{int, int}|null
      */
-    private function payload(string $type, int $from, int $to): ?array
+    private function payload(string $type, ?array $within): ?array
     {
-        return Arr::first(
-            $this->atoms($from, $to),
+        return $within === null ? null : Arr::first(
+            $this->atoms(...$within),
             fn (array $bounds, string $atomType): bool => $atomType === $type,
         );
     }
 
     /**
      * Walks the atoms laid out between `$from` and `$to`, yielding each type
-     * with its payload bounds. An atom claiming more bytes than remain is
-     * clamped, and a header that cannot be read ends the walk.
+     * with its payload bounds. A header that cannot be read ends the walk.
      *
      * @return Generator<string, array{int, int}>
      */
     private function atoms(int $from, int $to): Generator
     {
-        for ($offset = $from; $offset + self::ATOM_HEADER_BYTES <= $to; $offset += $size) {
-            $header = $this->header($offset, $to);
+        $offset = $from;
 
-            if ($header === null) {
-                return;
-            }
-
+        while ($offset + self::ATOM_HEADER_BYTES <= $to && ($header = $this->header($offset, $to)) !== null) {
             [$size, $type, $headerBytes] = $header;
-            $size = min($size, $to - $offset);
 
             yield $type => [$offset + $headerBytes, $offset + $size];
+
+            $offset += $size;
         }
     }
 
     /**
+     * Reads one atom header. A size of 1 means a 64-bit "largesize" follows the
+     * type; a size of 0 means the atom runs to the end of its parent. Either way
+     * the size is clamped to the bytes that remain.
+     *
      * @return array{int, string, int}|null
      */
     private function header(int $offset, int $to): ?array
     {
         $bytes = $this->read($offset, min(self::ATOM_LARGE_HEADER_BYTES, $to - $offset));
-        $fields = strlen($bytes) >= self::ATOM_HEADER_BYTES
-            ? unpack('Nsize/a4type', $bytes)
-            : false;
 
-        if ($fields === false) {
+        if (strlen($bytes) < self::ATOM_HEADER_BYTES) {
             return null;
         }
 
-        ['size' => $size, 'type' => $type] = $fields;
+        ['size' => $size, 'type' => $type] = unpack('Nsize/a4type', $bytes);
         $headerBytes = self::ATOM_HEADER_BYTES;
 
         if ($size === 1 && strlen($bytes) === self::ATOM_LARGE_HEADER_BYTES) {
-            $size = (int) data_get(unpack('J', $bytes, self::ATOM_HEADER_BYTES), 1, 0);
+            [1 => $size] = unpack('J', $bytes, self::ATOM_HEADER_BYTES);
             $headerBytes = self::ATOM_LARGE_HEADER_BYTES;
         } elseif ($size === 0) {
             $size = $to - $offset;
         }
+
+        $size = min($size, $to - $offset);
 
         return $size < $headerBytes ? null : [$size, $type, $headerBytes];
     }
@@ -149,32 +146,32 @@ final class VideoDurationProbe
      * `mvhd` starts with a version byte; version 1 widens the creation and
      * modification times to 64 bits, which pushes `timescale` and `duration`
      * from offsets 12 / 16 to 20 / 24 and makes `duration` 64-bit as well.
+     *
+     * @param  array{int, int}|null  $bounds
      */
-    private function seconds(int $start, int $end): ?float
+    private function seconds(?array $bounds): ?float
     {
-        $mvhd = $this->read($start, min($end - $start, self::MVHD_V1_BYTES));
-        $version1 = strlen($mvhd) > 0 && ord($mvhd[0]) === 1;
-
-        if (strlen($mvhd) < ($version1 ? self::MVHD_V1_BYTES : self::MVHD_V0_BYTES)) {
+        if ($bounds === null || $bounds[1] - $bounds[0] < self::MVHD_V0_BYTES) {
             return null;
         }
 
-        $fields = unpack(
-            $version1 ? 'x20/Ntimescale/Jduration' : 'x12/Ntimescale/Nduration',
-            $mvhd,
-        );
+        $mvhd = $this->read($bounds[0], min($bounds[1] - $bounds[0], self::MVHD_V1_BYTES));
 
-        if ($fields === false) {
+        [$needed, $format] = ($mvhd[0] ?? '') === "\x01"
+            ? [self::MVHD_V1_BYTES, 'x20/Ntimescale/Jduration']
+            : [self::MVHD_V0_BYTES, 'x12/Ntimescale/Nduration'];
+
+        if (strlen($mvhd) < $needed) {
             return null;
         }
 
-        ['timescale' => $timescale, 'duration' => $duration] = $fields;
+        ['timescale' => $timescale, 'duration' => $duration] = unpack($format, $mvhd);
 
         return $timescale > 0 && $duration > 0 ? $duration / $timescale : null;
     }
 
     private function read(int $offset, int $length): string
     {
-        return $length < 1 ? '' : ($this->reader)($offset, $length);
+        return ($this->reader)($offset, $length);
     }
 }

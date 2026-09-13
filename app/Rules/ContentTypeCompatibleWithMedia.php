@@ -10,6 +10,7 @@ use App\Models\Post;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Number;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\ValidationException;
@@ -246,16 +247,11 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
      */
     private function formatBytes(int $bytes, int $cap, int $precision = 0): string
     {
-        $decimal = $cap % 1_000_000 === 0 && $cap % (1024 * 1024) !== 0;
-
-        if (! $decimal) {
-            return Number::fileSize($bytes, $precision);
-        }
-
+        $base = $cap % 1_000_000 === 0 && $cap % (1024 * 1024) !== 0 ? 1000 : 1024;
         $units = ['B', 'KB', 'MB', 'GB'];
-        $exponent = min((int) floor(log(max($bytes, 1), 1000)), count($units) - 1);
+        $exponent = Arr::last(array_keys($units), fn (int $exponent) => $bytes >= $base ** $exponent, 0);
 
-        return sprintf('%s %s', Number::format($bytes / 1000 ** $exponent, $precision), $units[$exponent]);
+        return sprintf('%s %s', Number::format($bytes / $base ** $exponent, $precision), $units[$exponent]);
     }
 
     /**

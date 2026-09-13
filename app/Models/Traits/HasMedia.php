@@ -129,10 +129,10 @@ trait HasMedia
         }
 
         $type = $this->getMediaType($mimeType);
-        $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+        $extension = File::extension($originalFilename);
         $meta = $this->withVideoDuration($meta, $type, $filePath);
 
-        $stored = $type === Type::Image->value
+        $stored = $type === Type::Image
             ? $this->storeImageFromPath($filePath, $mimeType, $type, $extension, $meta)
             : $this->streamFileToStorage($filePath, $mimeType, $extension, $meta);
 
@@ -198,7 +198,7 @@ trait HasMedia
      * @param  array<string, mixed>  $meta
      * @return array{path: string, mime_type: string, size: int, meta: array<string, mixed>}
      */
-    private function storeImageFromPath(string $filePath, string $mimeType, string $type, string $extension, array $meta): array
+    private function storeImageFromPath(string $filePath, string $mimeType, Type $type, string $extension, array $meta): array
     {
         [$bytes, $storedMime, $storedExt] = $this->normalizeImageFormat(
             $filePath,
@@ -249,10 +249,10 @@ trait HasMedia
         ];
     }
 
-    private function getMediaType(string $mimeType): string
+    private function getMediaType(string $mimeType): Type
     {
-        return (Type::classify($mimeType)
-            ?? throw new InvalidArgumentException("Unsupported media MIME type: {$mimeType}"))->value;
+        return Type::classify($mimeType)
+            ?? throw new InvalidArgumentException("Unsupported media MIME type: {$mimeType}");
     }
 
     /**
@@ -265,28 +265,13 @@ trait HasMedia
         return mb_scrub($filename, 'UTF-8');
     }
 
-    private function getMediaMeta(UploadedFile $file, string $type): array
-    {
-        $meta = [];
-
-        if ($type === 'image') {
-            $imageInfo = @getimagesize($file->getPathname());
-            if ($imageInfo) {
-                $meta['width'] = $imageInfo[0];
-                $meta['height'] = $imageInfo[1];
-            }
-        }
-
-        return $meta;
-    }
-
     /**
      * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
-    private function withVideoDuration(array $meta, string $type, string $filePath): array
+    private function withVideoDuration(array $meta, Type $type, string $filePath): array
     {
-        return $type === Type::Video->value
+        return $type === Type::Video
             ? VideoDurationProbe::mergeInto($meta, VideoDurationProbe::fromFile($filePath))
             : $meta;
     }
@@ -295,11 +280,11 @@ trait HasMedia
      * Extract width/height from raw image bytes (used after format normalization
      * when we no longer have the original file path).
      */
-    private function getMediaMetaFromBytes(string $bytes, string $type, array $clientMeta = []): array
+    private function getMediaMetaFromBytes(string $bytes, Type $type, array $clientMeta = []): array
     {
         $meta = [];
 
-        if ($type === 'image') {
+        if ($type === Type::Image) {
             $imageInfo = @getimagesizefromstring($bytes);
             if ($imageInfo) {
                 $meta['width'] = $imageInfo[0];
@@ -316,9 +301,9 @@ trait HasMedia
      *
      * @return array{0: string, 1: string, 2: string} [bytes, mime_type, extension]
      */
-    private function normalizeImageFormat(string $filePath, string $mimeType, string $type, string $originalExtension): array
+    private function normalizeImageFormat(string $filePath, string $mimeType, Type $type, string $originalExtension): array
     {
-        if ($type !== 'image') {
+        if ($type !== Type::Image) {
             return [file_get_contents($filePath), $mimeType, $originalExtension];
         }
 

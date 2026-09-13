@@ -39,13 +39,13 @@ const isSelected = (id: string): boolean => props.selectedIds.includes(id);
 
 const selectedChannels = computed(() => props.channels.filter((channel) => isSelected(channel.id)));
 
-const avatarRingClass = (channel: Channel): string => {
-    if (! isSelected(channel.id)) {
-        return 'border-foreground/20';
-    }
-
-    return channel.issue ? 'border-rose-500 shadow-2xs' : 'border-foreground shadow-2xs';
-};
+/** Props and listeners every per-platform settings panel takes. */
+const settingsProps = (channel: Channel) => ({
+    socialAccount: channel.socialAccount,
+    meta: channel.meta,
+    disabled: props.disabled,
+    'onUpdate:meta': (value: Record<string, any>) => emit('update:meta', channel.id, value),
+});
 </script>
 
 <template>
@@ -66,7 +66,7 @@ const avatarRingClass = (channel: Channel): string => {
                                     :src="channel.avatarUrl"
                                     :name="channel.displayName"
                                     class="size-10 shrink-0 rounded-full border-2"
-                                    :class="avatarRingClass(channel)"
+                                    :class="isSelected(channel.id) ? ['shadow-2xs', channel.issue ? 'border-rose-500' : 'border-foreground'] : 'border-foreground/20'"
                                 />
                                 <span class="absolute -bottom-1 -right-1 inline-flex size-5 items-center justify-center overflow-hidden rounded-full border-2 border-foreground bg-card shadow-2xs">
                                     <img :src="getPlatformLogo(channel.platform)" :alt="channel.platform" class="size-full object-cover" />
@@ -123,65 +123,44 @@ const avatarRingClass = (channel: Channel): string => {
         <template v-for="channel in selectedChannels" :key="channel.id">
             <InstagramSettings
                 v-if="channel.platform === Platform.Instagram || channel.platform === Platform.InstagramFacebook"
-                :social-account="channel.socialAccount"
+                v-bind="settingsProps(channel)"
                 :content-type="channel.contentType"
                 :media="media"
-                :meta="channel.meta"
-                :disabled="disabled"
                 @update:content-type="emit('update:contentType', channel.id, $event)"
-                @update:meta="emit('update:meta', channel.id, $event)"
             />
             <FacebookSettings
                 v-else-if="channel.platform === Platform.Facebook"
-                :social-account="channel.socialAccount"
+                v-bind="settingsProps(channel)"
                 :content-type="channel.contentType"
                 :media="media"
-                :meta="channel.meta"
-                :disabled="disabled"
                 @update:content-type="emit('update:contentType', channel.id, $event)"
-                @update:meta="emit('update:meta', channel.id, $event)"
             />
             <TikTokSettings
                 v-else-if="channel.platform === Platform.TikTok"
-                :social-account="channel.socialAccount"
+                v-bind="settingsProps(channel)"
                 :publish-config="channel.publishConfig ?? null"
                 :creator-info="channel.creatorInfo ?? null"
                 :video-duration-sec="videoDurationSec"
                 :content-type="channel.contentType"
                 :content-type-error="channel.contentTypeError"
-                :meta="channel.meta"
-                :disabled="disabled"
                 @update:content-type="emit('update:contentType', channel.id, $event)"
-                @update:meta="emit('update:meta', channel.id, $event)"
             />
             <PinterestSettings
                 v-else-if="channel.platform === Platform.Pinterest"
-                :social-account="channel.socialAccount"
+                v-bind="settingsProps(channel)"
                 :content-type="channel.contentType"
                 :media="media"
                 :boards="channel.boards ?? []"
                 :boards-truncated="channel.boardsTruncated ?? false"
-                :meta="channel.meta"
-                :disabled="disabled"
                 @update:content-type="emit('update:contentType', channel.id, $event)"
-                @update:meta="emit('update:meta', channel.id, $event)"
             />
             <LinkedInSettings
                 v-else-if="channel.platform === Platform.LinkedIn || channel.platform === Platform.LinkedInPage"
-                :social-account="channel.socialAccount"
+                v-bind="settingsProps(channel)"
                 :platform="channel.platform"
                 :media="media"
-                :meta="channel.meta"
-                :disabled="disabled"
-                @update:meta="emit('update:meta', channel.id, $event)"
             />
-            <DiscordSettings
-                v-else-if="channel.platform === Platform.Discord"
-                :social-account="channel.socialAccount"
-                :meta="channel.meta"
-                :disabled="disabled"
-                @update:meta="emit('update:meta', channel.id, $event)"
-            />
+            <DiscordSettings v-else-if="channel.platform === Platform.Discord" v-bind="settingsProps(channel)" />
         </template>
     </div>
 </template>

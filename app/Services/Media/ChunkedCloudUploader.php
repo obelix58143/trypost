@@ -9,6 +9,7 @@ use Aws\S3\S3Client;
 use finfo;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Filesystem\AwsS3V3Adapter;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -42,9 +43,7 @@ class ChunkedCloudUploader
             return false;
         }
 
-        $type = MediaType::fromExtension(pathinfo($fileName, PATHINFO_EXTENSION));
-
-        return in_array($type, [MediaType::Video, MediaType::Document], true);
+        return in_array(MediaType::classify(null, $fileName), [MediaType::Video, MediaType::Document], true);
     }
 
     public function isObjectStorageDisk(?string $disk = null): bool
@@ -182,7 +181,7 @@ class ChunkedCloudUploader
      */
     private function startUpload(string $fileName, string $firstChunk): array
     {
-        $extension = strtolower((string) pathinfo($fileName, PATHINFO_EXTENSION));
+        $extension = strtolower(File::extension($fileName));
         $filename = Str::uuid().".{$extension}";
         $key = "medias/{$filename}";
         $mimeType = $this->detectMimeType($firstChunk, $extension);

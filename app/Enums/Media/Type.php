@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Enums\Media;
 
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Symfony\Component\Mime\MimeTypes;
 
@@ -167,6 +168,6 @@ enum Type: string
 
     private static function extensionOf(?string $path): string
     {
-        return strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
+        return strtolower(File::extension((string) $path));
     }
 }

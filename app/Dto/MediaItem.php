@@ -7,6 +7,7 @@ namespace App\Dto;
 use App\Enums\Media\Source;
 use App\Enums\Media\Type;
 use App\Enums\SocialAccount\Platform;
+use Illuminate\Support\Facades\File;
 
 class MediaItem
 {
@@ -99,7 +100,7 @@ class MediaItem
     public static function fromArray(array $data): self
     {
         $path = data_get($data, 'path', '');
-        $mimeType = data_get($data, 'mime_type') ?: Type::mimeTypeFromExtension(pathinfo($path, PATHINFO_EXTENSION));
+        $mimeType = data_get($data, 'mime_type') ?: Type::mimeTypeFromExtension(File::extension($path));
 
         $sourceValue = data_get($data, 'source');
         $source = is_string($sourceValue) ? Source::tryFrom($sourceValue) : null;

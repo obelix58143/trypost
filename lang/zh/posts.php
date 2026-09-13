@@ -365,6 +365,7 @@ return [
             'video_too_long' => '此格式的视频时长必须少于 :seconds 秒。',
             'image_too_large' => '图片超出此平台的大小上限。',
             'document_too_large' => 'PDF 超出此平台的大小上限。',
+            'media_limits_docs' => '查看媒体限制',
             'aspect_ratio_invalid' => '此格式不支持该宽高比。',
             'no_content_type' => '请为此平台选择一种内容类型。',
             'requires_text' => '添加文字——此格式需要一个标题。',

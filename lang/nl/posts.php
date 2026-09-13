@@ -365,6 +365,7 @@ return [
             'video_too_long' => 'De video moet korter zijn dan :seconds seconden voor dit formaat.',
             'image_too_large' => 'De afbeelding overschrijdt de groottelimiet voor dit platform.',
             'document_too_large' => 'De PDF overschrijdt de groottelimiet voor dit platform.',
+            'media_limits_docs' => 'Medialimieten bekijken',
             'aspect_ratio_invalid' => 'De beeldverhouding wordt niet ondersteund door dit formaat.',
             'no_content_type' => 'Kies een contenttype voor dit platform.',
             'requires_text' => 'Voeg tekst toe — dit formaat heeft een titel nodig.',

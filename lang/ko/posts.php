@@ -365,6 +365,7 @@ return [
             'video_too_long' => '이 형식은 동영상이 :seconds초 미만이어야 합니다.',
             'image_too_large' => '이미지가 이 플랫폼의 크기 한도를 초과합니다.',
             'document_too_large' => 'PDF가 이 플랫폼의 크기 한도를 초과합니다.',
+            'media_limits_docs' => '미디어 제한 보기',
             'aspect_ratio_invalid' => '이 형식은 해당 가로세로 비율을 지원하지 않습니다.',
             'no_content_type' => '이 플랫폼의 콘텐츠 유형을 선택하세요.',
             'requires_text' => '텍스트를 추가하세요 — 이 형식에는 제목이 필요합니다.',

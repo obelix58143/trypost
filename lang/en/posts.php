@@ -365,6 +365,7 @@ return [
             'video_too_long' => 'Video must be under :seconds seconds for this format.',
             'image_too_large' => 'Image exceeds the size limit for this platform.',
             'document_too_large' => 'PDF exceeds the size limit for this platform.',
+            'media_limits_docs' => 'View media limits',
             'aspect_ratio_invalid' => 'Aspect ratio is not supported by this format.',
             'no_content_type' => 'Pick a content type for this platform.',
             'requires_text' => 'Add text — this format needs a title.',

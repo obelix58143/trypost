@@ -365,6 +365,7 @@ return [
             'video_too_long' => 'Il video deve durare meno di :seconds secondi per questo formato.',
             'image_too_large' => 'L\'immagine supera il limite di dimensione per questa piattaforma.',
             'document_too_large' => 'Il PDF supera il limite di dimensione per questa piattaforma.',
+            'media_limits_docs' => 'Vedi i limiti dei media',
             'aspect_ratio_invalid' => 'Le proporzioni non sono supportate da questo formato.',
             'no_content_type' => 'Scegli un tipo di contenuto per questa piattaforma.',
             'requires_text' => 'Aggiungi testo: questo formato richiede un titolo.',

@@ -367,6 +367,7 @@ return [
             'video_too_long' => 'Video bu format için :seconds saniyenin altında olmalıdır.',
             'image_too_large' => 'Görsel, bu platformun boyut sınırını aşıyor.',
             'document_too_large' => 'PDF, bu platformun boyut sınırını aşıyor.',
+            'media_limits_docs' => 'Medya sınırlarını görüntüle',
             'aspect_ratio_invalid' => 'En boy oranı bu format tarafından desteklenmez.',
             'no_content_type' => 'Bu platform için bir içerik türü seçin.',
             'requires_text' => 'Metin ekleyin — bu format bir başlık gerektiriyor.',

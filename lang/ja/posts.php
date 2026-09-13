@@ -365,6 +365,7 @@ return [
             'video_too_long' => 'この形式では動画は :seconds 秒未満である必要があります。',
             'image_too_large' => '画像がこのプラットフォームのサイズ上限を超えています。',
             'document_too_large' => 'PDF がこのプラットフォームのサイズ上限を超えています。',
+            'media_limits_docs' => 'メディア制限を見る',
             'aspect_ratio_invalid' => 'この形式ではこのアスペクト比はサポートされていません。',
             'no_content_type' => 'このプラットフォームのコンテンツタイプを選択してください。',
             'requires_text' => 'テキストを追加してください — この形式にはタイトルが必要です。',

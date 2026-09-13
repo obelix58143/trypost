@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-vue';
+import { IconAlertCircle, IconCircleCheck, IconExternalLink } from '@tabler/icons-vue';
 import { computed } from 'vue';
 
 import DiscordSettings from '@/components/posts/editor/DiscordSettings.vue';
@@ -48,13 +48,8 @@ const selectedChannels = computed(() => props.channels.filter((channel) => isSel
                     <TooltipTrigger as-child>
                         <button
                             type="button"
-                            class="flex w-20 cursor-pointer flex-col items-center gap-1.5 transition-opacity"
-                            :class="[
-                                channel.issue && !isSelected(channel.id) ? 'cursor-not-allowed opacity-40' : '',
-                                channel.issue && isSelected(channel.id) ? 'opacity-100' : '',
-                                !channel.issue ? 'opacity-100 hover:opacity-90' : '',
-                            ]"
-                            :disabled="Boolean(channel.issue) && !isSelected(channel.id)"
+                            class="flex w-20 cursor-pointer flex-col items-center gap-1.5 transition-opacity hover:opacity-90"
+                            :aria-pressed="isSelected(channel.id)"
                             :data-testid="`channel-${channel.id}`"
                             @click="emit('toggle', channel.id)"
                         >
@@ -73,9 +68,10 @@ const selectedChannels = computed(() => props.channels.filter((channel) => isSel
                                     <img :src="getPlatformLogo(channel.platform)" :alt="channel.platform" class="size-full object-cover" />
                                 </span>
                                 <Badge
-                                    v-if="channel.issue && isSelected(channel.id)"
+                                    v-if="channel.issue"
                                     variant="destructive"
                                     class="absolute -top-1 -right-1 h-4 w-4 p-0"
+                                    :data-testid="`channel-issue-${channel.id}`"
                                 >
                                     <IconAlertCircle class="h-2.5 w-2.5" />
                                 </Badge>
@@ -101,6 +97,17 @@ const selectedChannels = computed(() => props.channels.filter((channel) => isSel
                             <p v-if="channel.issue" class="mt-1 max-w-xs text-destructive-foreground/90">
                                 {{ channel.issue }}
                             </p>
+                            <a
+                                v-if="channel.issue && channel.issueDocsUrl"
+                                :href="channel.issueDocsUrl"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="mt-1 inline-flex items-center gap-1 font-semibold underline underline-offset-2"
+                                :data-testid="`channel-issue-docs-${channel.id}`"
+                            >
+                                {{ $t('posts.edit.compliance.media_limits_docs') }}
+                                <IconExternalLink class="size-3" />
+                            </a>
                         </div>
                     </TooltipContent>
                 </Tooltip>

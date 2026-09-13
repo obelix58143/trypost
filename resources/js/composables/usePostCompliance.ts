@@ -6,6 +6,7 @@ import { getMediaItemIssue, getMediaValidationWarning } from '@/composables/useM
 import { getMediaRulesForContentType } from '@/composables/useMediaRules';
 import { getPlatformLabel } from '@/composables/usePlatformLogo';
 import { useXLinkDefuser } from '@/composables/useXLinkDefuser';
+import { mediaLimitsDocsUrl } from '@/lib/docs';
 import { ContentType } from '@/types/content-type';
 import type { MediaItem } from '@/types/media';
 import { Platform } from '@/types/platform';
@@ -20,6 +21,14 @@ export interface CompliancePostPlatform {
 
 export interface CompliancePost {
     post_platforms: CompliancePostPlatform[];
+}
+
+// Why a channel can't publish as-is. `docsUrl` points at the network's media
+// limits when the blocker is the attached media; null for editor-side gaps
+// (missing variant, missing text) the docs wouldn't help with.
+export interface PlatformIssue {
+    message: string;
+    docsUrl: string | null;
 }
 
 export const PLATFORM_VARIANTS: Record<string, string[]> = {
@@ -197,18 +206,18 @@ export const usePostCompliance = (opts: UsePostComplianceOptions) => {
         return result;
     });
 
-    const platformIssues = computed<Record<string, string>>(() => {
-        const issues: Record<string, string> = {};
+    const platformIssues = computed<Record<string, PlatformIssue>>(() => {
+        const issues: Record<string, PlatformIssue> = {};
 
         for (const pp of post.value.post_platforms) {
             const contentType = platformContentTypes.value[pp.id];
             if (!contentType) {
-                issues[pp.id] = trans('posts.edit.compliance.no_content_type');
+                issues[pp.id] = { message: trans('posts.edit.compliance.no_content_type'), docsUrl: null };
                 continue;
             }
 
             if (CONTENT_TYPES_REQUIRING_TEXT.has(contentType) && content.value.trim() === '') {
-                issues[pp.id] = trans('posts.edit.compliance.requires_text');
+                issues[pp.id] = { message: trans('posts.edit.compliance.requires_text'), docsUrl: null };
                 continue;
             }
 
@@ -218,7 +227,7 @@ export const usePostCompliance = (opts: UsePostComplianceOptions) => {
             const isSelected = selectedPlatformIds.value.includes(pp.id);
             if (!isSelected && firstCompatibleVariant(pp.platform, media.value)) continue;
 
-            issues[pp.id] = reason;
+            issues[pp.id] = { message: reason, docsUrl: mediaLimitsDocsUrl(pp.platform) };
         }
 
         return issues;
@@ -253,7 +262,7 @@ export const usePostCompliance = (opts: UsePostComplianceOptions) => {
 
         const mediaReasons = selectedPlatforms.value
             .filter((pp) => platformIssues.value[pp.id])
-            .map((pp) => `${pp.platform_name ?? pp.platform}: ${platformIssues.value[pp.id]}`);
+            .map((pp) => `${pp.platform_name ?? pp.platform}: ${platformIssues.value[pp.id].message}`);
 
         const lengthReasons = contentLengthOverflows.value.map((overflow) => trans('posts.form.content_exceeds_platform', {
             platform: getPlatformLabel(overflow.platform),

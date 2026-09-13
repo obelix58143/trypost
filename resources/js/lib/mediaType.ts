@@ -34,9 +34,26 @@ const CLASSIFIABLE_EXTENSIONS: Record<MediaType, readonly string[]> = {
     [MediaType.Document]: ['pdf'],
 };
 
-const extensionOf = (nameOrPath: string | null | undefined): string => nameOrPath?.split('.').pop()?.toLowerCase() ?? '';
+/**
+ * The file name of a bare name, a storage key or a full URL. The native URL
+ * parser owns the slicing — directories, `?query` and `#hash` are its job.
+ * Relative input resolves against the page, the same way an `<a href>` would.
+ */
+const fileNameOf = (nameOrPath: string): string => URL.parse(nameOrPath, document.baseURI)?.pathname.split('/').pop() ?? '';
 
-const mimeFamily = (mime: string): string => mime.split('/')[0] ?? '';
+/** Lower-cased extension of the file name, `''` when there is none — `path.extname` for the browser. */
+const extensionOf = (nameOrPath: string | null | undefined): string => {
+    const fileName = fileNameOf(nameOrPath ?? '');
+    const dot = fileName.lastIndexOf('.');
+
+    return dot === -1 ? '' : fileName.slice(dot + 1).toLowerCase();
+};
+
+/** Lower-cased `type/subtype` with any `; codecs=…` parameters dropped, so comparisons are exact. */
+const normalizeMime = (mime: string | null | undefined): string => (mime ?? '').split(';', 1)[0].trim().toLowerCase();
+
+/** The `type` half of `type/subtype`, `''` when there is no slash to split on. */
+const mimeFamily = (mime: string): string => (mime.includes('/') ? mime.split('/', 1)[0] : '');
 
 const ownsMime = (type: MediaType, mime: string): boolean =>
     type === MediaType.Document ? mime === PDF_MIME : mimeFamily(mime) === type;
@@ -53,8 +70,11 @@ interface ClassifiableMedia {
 }
 
 /** Resolve a MediaType from a raw MIME string (e.g. a browser `File.type`). */
-export const fromMimeType = (mime: string | null | undefined): MediaType | null =>
-    MEDIA_TYPES.find((type) => ownsMime(type, mime ?? '')) ?? null;
+export const fromMimeType = (mime: string | null | undefined): MediaType | null => {
+    const normalized = normalizeMime(mime);
+
+    return MEDIA_TYPES.find((type) => ownsMime(type, normalized)) ?? null;
+};
 
 /** Resolve a MediaType from a filename or path extension. */
 export const fromExtension = (nameOrPath: string | null | undefined): MediaType | null => {
@@ -86,7 +106,7 @@ export const isVideo = (item: ClassifiableMedia | null | undefined): boolean => 
 export const isDocument = (item: ClassifiableMedia | null | undefined): boolean => classify(item) === MediaType.Document;
 
 /** Whether the item is an animated GIF — several platforms treat it specially. */
-export const isGif = (item: ClassifiableMedia | null | undefined): boolean => (item?.mime_type ?? '') === GIF_MIME;
+export const isGif = (item: ClassifiableMedia | null | undefined): boolean => normalizeMime(item?.mime_type) === GIF_MIME;
 
 export const isMov = (item: ClassifiableMedia | null | undefined): boolean =>
-    item?.mime_type === MOV_MIME || extensionOf(item?.original_filename ?? item?.path) === 'mov';
+    normalizeMime(item?.mime_type) === MOV_MIME || extensionOf(item?.original_filename ?? item?.path) === 'mov';

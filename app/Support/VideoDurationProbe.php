@@ -23,6 +23,8 @@ final class VideoDurationProbe
 
     private const MVHD_V1_BYTES = 32;
 
+    private const MVHD_UNKNOWN_DURATION = 0xFFFFFFFF;
+
     /**
      * @param  Closure(int, int): string  $reader  Returns up to `$length` bytes starting at `$offset`.
      */
@@ -147,6 +149,10 @@ final class VideoDurationProbe
      * modification times to 64 bits, which pushes `timescale` and `duration`
      * from offsets 12 / 16 to 20 / 24 and makes `duration` 64-bit as well.
      *
+     * A duration of all 1s means "unknown" per ISO 14496-12. In version 1 that
+     * reads back as -1 and fails the `> 0` check on its own; version 0 needs
+     * the explicit sentinel, or a live capture would report ~49 days.
+     *
      * @param  array{int, int}|null  $bounds
      */
     private function seconds(?array $bounds): ?float
@@ -167,7 +173,9 @@ final class VideoDurationProbe
 
         ['timescale' => $timescale, 'duration' => $duration] = unpack($format, $mvhd);
 
-        return $timescale > 0 && $duration > 0 ? $duration / $timescale : null;
+        return $timescale > 0 && $duration > 0 && $duration !== self::MVHD_UNKNOWN_DURATION
+            ? $duration / $timescale
+            : null;
     }
 
     private function read(int $offset, int $length): string

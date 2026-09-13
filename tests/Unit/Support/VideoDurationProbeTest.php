@@ -36,6 +36,20 @@ test('reads the duration from the real fixture whose moov follows mdat', functio
     expect(VideoDurationProbe::fromFile(base_path('tests/fixtures/sample.mp4')))->toBe(1.0);
 });
 
+test('reads real ffmpeg output: a QuickTime .mov and a version 1 mvhd', function () {
+    // Both values were cross-checked against `ffprobe -show_entries format=duration`.
+    expect(VideoDurationProbe::fromFile(base_path('tests/fixtures/sample.mov')))->toBe(2.5)
+        ->and(VideoDurationProbe::fromFile(base_path('tests/fixtures/sample-mvhd-v1.mp4')))->toBe(2_400_000.0);
+});
+
+test('treats the all-ones "unknown" duration as missing in both mvhd versions', function () {
+    $v0 = probeMp4(probeAtom('ftyp', 'isom'), probeAtom('moov', probeMvhd(1000, 0xFFFFFFFF)));
+    $v1 = probeMp4(probeAtom('ftyp', 'isom'), probeAtom('moov', probeMvhd(1000, -1, version: 1)));
+
+    expect(VideoDurationProbe::fromReader(probeReader($v0), strlen($v0)))->toBeNull()
+        ->and(VideoDurationProbe::fromReader(probeReader($v1), strlen($v1)))->toBeNull();
+});
+
 test('reads a moov-first file', function () {
     $bytes = probeMp4(probeAtom('ftyp', 'isom'), probeAtom('moov', probeMvhd(600, 45_000)), probeAtom('mdat', str_repeat('x', 100)));
 

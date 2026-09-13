@@ -40,6 +40,8 @@ test('media type resolves from mime', function () {
     expect(Type::fromMime('video/mp4'))->toBe(Type::Video);
     expect(Type::fromMime('application/pdf'))->toBe(Type::Document);
     expect(Type::fromMime('not-a-mime'))->toBeNull();
+    expect(Type::fromMime('image'))->toBeNull();
+    expect(Type::fromMime('video'))->toBeNull();
 });
 
 test('media type document max size in mb is read from config', function () {

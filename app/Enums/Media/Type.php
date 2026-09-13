@@ -126,12 +126,13 @@ enum Type: string
     /**
      * Image and video own their MIME family (`image/*`, `video/*`), so the
      * family is the backing value. Document is `application/pdf` alone.
+     * A string without a slash is not a MIME and owns nothing.
      */
     private function ownsMime(string $mimeType): bool
     {
         return match ($this) {
             self::Document => $mimeType === self::PDF_MIME,
-            default => Str::before($mimeType, '/') === $this->value,
+            default => Str::contains($mimeType, '/') && Str::before($mimeType, '/') === $this->value,
         };
     }
 

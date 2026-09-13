@@ -10,7 +10,6 @@ use App\Models\Post;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Number;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\ValidationException;
@@ -245,26 +244,43 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
      */
     private function formatBytes(int $bytes, int $cap, int $precision = 0): string
     {
-        $base = $cap % 1_000_000 === 0 && $cap % (1024 * 1024) !== 0 ? 1000 : 1024;
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $exponent = Arr::last(array_keys($units), fn (int $exponent) => $bytes >= $base ** $exponent, 0);
-
-        return sprintf('%s %s', Number::format($bytes / $base ** $exponent, $precision), $units[$exponent]);
+        return self::isDecimalCap($cap)
+            ? self::formatDecimalBytes($bytes, $precision)
+            : Number::fileSize($bytes, $precision);
     }
 
     /**
-     * Mirrors `formatDurationWords` in date.ts.
+     * A cap built with ContentType::bytesFromDecimalMb(): a whole number of
+     * megabytes that is not also a whole number of mebibytes.
+     */
+    private static function isDecimalCap(int $cap): bool
+    {
+        return $cap % 1_000_000 === 0 && $cap % (1024 * 1024) !== 0;
+    }
+
+    private static function formatDecimalBytes(int $bytes, int $precision): string
+    {
+        return match (true) {
+            $bytes >= 1_000_000_000 => Number::format($bytes / 1_000_000_000, $precision).' GB',
+            $bytes >= 1_000_000 => Number::format($bytes / 1_000_000, $precision).' MB',
+            $bytes >= 1_000 => Number::format($bytes / 1_000, $precision).' KB',
+            default => "{$bytes} B",
+        };
+    }
+
+    /**
+     * Mirrors `formatDurationWords` in date.ts: "45s", "5min", "5min 30s".
      */
     private function formatDuration(int $seconds): string
     {
-        if ($seconds < 60) {
-            return "{$seconds}s";
-        }
-
         $minutes = intdiv($seconds, 60);
         $rest = $seconds % 60;
 
-        return $rest === 0 ? "{$minutes}min" : "{$minutes}min {$rest}s";
+        return match (true) {
+            $minutes === 0 => "{$rest}s",
+            $rest === 0 => "{$minutes}min",
+            default => "{$minutes}min {$rest}s",
+        };
     }
 
     /**

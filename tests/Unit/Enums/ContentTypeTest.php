@@ -61,7 +61,7 @@ test('media rules for frontend expose the full editor rule set keyed by content 
     expect($rules['instagram_feed']['requires_media'])->toBeTrue();
     expect($rules['discord_message']['accepts_gif'])->toBeTrue();
     expect($rules['telegram_post']['accepts_gif'])->toBeTrue();
-    expect($rules['bluesky_post']['accepts_mov'])->toBeFalse();
+    expect($rules['bluesky_post']['accepts_mov'])->toBeTrue();
     expect($rules['x_post']['accepts_mov'])->toBeTrue();
 });
 
@@ -244,7 +244,7 @@ test('media rules preserve pre-centralization editor limits for mapped types', f
         'bluesky_post' => [
             'requires_media' => false,
             'accepts_gif' => true,
-            'accepts_mov' => false,
+            'accepts_mov' => true,
             'max_files' => 4,
             'max_video_duration_sec' => 10 * 60,
             // Lexicon maxSize is decimal bytes, not MiB.

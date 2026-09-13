@@ -122,7 +122,9 @@ it('rejects publishing a LinkedIn post that mixes a PDF with an image', function
         ->assertJsonValidationErrors(['platforms.0.content_type']);
 });
 
-it('rejects publishing a Bluesky post whose stored video is a MOV', function () {
+it('does not reject a Bluesky post whose stored video is a MOV', function () {
+    Queue::fake();
+
     $bluesky = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Bluesky]);
     $post = Post::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -132,17 +134,17 @@ it('rejects publishing a Bluesky post whose stored video is a MOV', function () 
             'type' => 'video', 'mime_type' => 'video/quicktime', 'original_filename' => 'clip.mov',
         ]],
     ]);
-    $platform = PostPlatform::factory()->create([
+    PostPlatform::factory()->create([
         'post_id' => $post->id, 'social_account_id' => $bluesky->id,
         'platform' => Platform::Bluesky, 'content_type' => ContentType::BlueskyPost, 'enabled' => true,
     ]);
 
-    // No media or content_type resubmitted: the stored state alone must be enough to block publish.
     $this->withHeaders($this->headers)
-        ->putJson(route('api.posts.update', $post), ['status' => PostStatus::Publishing->value])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors(['platforms.0.content_type'])
-        ->assertJsonFragment(['This platform does not accept MOV videos. Use MP4.']);
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Scheduled->value,
+            'scheduled_at' => now()->addHour()->toIso8601String(),
+        ])
+        ->assertSuccessful();
 });
 
 it('rejects publishing when the uploaded video runs past the content type duration cap', function () {

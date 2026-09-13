@@ -266,7 +266,9 @@ test('publish post rejects a LinkedIn post that mixes a PDF with an image', func
     $response->assertHasErrors(['A PDF must be posted on its own, without other images or videos.']);
 });
 
-test('publish post rejects a Bluesky post whose stored video is a MOV', function () {
+test('publish post accepts a Bluesky post whose stored video is a MOV', function () {
+    Queue::fake();
+
     $bluesky = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Bluesky]);
 
     $post = Post::factory()->create([
@@ -283,9 +285,13 @@ test('publish post rejects a Bluesky post whose stored video is a MOV', function
     ]);
 
     $response = TryPostServer::actingAs($this->user)
-        ->tool(PublishPostTool::class, ['post_id' => $post->id]);
+        ->tool(PublishPostTool::class, [
+            'post_id' => $post->id,
+            'scheduled_at' => '2037-12-31T15:30:00Z',
+        ]);
 
-    $response->assertHasErrors(['This platform does not accept MOV videos. Use MP4.']);
+    $response->assertOk();
+    expect($post->fresh()->status)->toBe(PostStatus::Scheduled);
 });
 
 test('publish post rejects an Instagram Reel whose stored video exceeds 300 MB', function () {

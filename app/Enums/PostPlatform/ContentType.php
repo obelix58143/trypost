@@ -234,14 +234,13 @@ enum ContentType: string
     }
 
     /**
-     * Bluesky's video lexicon is MP4 only.
+     * Every network we publish to accepts QuickTime/MOV. Bluesky's stored
+     * embed lexicon is `video/mp4`, but its video service accepts MOV
+     * (`video/quicktime`) and transcodes it — same list as the official app.
      */
     public function acceptsMov(): bool
     {
-        return match ($this) {
-            self::BlueskyPost => false,
-            default => true,
-        };
+        return true;
     }
 
     /**

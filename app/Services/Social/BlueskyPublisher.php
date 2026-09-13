@@ -541,8 +541,9 @@ class BlueskyPublisher
 
     /**
      * Map a video mime type to the [Content-Type, file extension] the upload
-     * should carry. The lexicon is MP4 only (ContentType::BlueskyPost rejects
-     * MOV upstream); the other branches remain for posts stored before that gate.
+     * should carry. The video service accepts MP4, MPEG, WebM and QuickTime
+     * (same list as the official app) and transcodes to the MP4 blob the
+     * embed lexicon stores.
      *
      * @return array{0: string, 1: string}
      */

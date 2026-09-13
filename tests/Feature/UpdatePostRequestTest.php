@@ -80,7 +80,7 @@ test('publishing a tiktok post with privacy_level passes privacy_level validatio
     $response->assertSessionDoesntHaveErrors(['platforms.0.meta.privacy_level']);
 });
 
-test('publishing a bluesky post with a mov video is rejected', function () {
+test('scheduling a bluesky post with a mov video is not rejected on format', function () {
     $blueskyAccount = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::Bluesky,
@@ -94,7 +94,8 @@ test('publishing a bluesky post with a mov video is rejected', function () {
 
     $response = $this->actingAs($this->user)
         ->put(route('app.posts.update', $this->post), [
-            'status' => Status::Publishing->value,
+            'status' => Status::Scheduled->value,
+            'scheduled_at' => now()->addHour()->toIso8601String(),
             'media' => [[
                 'id' => 'test-media-mov',
                 'path' => 'media/2026-01/clip.mov',
@@ -108,7 +109,7 @@ test('publishing a bluesky post with a mov video is rejected', function () {
             ],
         ]);
 
-    $response->assertSessionHasErrors(['platforms.0.content_type' => 'This platform does not accept MOV videos. Use MP4.']);
+    $response->assertSessionDoesntHaveErrors(['platforms.0.content_type']);
 });
 
 test('publishing a bluesky post with an oversized image is rejected server-side', function () {

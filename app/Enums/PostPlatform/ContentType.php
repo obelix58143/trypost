@@ -435,13 +435,9 @@ enum ContentType: string
      */
     public static function mediaRulesForFrontend(): array
     {
-        $rules = [];
-
-        foreach (self::cases() as $type) {
-            $rules[$type->value] = $type->mediaRules();
-        }
-
-        return $rules;
+        return collect(self::cases())
+            ->mapWithKeys(fn (self $type) => [$type->value => $type->mediaRules()])
+            ->all();
     }
 
     private static function bytesFromMb(int $megabytes): int

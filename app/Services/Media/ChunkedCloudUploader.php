@@ -49,9 +49,7 @@ class ChunkedCloudUploader
 
     public function isObjectStorageDisk(?string $disk = null): bool
     {
-        $disk ??= $this->diskName();
-
-        return config("filesystems.disks.{$disk}.driver") === 's3';
+        return $this->diskOption('driver', $disk) === 's3';
     }
 
     public function readRange(string $key, int $offset, int $length): string
@@ -259,11 +257,16 @@ class ChunkedCloudUploader
             return $this->bucket;
         }
 
-        return (string) config("filesystems.disks.{$this->diskName()}.bucket");
+        return (string) $this->diskOption('bucket');
     }
 
     private function diskName(): string
     {
         return $this->disk ?? (string) config('filesystems.default');
+    }
+
+    private function diskOption(string $key, ?string $disk = null): mixed
+    {
+        return data_get(config('filesystems.disks'), ($disk ?? $this->diskName()).".{$key}");
     }
 }

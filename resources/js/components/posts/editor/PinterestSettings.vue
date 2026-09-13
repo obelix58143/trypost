@@ -16,7 +16,6 @@ import {
     ComboboxTrigger,
 } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
-import { getMediaValidationWarning } from '@/composables/useMedia';
 import { usePageErrors } from '@/composables/usePageErrors';
 import { getPlatformLogo } from '@/composables/usePlatformLogo';
 import type { PinterestBoard } from '@/types';
@@ -71,8 +70,6 @@ const pickVariant = (value: string) => {
     if (props.disabled) return;
     emit('update:contentType', value);
 };
-
-const warning = computed(() => getMediaValidationWarning(props.contentType, props.media));
 
 const boardOptions = computed<BoardOption[]>(() =>
     props.boards.map((b) => ({ value: b.id, label: b.name })),
@@ -250,7 +247,7 @@ const linkError = computed<string | undefined>(() => {
                 <InputError :message="linkError" />
             </div>
 
-            <MediaRulesWarning v-if="warning" :warning="warning" :platform="Platform.Pinterest" />
+            <MediaRulesWarning :content-type="contentType" :media="media" :platform="Platform.Pinterest" />
         </div>
     </div>
 </template>

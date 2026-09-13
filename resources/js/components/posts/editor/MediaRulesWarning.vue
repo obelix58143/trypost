@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { IconAlertTriangle, IconExternalLink } from '@tabler/icons-vue';
+import { computed } from 'vue';
 
-import type { MediaValidationWarning } from '@/composables/useMedia';
+import { getMediaValidationWarning } from '@/composables/useMedia';
 import { mediaLimitsDocsUrl } from '@/lib/docs';
+import type { MediaItem } from '@/types/media';
 
-defineProps<{
-    warning: MediaValidationWarning;
+const props = defineProps<{
+    contentType: string;
+    media: MediaItem[];
     platform: string;
 }>();
+
+const warning = computed(() => getMediaValidationWarning(props.contentType, props.media));
 </script>
 
 <template>
     <p
+        v-if="warning"
         class="flex items-start gap-2 rounded-lg border-2 border-foreground bg-rose-50 p-2 text-xs font-semibold text-rose-700"
         data-testid="media-rules-warning"
     >

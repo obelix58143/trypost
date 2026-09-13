@@ -4,7 +4,6 @@ import { computed, ref } from 'vue';
 
 import MediaRulesWarning from '@/components/posts/editor/MediaRulesWarning.vue';
 import { Avatar } from '@/components/ui/avatar';
-import { getMediaValidationWarning } from '@/composables/useMedia';
 import { getPlatformLogo } from '@/composables/usePlatformLogo';
 import { ContentType } from '@/types/content-type';
 import type { MediaItem } from '@/types/media';
@@ -65,8 +64,6 @@ const pickAspectRatio = (value: string) => {
     if (props.disabled) return;
     emit('update:meta', { ...props.meta, aspect_ratio: value });
 };
-
-const warning = computed(() => getMediaValidationWarning(props.contentType, props.media));
 </script>
 
 <template>
@@ -141,7 +138,7 @@ const warning = computed(() => getMediaValidationWarning(props.contentType, prop
                 </div>
             </div>
 
-            <MediaRulesWarning v-if="warning" :warning="warning" :platform="socialAccount?.platform ?? Platform.Instagram" />
+            <MediaRulesWarning :content-type="contentType" :media="media" :platform="socialAccount?.platform ?? Platform.Instagram" />
         </div>
     </div>
 </template>

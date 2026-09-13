@@ -285,13 +285,9 @@ trait HasMedia
      */
     private function withVideoDuration(array $meta, string $type, string $filePath): array
     {
-        if ($type !== Type::Video->value) {
-            return $meta;
-        }
-
-        $duration = VideoDurationProbe::fromFile($filePath);
-
-        return $duration === null ? $meta : [...$meta, 'duration' => round($duration, 2)];
+        return $type === Type::Video->value
+            ? VideoDurationProbe::mergeInto($meta, VideoDurationProbe::fromFile($filePath))
+            : $meta;
     }
 
     /**

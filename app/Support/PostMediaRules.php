@@ -72,13 +72,13 @@ class PostMediaRules
      */
     public static function snapshot(Media $media, ?string $alt = null): array
     {
-        $meta = is_array($media->meta) ? $media->meta : [];
+        $meta = (array) data_get($media, 'meta', []);
 
         if (filled($alt) && $media->isImage()) {
-            $meta['alt_text'] = $alt;
+            data_set($meta, 'alt_text', $alt);
         }
 
-        $item = [
+        return [
             'id' => $media->id,
             'path' => $media->path,
             'url' => $media->url,
@@ -86,8 +86,7 @@ class PostMediaRules
             'mime_type' => $media->mime_type,
             'original_filename' => $media->original_filename,
             'size' => $media->size,
+            ...($meta === [] ? [] : ['meta' => $meta]),
         ];
-
-        return $meta === [] ? $item : [...$item, 'meta' => $meta];
     }
 }

@@ -38,6 +38,14 @@ const emit = defineEmits<{
 const isSelected = (id: string): boolean => props.selectedIds.includes(id);
 
 const selectedChannels = computed(() => props.channels.filter((channel) => isSelected(channel.id)));
+
+const avatarRingClass = (channel: Channel): string => {
+    if (! isSelected(channel.id)) {
+        return 'border-foreground/20';
+    }
+
+    return channel.issue ? 'border-rose-500 shadow-2xs' : 'border-foreground shadow-2xs';
+};
 </script>
 
 <template>
@@ -58,11 +66,7 @@ const selectedChannels = computed(() => props.channels.filter((channel) => isSel
                                     :src="channel.avatarUrl"
                                     :name="channel.displayName"
                                     class="size-10 shrink-0 rounded-full border-2"
-                                    :class="[
-                                        channel.issue && isSelected(channel.id) ? 'border-rose-500 shadow-2xs' : '',
-                                        !channel.issue && isSelected(channel.id) ? 'border-foreground shadow-2xs' : '',
-                                        !isSelected(channel.id) ? 'border-foreground/20' : '',
-                                    ]"
+                                    :class="avatarRingClass(channel)"
                                 />
                                 <span class="absolute -bottom-1 -right-1 inline-flex size-5 items-center justify-center overflow-hidden rounded-full border-2 border-foreground bg-card shadow-2xs">
                                     <img :src="getPlatformLogo(channel.platform)" :alt="channel.platform" class="size-full object-cover" />

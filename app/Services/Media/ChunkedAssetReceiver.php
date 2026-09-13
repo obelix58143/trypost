@@ -40,11 +40,9 @@ final class ChunkedAssetReceiver
      */
     private function videoMeta(string $fileName, ?float $duration): array
     {
-        if ($duration === null || $duration <= 0 || MediaType::classify(null, $fileName) !== MediaType::Video) {
-            return [];
-        }
-
-        return ['duration' => round($duration, 2)];
+        return MediaType::classify(null, $fileName) === MediaType::Video
+            ? VideoDurationProbe::mergeInto([], $duration)
+            : [];
     }
 
     /**
@@ -109,17 +107,15 @@ final class ChunkedAssetReceiver
         }
 
         try {
-            $duration = VideoDurationProbe::fromReader(
+            return VideoDurationProbe::mergeInto($meta, VideoDurationProbe::fromReader(
                 fn (int $offset, int $length): string => $this->cloud->readRange($path, $offset, $length),
                 $size,
-            );
+            ));
         } catch (Throwable $exception) {
             Log::warning('Could not probe video duration from object storage', ['path' => $path, 'error' => $exception->getMessage()]);
 
             return $meta;
         }
-
-        return $duration === null ? $meta : [...$meta, 'duration' => round($duration, 2)];
     }
 
     /**

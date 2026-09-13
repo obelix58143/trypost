@@ -19,16 +19,24 @@ export const ALLOWED_MIME_TYPES: Record<MediaType, readonly string[]> = {
     [MediaType.Document]: ['application/pdf'],
 };
 
-// Broader than the upload allow-list so already-stored files in legacy formats
-// still resolve — mirrors Type::fromExtension() on the backend.
-const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'];
-const VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'wmv', 'webm', 'mkv', 'm4v'];
-
 const GIF_MIME = 'image/gif';
 const MOV_MIME = 'video/quicktime';
 const PDF_MIME = 'application/pdf';
 
+const MEDIA_TYPES = Object.values(MediaType);
+
+// Broader than the upload allow-list so already-stored files in legacy formats
+// still resolve — mirrors Type::classifiableExtensions() on the backend.
+const CLASSIFIABLE_EXTENSIONS: Record<MediaType, readonly string[]> = {
+    [MediaType.Image]: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'],
+    [MediaType.Video]: ['mp4', 'mov', 'avi', 'wmv', 'webm', 'mkv', 'm4v'],
+    [MediaType.Document]: ['pdf'],
+};
+
 const extensionOf = (nameOrPath: string | null | undefined): string => nameOrPath?.split('.').pop()?.toLowerCase() ?? '';
+
+const ownsMime = (type: MediaType, mime: string): boolean =>
+    type === MediaType.Document ? mime === PDF_MIME : mime.startsWith(`${type}/`);
 
 /** The `accept` attribute value for a file input that takes any media we allow. */
 export const acceptAttribute = (): string => Object.values(ALLOWED_MIME_TYPES).flat().join(',');
@@ -42,27 +50,14 @@ interface ClassifiableMedia {
 }
 
 /** Resolve a MediaType from a raw MIME string (e.g. a browser `File.type`). */
-export const fromMimeType = (mime: string | null | undefined): MediaType | null => {
-    const value = mime ?? '';
-
-    if (value.startsWith('image/')) return MediaType.Image;
-    if (value.startsWith('video/')) return MediaType.Video;
-    if (value === PDF_MIME) return MediaType.Document;
-
-    return null;
-};
+export const fromMimeType = (mime: string | null | undefined): MediaType | null =>
+    MEDIA_TYPES.find((type) => ownsMime(type, mime ?? '')) ?? null;
 
 /** Resolve a MediaType from a filename or path extension. */
 export const fromExtension = (nameOrPath: string | null | undefined): MediaType | null => {
-    if (! nameOrPath) return null;
-
     const ext = extensionOf(nameOrPath);
 
-    if (IMAGE_EXTENSIONS.includes(ext)) return MediaType.Image;
-    if (VIDEO_EXTENSIONS.includes(ext)) return MediaType.Video;
-    if (ext === 'pdf') return MediaType.Document;
-
-    return null;
+    return ext === '' ? null : MEDIA_TYPES.find((type) => CLASSIFIABLE_EXTENSIONS[type].includes(ext)) ?? null;
 };
 
 /**

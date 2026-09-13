@@ -6,6 +6,7 @@ namespace App\Support;
 
 use Closure;
 use Generator;
+use Illuminate\Support\Arr;
 
 /**
  * Reads a video's duration from the `moov > mvhd` atom of an MP4 / MOV file.
@@ -39,13 +40,16 @@ final class VideoDurationProbe
         }
 
         try {
-            $read = static function (int $offset, int $length) use ($handle): string {
-                fseek($handle, $offset);
+            return self::fromReader(
+                static function (int $offset, int $length) use ($handle): string {
+                    if ($length < 1 || fseek($handle, $offset) !== 0) {
+                        return '';
+                    }
 
-                return (string) fread($handle, $length);
-            };
-
-            return (new self($read, (int) (fstat($handle)['size'] ?? 0)))->duration();
+                    return (string) fread($handle, $length);
+                },
+                (int) data_get(fstat($handle) ?: [], 'size', 0),
+            );
         } finally {
             fclose($handle);
         }
@@ -56,21 +60,26 @@ final class VideoDurationProbe
      */
     public static function fromReader(Closure $read, int $totalSize): ?float
     {
-        return (new self($read, $totalSize))->duration();
+        return (new self($read, max(0, $totalSize)))->duration();
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array<string, mixed>
+     */
+    public static function mergeInto(array $meta, ?float $duration): array
+    {
+        return $duration === null || $duration <= 0
+            ? $meta
+            : [...$meta, 'duration' => round($duration, 2)];
     }
 
     private function duration(): ?float
     {
-        $moov = $this->child('moov', 0, $this->size);
-        $mvhd = $moov === null ? null : $this->child('mvhd', ...$moov);
+        $moov = $this->payload('moov', 0, $this->size);
+        $mvhd = $moov === null ? null : $this->payload('mvhd', ...$moov);
 
-        if ($mvhd === null) {
-            return null;
-        }
-
-        [$start, $end] = $mvhd;
-
-        return $this->durationFromMvhd($this->read($start, min($end - $start, self::MVHD_V1_BYTES)));
+        return $mvhd === null ? null : $this->seconds(...$mvhd);
     }
 
     /**
@@ -78,15 +87,12 @@ final class VideoDurationProbe
      *
      * @return array{int, int}|null
      */
-    private function child(string $type, int $from, int $to): ?array
+    private function payload(string $type, int $from, int $to): ?array
     {
-        foreach ($this->atoms($from, $to) as $atomType => $bounds) {
-            if ($atomType === $type) {
-                return $bounds;
-            }
-        }
-
-        return null;
+        return Arr::first(
+            $this->atoms($from, $to),
+            fn (array $bounds, string $atomType): bool => $atomType === $type,
+        );
     }
 
     /**
@@ -98,35 +104,45 @@ final class VideoDurationProbe
      */
     private function atoms(int $from, int $to): Generator
     {
-        $offset = $from;
+        for ($offset = $from; $offset + self::ATOM_HEADER_BYTES <= $to; $offset += $size) {
+            $header = $this->header($offset, $to);
 
-        while ($offset + self::ATOM_HEADER_BYTES <= $to) {
-            $header = $this->read($offset, min(self::ATOM_LARGE_HEADER_BYTES, $to - $offset));
-
-            if (strlen($header) < self::ATOM_HEADER_BYTES) {
+            if ($header === null) {
                 return;
             }
 
-            ['size' => $size, 'type' => $type] = unpack('Nsize/a4type', $header);
-            $headerBytes = self::ATOM_HEADER_BYTES;
-
-            if ($size === 1 && strlen($header) === self::ATOM_LARGE_HEADER_BYTES) {
-                $size = unpack('J', $header, self::ATOM_HEADER_BYTES)[1];
-                $headerBytes = self::ATOM_LARGE_HEADER_BYTES;
-            } elseif ($size === 0) {
-                $size = $to - $offset;
-            }
-
-            if ($size < $headerBytes) {
-                return;
-            }
-
+            [$size, $type, $headerBytes] = $header;
             $size = min($size, $to - $offset);
 
             yield $type => [$offset + $headerBytes, $offset + $size];
-
-            $offset += $size;
         }
+    }
+
+    /**
+     * @return array{int, string, int}|null
+     */
+    private function header(int $offset, int $to): ?array
+    {
+        $bytes = $this->read($offset, min(self::ATOM_LARGE_HEADER_BYTES, $to - $offset));
+        $fields = strlen($bytes) >= self::ATOM_HEADER_BYTES
+            ? unpack('Nsize/a4type', $bytes)
+            : false;
+
+        if ($fields === false) {
+            return null;
+        }
+
+        ['size' => $size, 'type' => $type] = $fields;
+        $headerBytes = self::ATOM_HEADER_BYTES;
+
+        if ($size === 1 && strlen($bytes) === self::ATOM_LARGE_HEADER_BYTES) {
+            $size = (int) data_get(unpack('J', $bytes, self::ATOM_HEADER_BYTES), 1, 0);
+            $headerBytes = self::ATOM_LARGE_HEADER_BYTES;
+        } elseif ($size === 0) {
+            $size = $to - $offset;
+        }
+
+        return $size < $headerBytes ? null : [$size, $type, $headerBytes];
     }
 
     /**
@@ -134,24 +150,31 @@ final class VideoDurationProbe
      * modification times to 64 bits, which pushes `timescale` and `duration`
      * from offsets 12 / 16 to 20 / 24 and makes `duration` 64-bit as well.
      */
-    private function durationFromMvhd(string $mvhd): ?float
+    private function seconds(int $start, int $end): ?float
     {
-        $isVersion1 = ord($mvhd[0] ?? "\0") === 1;
+        $mvhd = $this->read($start, min($end - $start, self::MVHD_V1_BYTES));
+        $version1 = strlen($mvhd) > 0 && ord($mvhd[0]) === 1;
 
-        if (strlen($mvhd) < ($isVersion1 ? self::MVHD_V1_BYTES : self::MVHD_V0_BYTES)) {
+        if (strlen($mvhd) < ($version1 ? self::MVHD_V1_BYTES : self::MVHD_V0_BYTES)) {
             return null;
         }
 
-        ['timescale' => $timescale, 'duration' => $duration] = unpack(
-            $isVersion1 ? 'x20/Ntimescale/Jduration' : 'x12/Ntimescale/Nduration',
+        $fields = unpack(
+            $version1 ? 'x20/Ntimescale/Jduration' : 'x12/Ntimescale/Nduration',
             $mvhd,
         );
+
+        if ($fields === false) {
+            return null;
+        }
+
+        ['timescale' => $timescale, 'duration' => $duration] = $fields;
 
         return $timescale > 0 && $duration > 0 ? $duration / $timescale : null;
     }
 
     private function read(int $offset, int $length): string
     {
-        return ($this->reader)($offset, $length);
+        return $length < 1 ? '' : ($this->reader)($offset, $length);
     }
 }

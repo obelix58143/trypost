@@ -58,55 +58,21 @@ export const mediaRuleFor = (contentType: string): ContentTypeMediaRule | undefi
     return cachedRules?.[contentType];
 };
 
-export const toMediaRules = (rule: ContentTypeMediaRule): MediaRules => {
-    const mapped: MediaRules = {
-        maxFiles: rule.max_files,
-        acceptImages: rule.accept_images,
-        acceptVideos: rule.accept_videos,
-        requiresMedia: rule.requires_media,
-        acceptsGif: rule.accepts_gif,
-        acceptsMov: rule.accepts_mov,
-    };
-
-    if (rule.min_files !== null) {
-        mapped.minFiles = rule.min_files;
-    }
-
-    if (rule.accept_documents) {
-        mapped.acceptDocuments = true;
-    }
-
-    if (rule.forbids_mixed_media) {
-        mapped.forbidsMixedMedia = true;
-    }
-
-    if (rule.max_image_bytes !== null) {
-        mapped.maxImageBytes = rule.max_image_bytes;
-    }
-
-    if (rule.max_video_bytes !== null) {
-        mapped.maxVideoBytes = rule.max_video_bytes;
-    }
-
-    if (rule.max_document_bytes !== null) {
-        mapped.maxDocumentBytes = rule.max_document_bytes;
-    }
-
-    if (rule.max_video_duration_sec !== null) {
-        mapped.maxVideoDurationSec = rule.max_video_duration_sec;
-    }
-
-    if (rule.aspect_ratio_min !== null) {
-        mapped.aspectRatioMin = rule.aspect_ratio_min;
-    }
-
-    if (rule.aspect_ratio_max !== null) {
-        mapped.aspectRatioMax = rule.aspect_ratio_max;
-    }
-
-    if (rule.auto_fits_image) {
-        mapped.autoFitsImage = true;
-    }
-
-    return mapped;
-};
+export const toMediaRules = (rule: ContentTypeMediaRule): MediaRules => ({
+    maxFiles: rule.max_files,
+    ...(rule.min_files !== null && { minFiles: rule.min_files }),
+    acceptImages: rule.accept_images,
+    acceptVideos: rule.accept_videos,
+    ...(rule.accept_documents && { acceptDocuments: true }),
+    requiresMedia: rule.requires_media,
+    acceptsGif: rule.accepts_gif,
+    acceptsMov: rule.accepts_mov,
+    ...(rule.forbids_mixed_media && { forbidsMixedMedia: true }),
+    ...(rule.max_image_bytes !== null && { maxImageBytes: rule.max_image_bytes }),
+    ...(rule.max_video_bytes !== null && { maxVideoBytes: rule.max_video_bytes }),
+    ...(rule.max_document_bytes !== null && { maxDocumentBytes: rule.max_document_bytes }),
+    ...(rule.max_video_duration_sec !== null && { maxVideoDurationSec: rule.max_video_duration_sec }),
+    ...(rule.aspect_ratio_min !== null && { aspectRatioMin: rule.aspect_ratio_min }),
+    ...(rule.aspect_ratio_max !== null && { aspectRatioMax: rule.aspect_ratio_max }),
+    ...(rule.auto_fits_image && { autoFitsImage: true }),
+});

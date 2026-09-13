@@ -71,10 +71,12 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     public static function entriesForUpdate(Post $post, ?array $requestPlatforms): array
     {
         if (is_array($requestPlatforms)) {
+            $stored = $post->postPlatforms()->get()->keyBy('id');
+
             return collect($requestPlatforms)->map(fn ($platform, $index): array => [
                 'key' => "platforms.{$index}.content_type",
                 'content_type' => data_get($platform, 'content_type')
-                    ?? $post->postPlatforms()->where('id', data_get($platform, 'id'))->first()?->content_type?->value,
+                    ?? $stored->get(data_get($platform, 'id'))?->content_type?->value,
             ])->all();
         }
 
@@ -122,70 +124,71 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         $contentType = ContentType::tryFrom((string) $value);
+
         if (! $contentType) {
             return;
         }
 
-        // Use the request's media when present; otherwise fall back to the
-        // post's stored media so partial publish/schedule updates still validate.
-        $media = array_key_exists('media', $this->data)
-            ? (array) data_get($this->data, 'media', [])
-            : (array) ($this->fallbackMedia ?? []);
-        $count = count($media);
+        $media = $this->media();
 
-        if ($contentType->requiresMedia() && $count === 0) {
-            $fail(trans('posts.form.warnings.requires_media'));
+        if ($media === []) {
+            if ($contentType->requiresMedia()) {
+                $fail(trans('posts.form.warnings.requires_media'));
+            }
 
             return;
         }
 
-        if ($count === 0) {
-            return;
-        }
-
-        $items = collect($media)->map(fn (mixed $item): array => (array) $item);
-        $hasImage = $items->contains($this->isImage(...));
-        $hasVideo = $items->contains($this->isVideo(...));
-        $hasDocument = $items->contains($this->isDocument(...));
-        $hasGif = $items->contains($this->isGif(...));
-        $hasMov = $items->contains($this->isMov(...));
-
-        if ($hasImage && ! $contentType->supportsImage()) {
-            $fail(trans('posts.form.warnings.no_image_allowed'));
-        }
-
-        if ($hasVideo && ! $contentType->supportsVideo()) {
-            $fail(trans('posts.form.warnings.no_video_allowed'));
-        }
-
-        if ($hasDocument && ! $contentType->supportsDocument()) {
-            $fail(trans('posts.form.warnings.no_document_allowed'));
-        }
-
-        // A PDF document is always published on its own (LinkedIn document post).
-        if ($hasDocument && $count > 1) {
-            $fail(trans('posts.form.warnings.document_not_alone'));
-        }
-
-        if ($hasImage && $hasVideo && ! $contentType->supportsMixedMedia()) {
-            $fail(trans('posts.form.warnings.no_mixed_media'));
-        }
-
-        if ($hasGif && ! $contentType->acceptsGif()) {
-            $fail(trans('posts.form.warnings.gif_not_allowed'));
-        }
-
-        if ($hasMov && ! $contentType->acceptsMov()) {
-            $fail(trans('posts.form.warnings.mov_not_allowed'));
-        }
-
-        $this->failOnSizeAndDurationCaps($contentType, $items->all(), $fail);
+        $this->failOnKindRules($contentType, $media, $fail);
+        $this->failOnSizeAndDurationCaps($contentType, $media, $fail);
     }
 
     /**
-     * Server-side mirror of the editor's size / duration checks, sharing its
-     * messages. `meta.duration` is read from the file on upload; an item
-     * without it is not checked.
+     * Request `media` when the key is present (including an empty list);
+     * otherwise the stored fallback so a partial publish still validates.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function media(): array
+    {
+        $raw = array_key_exists('media', $this->data)
+            ? data_get($this->data, 'media', [])
+            : ($this->fallbackMedia ?? []);
+
+        return collect($raw)->map(fn (mixed $item): array => (array) $item)->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $media
+     * @param  Closure(string, ?string=): PotentiallyTranslatedString  $fail
+     */
+    private function failOnKindRules(ContentType $contentType, array $media, Closure $fail): void
+    {
+        $items = collect($media);
+        $hasImage = $items->contains($this->isImage(...));
+        $hasVideo = $items->contains($this->isVideo(...));
+        $hasDocument = $items->contains($this->isDocument(...));
+
+        $violations = [
+            'no_image_allowed' => $hasImage && ! $contentType->supportsImage(),
+            'no_video_allowed' => $hasVideo && ! $contentType->supportsVideo(),
+            'no_document_allowed' => $hasDocument && ! $contentType->supportsDocument(),
+            'document_not_alone' => $hasDocument && count($media) > 1,
+            'no_mixed_media' => $hasImage && $hasVideo && ! $contentType->supportsMixedMedia(),
+            'gif_not_allowed' => $items->contains($this->isGif(...)) && ! $contentType->acceptsGif(),
+            'mov_not_allowed' => $items->contains($this->isMov(...)) && ! $contentType->acceptsMov(),
+        ];
+
+        foreach ($violations as $key => $failed) {
+            if ($failed) {
+                $fail(trans("posts.form.warnings.{$key}"));
+            }
+        }
+    }
+
+    /**
+     * Server-side mirror of the editor's size / duration checks. `meta.duration`
+     * is read from the file on upload; an item without it is not checked.
      *
      * @param  array<int, array<string, mixed>>  $media
      * @param  Closure(string, ?string=): PotentiallyTranslatedString  $fail
@@ -196,13 +199,7 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
 
         foreach ($media as $item) {
             $size = (int) data_get($item, 'size', 0);
-            $duration = data_get($item, 'meta.duration');
-
-            [$key, $max] = match (true) {
-                $this->isDocument($item) => ['document_too_large', $contentType->maxDocumentBytes()],
-                $this->isVideo($item) => ['video_too_large', $contentType->maxVideoBytes()],
-                default => ['image_too_large', $contentType->maxImageBytes()],
-            };
+            [$key, $max] = $this->byteCap($contentType, $item);
 
             if ($size > 0 && $max !== null && $size > $max) {
                 $fail(trans("posts.form.warnings.{$key}", [
@@ -213,6 +210,8 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
                 return;
             }
 
+            $duration = data_get($item, 'meta.duration');
+
             if ($maxDuration !== null && $this->isVideo($item) && is_numeric($duration) && (float) $duration > $maxDuration) {
                 $fail(trans('posts.form.warnings.video_too_long', [
                     'max' => $this->formatDuration($maxDuration),
@@ -222,6 +221,23 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
                 return;
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{0: string, 1: int|null}
+     */
+    private function byteCap(ContentType $contentType, array $item): array
+    {
+        if ($this->isDocument($item)) {
+            return ['document_too_large', $contentType->maxDocumentBytes()];
+        }
+
+        if ($this->isVideo($item)) {
+            return ['video_too_large', $contentType->maxVideoBytes()];
+        }
+
+        return ['image_too_large', $contentType->maxImageBytes()];
     }
 
     /**

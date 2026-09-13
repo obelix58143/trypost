@@ -96,7 +96,7 @@ enum Type: string
      */
     public static function fromMime(string $mime): ?self
     {
-        return array_find(self::cases(), fn (self $type) => in_array($mime, $type->allowedMimeTypes(), true));
+        return self::firstCase(fn (self $type) => in_array($mime, $type->allowedMimeTypes(), true));
     }
 
     /**
@@ -108,16 +108,9 @@ enum Type: string
      */
     public static function classify(?string $mimeType, ?string $path = null): ?self
     {
-        if (blank($mimeType)) {
-            return self::fromExtension(self::extensionOf($path));
-        }
-
-        return match (true) {
-            str_starts_with($mimeType, 'image/') => self::Image,
-            str_starts_with($mimeType, 'video/') => self::Video,
-            $mimeType === self::PDF_MIME => self::Document,
-            default => null,
-        };
+        return filled($mimeType)
+            ? self::firstCase(fn (self $type) => $type->ownsMime($mimeType))
+            : self::fromExtension(self::extensionOf($path));
     }
 
     /**
@@ -127,7 +120,27 @@ enum Type: string
     {
         $extension = strtolower((string) $extension);
 
-        return array_find(self::cases(), fn (self $type) => in_array($extension, $type->classifiableExtensions(), true));
+        return self::firstCase(fn (self $type) => in_array($extension, $type->classifiableExtensions(), true));
+    }
+
+    /**
+     * Image and video use the backing value as the MIME family (`image/*`,
+     * `video/*`). Document is `application/pdf`, not `document/*`.
+     */
+    private function ownsMime(string $mimeType): bool
+    {
+        return match ($this) {
+            self::Document => $mimeType === self::PDF_MIME,
+            default => str_starts_with($mimeType, "{$this->value}/"),
+        };
+    }
+
+    /**
+     * @param  callable(self): bool  $predicate
+     */
+    private static function firstCase(callable $predicate): ?self
+    {
+        return array_find(self::cases(), $predicate);
     }
 
     /**

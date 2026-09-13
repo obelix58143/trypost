@@ -89,3 +89,11 @@ test('reads only atom headers, never the mdat payload', function () {
 test('returns null for an unreadable path', function () {
     expect(VideoDurationProbe::fromFile('/nonexistent/clip.mp4'))->toBeNull();
 });
+
+test('merges a positive duration into meta and leaves the rest untouched', function () {
+    expect(VideoDurationProbe::mergeInto(['width' => 1920], 1.239))
+        ->toBe(['width' => 1920, 'duration' => 1.24])
+        ->and(VideoDurationProbe::mergeInto(['width' => 1920], null))->toBe(['width' => 1920])
+        ->and(VideoDurationProbe::mergeInto(['width' => 1920], 0.0))->toBe(['width' => 1920])
+        ->and(VideoDurationProbe::mergeInto(['width' => 1920], -3.0))->toBe(['width' => 1920]);
+});

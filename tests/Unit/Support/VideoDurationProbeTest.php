@@ -33,7 +33,7 @@ function probeReader(string $bytes): Closure
 }
 
 test('reads the duration from the real fixture whose moov follows mdat', function () {
-    expect(VideoDurationProbe::fromFile(base_path('tests/Fixtures/sample.mp4')))->toBe(1.0);
+    expect(VideoDurationProbe::fromFile(base_path('tests/fixtures/sample.mp4')))->toBe(1.0);
 });
 
 test('reads a moov-first file', function () {

@@ -143,6 +143,39 @@ test('publishing a bluesky post with an oversized image is rejected server-side'
     $response->assertSessionHasErrors('platforms.0.content_type');
 });
 
+test('publishing a bluesky post with a video over the duration cap is rejected server-side', function () {
+    $blueskyAccount = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Bluesky,
+    ]);
+    $blueskyPlatform = PostPlatform::factory()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $blueskyAccount->id,
+        'platform' => Platform::Bluesky,
+        'content_type' => ContentType::BlueskyPost,
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->put(route('app.posts.update', $this->post), [
+            'status' => Status::Publishing->value,
+            'media' => [[
+                'id' => 'test-media-long',
+                'path' => 'media/2026-01/long.mp4',
+                'url' => 'https://example.com/media/2026-01/long.mp4',
+                'type' => 'video',
+                'mime_type' => 'video/mp4',
+                'original_filename' => 'long.mp4',
+                'size' => 50_000_000,
+                'meta' => ['duration' => 601.5],
+            ]],
+            'platforms' => [
+                ['id' => $blueskyPlatform->id, 'content_type' => ContentType::BlueskyPost->value],
+            ],
+        ]);
+
+    $response->assertSessionHasErrors(['platforms.0.content_type' => 'Video is 10min 2s long, but this post type allows up to 10min.']);
+});
+
 test('saving a draft does not enforce media compatibility', function () {
     $blueskyAccount = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,

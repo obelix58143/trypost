@@ -325,7 +325,7 @@ test('chunked upload reads the duration from the assembled file and ignores the 
     Storage::fake('local');
     seedChunkedUploadWorkspace();
 
-    postChunkedAsset('clip.mp4', file_get_contents(base_path('tests/Fixtures/sample.mp4')), uploadId: Str::uuid()->toString(), duration: '61.437')->assertSuccessful();
+    postChunkedAsset('clip.mp4', file_get_contents(base_path('tests/fixtures/sample.mp4')), uploadId: Str::uuid()->toString(), duration: '61.437')->assertSuccessful();
 
     expect(test()->workspace->getMedia('assets')->first()->meta)->toEqual(['duration' => 1.0]);
 });
@@ -345,7 +345,7 @@ test('chunked upload probes the duration from object storage on the multipart pa
     Storage::fake('s3');
     seedChunkedUploadWorkspace();
 
-    $bytes = file_get_contents(base_path('tests/Fixtures/sample.mp4'));
+    $bytes = file_get_contents(base_path('tests/fixtures/sample.mp4'));
 
     $fake = Mockery::mock(ChunkedCloudUploader::class);
     $fake->shouldReceive('shouldUseMultipart')->with('clip.mp4')->andReturn(true);

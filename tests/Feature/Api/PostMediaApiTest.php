@@ -235,7 +235,7 @@ it('uploads a media file and attaches it to the post', function () {
 });
 
 it('stores the duration read from the video file itself', function () {
-    $file = UploadedFile::fake()->createWithContent('clip.mp4', file_get_contents(base_path('tests/Fixtures/sample.mp4')));
+    $file = UploadedFile::fake()->createWithContent('clip.mp4', file_get_contents(base_path('tests/fixtures/sample.mp4')));
     $file->mimeTypeToReport = 'video/mp4';
 
     $this->withHeaders(['Authorization' => 'Bearer '.$this->plainToken, 'Accept' => 'application/json'])
@@ -366,7 +366,7 @@ it('keeps the measured duration when an external video url is submitted with its
     $this->socialAccount->update(['is_active' => true]);
 
     Http::fake([
-        '93.184.216.34/clip.mp4' => Http::response(file_get_contents(base_path('tests/Fixtures/sample.mp4')), 200, ['Content-Type' => 'video/mp4']),
+        '93.184.216.34/clip.mp4' => Http::response(file_get_contents(base_path('tests/fixtures/sample.mp4')), 200, ['Content-Type' => 'video/mp4']),
     ]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$this->plainToken])

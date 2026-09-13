@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Models\Workspace;
 use App\Services\Brand\SafeHttpFetcher;
 use App\Support\PostMediaRules;
+use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
 
@@ -183,7 +184,7 @@ class MediaAttacher
 
         return [
             'path' => $temp,
-            'mime' => mime_content_type($temp) ?: null,
+            'mime' => File::mimeType($temp) ?: null,
             'bytes' => $bytes,
         ];
     }

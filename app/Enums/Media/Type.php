@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Enums\Media;
 
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
+use Symfony\Component\Mime\MimeTypes;
+
 enum Type: string
 {
     case Image = 'image';
@@ -61,20 +65,6 @@ enum Type: string
         };
     }
 
-    /**
-     * Broader than extensions() so legacy formats already on disk still classify.
-     *
-     * @return array<int, string>
-     */
-    private function classifiableExtensions(): array
-    {
-        return match ($this) {
-            self::Image => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'],
-            self::Video => ['mp4', 'mov', 'avi', 'wmv', 'webm', 'mkv', 'm4v'],
-            self::Document => ['pdf'],
-        };
-    }
-
     public function maxSizeInMb(): int
     {
         return (int) config("trypost.media.max_size_mb.{$this->value}");
@@ -96,7 +86,7 @@ enum Type: string
      */
     public static function fromMime(string $mime): ?self
     {
-        return self::firstCase(fn (self $type) => in_array($mime, $type->allowedMimeTypes(), true));
+        return array_find(self::cases(), fn (self $type) => in_array($mime, $type->allowedMimeTypes(), true));
     }
 
     /**
@@ -109,38 +99,56 @@ enum Type: string
     public static function classify(?string $mimeType, ?string $path = null): ?self
     {
         return filled($mimeType)
-            ? self::firstCase(fn (self $type) => $type->ownsMime($mimeType))
+            ? self::owner($mimeType)
             : self::fromExtension(self::extensionOf($path));
     }
 
     /**
-     * Classify by filename extension (see classifiableExtensions()).
+     * Classify by filename extension. Broader than extensions(): any format the
+     * MIME registry knows as image/*, video/* or PDF resolves, so legacy files
+     * already on disk (heic, mkv, avi, ...) still classify.
      */
     public static function fromExtension(?string $extension): ?self
     {
-        $extension = strtolower((string) $extension);
-
-        return self::firstCase(fn (self $type) => in_array($extension, $type->classifiableExtensions(), true));
+        return collect(self::registeredMimeTypes($extension))->map(self::owner(...))->filter()->first();
     }
 
     /**
-     * Image and video use the backing value as the MIME family (`image/*`,
-     * `video/*`). Document is `application/pdf`, not `document/*`.
+     * The MIME we accept on upload for a filename extension, or null when the
+     * extension maps to nothing in the allow-list.
+     */
+    public static function mimeTypeFromExtension(?string $extension): ?string
+    {
+        return Arr::first(self::registeredMimeTypes($extension), fn (string $mimeType) => self::fromMime($mimeType) !== null);
+    }
+
+    /**
+     * Image and video own their MIME family (`image/*`, `video/*`), so the
+     * family is the backing value. Document is `application/pdf` alone.
      */
     private function ownsMime(string $mimeType): bool
     {
         return match ($this) {
             self::Document => $mimeType === self::PDF_MIME,
-            default => str_starts_with($mimeType, "{$this->value}/"),
+            default => Str::before($mimeType, '/') === $this->value,
         };
     }
 
-    /**
-     * @param  callable(self): bool  $predicate
-     */
-    private static function firstCase(callable $predicate): ?self
+    private static function owner(string $mimeType): ?self
     {
-        return array_find(self::cases(), $predicate);
+        return array_find(self::cases(), fn (self $type) => $type->ownsMime($mimeType));
+    }
+
+    /**
+     * Every MIME the registry lists for an extension — `.mp4` comes back as
+     * `application/mp4` first and `video/mp4` second, which is why callers
+     * pick from the whole list instead of trusting the first entry.
+     *
+     * @return array<int, string>
+     */
+    private static function registeredMimeTypes(?string $extension): array
+    {
+        return MimeTypes::getDefault()->getMimeTypes(strtolower((string) $extension));
     }
 
     /**

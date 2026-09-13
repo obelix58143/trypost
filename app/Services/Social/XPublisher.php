@@ -14,6 +14,7 @@ use App\Services\Media\MediaOptimizer;
 use App\Services\Social\Concerns\HasSocialHttpClient;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -164,7 +165,7 @@ class XPublisher
             }
 
             if (blank($mimeType)) {
-                $mimeType = mime_content_type($tempFile) ?: null;
+                $mimeType = File::mimeType($tempFile) ?: null;
             }
 
             if (blank($mimeType)) {

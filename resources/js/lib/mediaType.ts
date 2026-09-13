@@ -26,7 +26,8 @@ const PDF_MIME = 'application/pdf';
 const MEDIA_TYPES = Object.values(MediaType);
 
 // Broader than the upload allow-list so already-stored files in legacy formats
-// still resolve — mirrors Type::classifiableExtensions() on the backend.
+// still resolve. The backend (Type::fromExtension) consults the MIME registry;
+// the browser has none, so this is the subset of formats we have seen stored.
 const CLASSIFIABLE_EXTENSIONS: Record<MediaType, readonly string[]> = {
     [MediaType.Image]: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'],
     [MediaType.Video]: ['mp4', 'mov', 'avi', 'wmv', 'webm', 'mkv', 'm4v'],
@@ -35,8 +36,10 @@ const CLASSIFIABLE_EXTENSIONS: Record<MediaType, readonly string[]> = {
 
 const extensionOf = (nameOrPath: string | null | undefined): string => nameOrPath?.split('.').pop()?.toLowerCase() ?? '';
 
+const mimeFamily = (mime: string): string => mime.split('/')[0] ?? '';
+
 const ownsMime = (type: MediaType, mime: string): boolean =>
-    type === MediaType.Document ? mime === PDF_MIME : mime.startsWith(`${type}/`);
+    type === MediaType.Document ? mime === PDF_MIME : mimeFamily(mime) === type;
 
 /** The `accept` attribute value for a file input that takes any media we allow. */
 export const acceptAttribute = (): string => Object.values(ALLOWED_MIME_TYPES).flat().join(',');

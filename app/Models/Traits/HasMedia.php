@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Support\VideoDurationProbe;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -119,9 +120,9 @@ trait HasMedia
         }
 
         // Prefer an explicit MIME (e.g. from UploadedFile after FormRequest
-        // validation) — mime_content_type() misclassifies empty test fakes and
-        // some freshly written temps as application/x-empty.
-        $mimeType ??= mime_content_type($filePath) ?: null;
+        // validation) — sniffing misclassifies empty test fakes and some
+        // freshly written temps as application/x-empty.
+        $mimeType ??= File::mimeType($filePath) ?: null;
 
         if ($mimeType === null) {
             throw new InvalidArgumentException("Unable to determine MIME type for media file: {$filePath}");

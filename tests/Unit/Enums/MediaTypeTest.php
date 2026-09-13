@@ -90,6 +90,19 @@ test('fromExtension covers every legacy image and video extension', function () 
     }
 });
 
+test('mimeTypeFromExtension returns the allow-listed mime, not the registry\'s first guess', function () {
+    // The registry lists application/mp4 before video/mp4 and audio/x-ms-wmv before video/x-ms-wmv.
+    expect(Type::mimeTypeFromExtension('mp4'))->toBe('video/mp4');
+    expect(Type::mimeTypeFromExtension('MOV'))->toBe('video/quicktime');
+    expect(Type::mimeTypeFromExtension('jpg'))->toBe('image/jpeg');
+    expect(Type::mimeTypeFromExtension('pdf'))->toBe('application/pdf');
+
+    // Classifiable but not accepted on upload — no MIME to claim.
+    expect(Type::mimeTypeFromExtension('heic'))->toBeNull();
+    expect(Type::mimeTypeFromExtension('txt'))->toBeNull();
+    expect(Type::mimeTypeFromExtension(null))->toBeNull();
+});
+
 test('isGif only matches the gif mime', function () {
     expect(Type::isGif('image/gif'))->toBeTrue();
     expect(Type::isGif('image/png'))->toBeFalse();

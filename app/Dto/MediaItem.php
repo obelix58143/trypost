@@ -99,21 +99,7 @@ class MediaItem
     public static function fromArray(array $data): self
     {
         $path = data_get($data, 'path', '');
-        $mimeType = data_get($data, 'mime_type');
-
-        if (! $mimeType && $path) {
-            $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-            $mimeType = match ($extension) {
-                'jpg', 'jpeg' => 'image/jpeg',
-                'png' => 'image/png',
-                'gif' => 'image/gif',
-                'webp' => 'image/webp',
-                'mp4' => 'video/mp4',
-                'mov' => 'video/quicktime',
-                'pdf' => 'application/pdf',
-                default => null,
-            };
-        }
+        $mimeType = data_get($data, 'mime_type') ?: Type::mimeTypeFromExtension(pathinfo($path, PATHINFO_EXTENSION));
 
         $sourceValue = data_get($data, 'source');
         $source = is_string($sourceValue) ? Source::tryFrom($sourceValue) : null;

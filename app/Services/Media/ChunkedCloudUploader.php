@@ -232,8 +232,7 @@ class ChunkedCloudUploader
             return $detected;
         }
 
-        return MediaType::fromExtension($extension)?->allowedMimeTypes()[0]
-            ?? 'application/octet-stream';
+        return MediaType::mimeTypeFromExtension($extension) ?? 'application/octet-stream';
     }
 
     private function s3(): S3Client

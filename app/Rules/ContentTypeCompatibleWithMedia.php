@@ -152,11 +152,9 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
      */
     private function media(): array
     {
-        $raw = array_key_exists('media', $this->data)
-            ? data_get($this->data, 'media', [])
-            : ($this->fallbackMedia ?? []);
-
-        return collect($raw)->map(fn (mixed $item): array => (array) $item)->all();
+        return collect(data_get($this->data, 'media', $this->fallbackMedia))
+            ->map(fn (mixed $item): array => (array) $item)
+            ->all();
     }
 
     /**

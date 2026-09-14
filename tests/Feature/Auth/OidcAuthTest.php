@@ -602,3 +602,30 @@ test('registering with a password is closed while password sign-in is off', func
 
     expect(User::where('email', 'nobody@example.com')->exists())->toBeFalse();
 });
+
+test('logging out from the app hands the browser a full page visit', function () {
+    // The app posts logout through Inertia. A plain redirect gets followed by
+    // fetch(), which dies on the provider's CORS preflight - the browser never
+    // navigates and the provider session survives. Inertia answers a 409 with
+    // X-Inertia-Location so the client leaves the page properly.
+    config(['trypost.oidc_post_logout_redirect_uri' => null]);
+
+    $user = User::factory()->create(['oidc_id' => 'provider-subject-1']);
+
+    $driver = Mockery::mock(OidcProvider::class);
+    $driver->shouldReceive('endSessionEndpoint')->andReturn('https://idp.example.com/logout');
+    Socialite::shouldReceive('driver')->with('oidc')->andReturn($driver);
+
+    $response = $this->actingAs($user)
+        ->withSession([OidcController::ID_TOKEN_SESSION_KEY => 'id-token-value'])
+        ->withHeaders(['X-Inertia' => 'true'])
+        ->post(route('logout'));
+
+    $response->assertStatus(409);
+
+    expect($response->headers->get('X-Inertia-Location'))
+        ->toContain('https://idp.example.com/logout')
+        ->toContain('id_token_hint=id-token-value');
+
+    $this->assertGuest();
+});

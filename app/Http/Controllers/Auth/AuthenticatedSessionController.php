@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Socialite\Facades\Socialite;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -60,7 +61,7 @@ class AuthenticatedSessionController extends Controller
     /**
      * Destroy an authenticated session.
      */
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request): RedirectResponse|HttpResponse
     {
         // Read before the session goes away: RP-initiated logout needs the ID
         // token of this session as a hint for the provider.
@@ -72,7 +73,12 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        return $endSessionUrl ? redirect()->away($endSessionUrl) : redirect('/');
+        // Logging out is posted by Inertia, so an ordinary redirect would be
+        // followed by fetch() and die on the provider's CORS preflight - the
+        // browser never navigates and the provider session survives.
+        // Inertia::location makes the client do a full page visit, and still
+        // answers a non-Inertia request with a plain redirect.
+        return $endSessionUrl ? Inertia::location($endSessionUrl) : redirect('/');
     }
 
     /**

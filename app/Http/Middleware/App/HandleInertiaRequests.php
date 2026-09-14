@@ -13,7 +13,6 @@ use App\Http\Resources\App\HandleInertiaRequests\AuthUserResource;
 use App\Http\Resources\App\HandleInertiaRequests\AuthWorkspaceResource;
 use App\Http\Resources\App\PlanResource;
 use App\Models\Plan;
-use App\Models\User;
 use App\Support\Auth\LoginMethods;
 use Illuminate\Http\Request;
 use Inertia\Middleware;

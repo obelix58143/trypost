@@ -152,7 +152,7 @@ enum Type: string
      */
     private static function registeredMimeTypes(?string $extension): array
     {
-        return MimeTypes::getDefault()->getMimeTypes(strtolower((string) $extension));
+        return MimeTypes::getDefault()->getMimeTypes(Str::lower((string) $extension));
     }
 
     /**
@@ -170,11 +170,12 @@ enum Type: string
     }
 
     /**
-     * Mirrors `pathOf` in mediaType.ts: only an absolute URL is parsed (to drop
-     * `?query` and `#hash`); a bare filename is taken as-is, so `Photo #3.jpg`
-     * keeps its extension.
+     * Lower-cased extension of a filename, storage key or URL. Mirrors `pathOf`
+     * in mediaType.ts: only an absolute URL is parsed (to drop `?query` and
+     * `#hash`); a bare filename is taken as-is, so `Photo #3.jpg` keeps its
+     * extension.
      */
-    private static function extensionOf(?string $path): string
+    public static function extensionOf(?string $path): string
     {
         $path = (string) $path;
 
@@ -182,7 +183,7 @@ enum Type: string
             $path = (string) parse_url($path, PHP_URL_PATH);
         }
 
-        return strtolower(File::extension($path));
+        return Str::lower(File::extension($path));
     }
 
     /**

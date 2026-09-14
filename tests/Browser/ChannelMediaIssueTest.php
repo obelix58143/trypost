@@ -52,12 +52,26 @@ function seedChannelMediaIssuePost(): PostPlatform
 
 function waitForChannelIssueTestId(mixed $page, string $testId): void
 {
+    waitForChannelIssueCondition($page, $testId, 'el.getBoundingClientRect().height > 0');
+}
+
+function waitForChannelIssuePressed(mixed $page, string $testId): void
+{
+    waitForChannelIssueCondition($page, $testId, "el.getAttribute('aria-pressed') === 'true'");
+}
+
+/**
+ * Polls from the page (never sleep(): the test's HTTP server only ticks while
+ * Pest awaits Playwright) until the element exists and `$condition` holds.
+ */
+function waitForChannelIssueCondition(mixed $page, string $testId, string $condition): void
+{
     $page->script(<<<JS
         (async () => {
             const sel = '[data-testid="{$testId}"]';
             for (let i = 0; i < 100; i++) {
                 const el = document.querySelector(sel);
-                if (el && el.getBoundingClientRect().height > 0) return;
+                if (el && ({$condition})) return;
                 await new Promise((r) => setTimeout(r, 50));
             }
         })();
@@ -75,6 +89,7 @@ test('a channel the media does not fit stays selectable and shows the issue badg
         ->assertPresent("@channel-issue-{$postPlatform->id}");
 
     $page->click("@channel-{$postPlatform->id}");
+    waitForChannelIssuePressed($page, "channel-{$postPlatform->id}");
 
     $page->assertAttribute("@channel-{$postPlatform->id}", 'aria-pressed', 'true')
         ->assertPresent("@channel-issue-{$postPlatform->id}")

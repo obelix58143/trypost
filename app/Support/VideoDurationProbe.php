@@ -69,12 +69,15 @@ final class VideoDurationProbe
     }
 
     /**
+     * Writes a usable duration into `$meta`; nothing, zero, negative or
+     * non-finite (INF cannot be JSON-encoded) leaves it untouched.
+     *
      * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
     public static function mergeInto(array $meta, ?float $duration): array
     {
-        return $duration === null || $duration <= 0
+        return $duration === null || ! is_finite($duration) || $duration <= 0
             ? $meta
             : [...$meta, 'duration' => round($duration, 2)];
     }

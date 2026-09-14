@@ -15,6 +15,9 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class StoreChunkedAssetRequest extends FormRequest
 {
+    /** A day — far above any network's video cap, and finite. */
+    private const MAX_DURATION_SECONDS = 86_400;
+
     public function authorize(): bool
     {
         return true;
@@ -50,7 +53,8 @@ class StoreChunkedAssetRequest extends FormRequest
             'total_size' => ['required', 'integer', 'min:1', 'max:'.MediaType::Video->maxSizeInBytes()],
             'file_name' => ['required', 'string', 'ends_with:'.implode(',', $allowedSuffixes)],
             'upload_id' => ['required', 'string', 'uuid'],
-            'duration' => ['nullable', 'numeric', 'min:0'],
+            // Bounded so `1e999` (INF, which JSON cannot encode) never reaches the meta column.
+            'duration' => ['nullable', 'numeric', 'min:0', 'max:'.self::MAX_DURATION_SECONDS],
         ];
     }
 

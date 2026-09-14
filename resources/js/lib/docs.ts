@@ -1,10 +1,10 @@
-import { Platform } from '@/types/platform';
+import { Platform, type PlatformValue } from '@/types/platform';
 
 export const DOCS_URL = 'https://docs.trypost.it';
 
 // Anchors of the per-network sections in the media knowledge-base page. The
 // two Instagram and two LinkedIn variants share one section each.
-const MEDIA_LIMITS_ANCHOR: Record<string, string> = {
+const MEDIA_LIMITS_ANCHOR: Record<PlatformValue, string> = {
     [Platform.Instagram]: 'instagram',
     [Platform.InstagramFacebook]: 'instagram',
     [Platform.Facebook]: 'facebook',
@@ -22,7 +22,7 @@ const MEDIA_LIMITS_ANCHOR: Record<string, string> = {
 };
 
 export const mediaLimitsDocsUrl = (platform: string): string => {
-    const anchor = MEDIA_LIMITS_ANCHOR[platform];
+    const anchor: string | undefined = MEDIA_LIMITS_ANCHOR[platform as PlatformValue];
 
     return `${DOCS_URL}/knowledge-base/media${anchor ? `#${anchor}` : ''}`;
 };

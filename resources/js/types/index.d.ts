@@ -1,6 +1,7 @@
 import { InertiaLinkProps } from '@inertiajs/vue3';
 import type { Component } from 'vue';
 
+import type { ContentTypeMediaRule } from '@/lib/contentTypeMediaRules';
 import type { AuthPlan, Features, PlanOption } from '@/types/plan';
 import type { WelcomeSummary } from '@/types/welcome';
 
@@ -67,25 +68,6 @@ export interface NavItem {
     exact?: boolean;
     excludeActive?: string[];
     badge?: string;
-}
-
-export interface ContentTypeMediaRule {
-    max_files: number;
-    min_files: number | null;
-    accept_images: boolean;
-    accept_videos: boolean;
-    accept_documents: boolean;
-    requires_media: boolean;
-    accepts_gif: boolean;
-    accepts_mov: boolean;
-    forbids_mixed_media: boolean;
-    max_image_bytes: number | null;
-    max_video_bytes: number | null;
-    max_document_bytes: number | null;
-    max_video_duration_sec: number | null;
-    aspect_ratio_min: number | null;
-    aspect_ratio_max: number | null;
-    auto_fits_image: boolean;
 }
 
 export interface LegalLinks {

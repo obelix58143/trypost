@@ -113,6 +113,18 @@ test('fromMedia puts alt text in meta for images only and omits an empty meta', 
         ->and(MediaItem::fromMedia($document, 'ignored on pdf')->toArray())->not->toHaveKey('meta');
 });
 
+test('the stored type wins over a contradicting mime, and older items without one classify by mime then path', function () {
+    $typed = MediaItem::fromArray(['type' => 'image', 'mime_type' => 'video/mp4', 'path' => 'medias/clip.mp4']);
+    $byMime = MediaItem::fromArray(['mime_type' => 'video/mp4', 'path' => 'medias/photo.jpg']);
+    $byPath = MediaItem::fromArray(['path' => 'https://cdn.example.com/medias/clip.mov?sig=1']);
+
+    expect($typed->isImage())->toBeTrue()
+        ->and($typed->isVideo())->toBeFalse()
+        ->and($byMime->isVideo())->toBeTrue()
+        ->and($byPath->isVideo())->toBeTrue()
+        ->and($byPath->mime_type)->toBe('video/quicktime');
+});
+
 test('a stored item round-trips through fromArray and toArray', function () {
     $stored = [
         'id' => 'abc',

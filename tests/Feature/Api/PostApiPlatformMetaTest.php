@@ -216,7 +216,9 @@ it('rejects publishing an Instagram Reel whose stored video exceeds 300 MB', fun
     $this->withHeaders($this->headers)
         ->putJson(route('api.posts.update', $post), ['status' => PostStatus::Publishing->value])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['platforms.0.content_type']);
+        ->assertJsonValidationErrors([
+            'platforms.0.content_type' => trans('posts.form.warnings.video_too_large', ['max' => '300 MB', 'current' => '900.0 MB']),
+        ]);
 
     expect($post->fresh()->status)->not->toBe(PostStatus::Publishing);
 });

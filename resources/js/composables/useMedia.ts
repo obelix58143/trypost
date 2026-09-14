@@ -17,13 +17,13 @@ export interface MediaValidationWarning {
     params: Record<string, string>;
 }
 
-/** Mirrors `formatBytes` in ContentTypeCompatibleWithMedia.php, so the editor and the server word a violation the same way. */
-export const formatBytes = (bytes: number, decimal = false, precision = 1): string => {
+/** Same units and precision as `formatBytes` in ContentTypeCompatibleWithMedia.php, so the editor and the server's 422 agree on the numbers. */
+const formatBytes = (bytes: number, decimal = false, precision = 1): string => {
     const unit = decimal ? 1000 : 1024;
-    if (bytes >= unit ** 3) return (bytes / unit ** 3).toFixed(precision) + ' GB';
-    if (bytes >= unit ** 2) return (bytes / unit ** 2).toFixed(precision) + ' MB';
-    if (bytes >= unit) return (bytes / unit).toFixed(precision) + ' KB';
-    return bytes + ' B';
+    if (bytes >= unit ** 3) return `${(bytes / unit ** 3).toFixed(precision)} GB`;
+    if (bytes >= unit ** 2) return `${(bytes / unit ** 2).toFixed(precision)} MB`;
+    if (bytes >= unit) return `${(bytes / unit).toFixed(precision)} KB`;
+    return `${bytes} B`;
 };
 
 /** Caps declared in decimal megabytes (Bluesky) render as "300 MB", not "286 MB"; the cap is whole, the size keeps a decimal. */
@@ -64,7 +64,7 @@ const itemConstraintWarning = (item: MediaItem, rules: MediaRules): MediaValidat
                 current: date.formatDurationWords(Math.ceil(duration)),
             });
         }
-    } else if (rules.maxImageBytes && size > rules.maxImageBytes) {
+    } else if (isImage(item) && rules.maxImageBytes && size > rules.maxImageBytes) {
         return warning('image_too_large', sizeParams(rules.maxImageBytes, size));
     }
 

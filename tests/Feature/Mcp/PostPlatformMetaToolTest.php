@@ -313,7 +313,7 @@ test('publish post rejects an Instagram Reel whose stored video exceeds 300 MB',
     $response = TryPostServer::actingAs($this->user)
         ->tool(PublishPostTool::class, ['post_id' => $post->id]);
 
-    $response->assertHasErrors();
+    $response->assertHasErrors([trans('posts.form.warnings.video_too_large', ['max' => '300 MB', 'current' => '900.0 MB'])]);
     expect($post->fresh()->status)->toBe(PostStatus::Draft);
 });
 

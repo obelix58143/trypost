@@ -421,13 +421,16 @@ test('chunked upload ignores the duration header on images and without it stores
     expect($byName['clip.mp4']->meta ?? [])->not->toHaveKey('duration');
 });
 
-test('chunked upload rejects a non-numeric or negative duration header', function () {
+test('chunked upload rejects a non-numeric, negative or absurd duration header', function () {
     config(['filesystems.default' => 'local']);
     Storage::fake('local');
     seedChunkedUploadWorkspace();
 
     postChunkedAsset('clip.mp4', fakeMp4Bytes(), uploadId: Str::uuid()->toString(), duration: 'abc')->assertUnprocessable();
     postChunkedAsset('clip.mp4', fakeMp4Bytes(), uploadId: Str::uuid()->toString(), duration: '-1')->assertUnprocessable();
+    // `numeric` accepts `1e999`, which casts to INF and cannot be JSON-encoded into the meta column.
+    postChunkedAsset('clip.mp4', fakeMp4Bytes(), uploadId: Str::uuid()->toString(), duration: '1e999')->assertUnprocessable();
+    postChunkedAsset('clip.mp4', fakeMp4Bytes(), uploadId: Str::uuid()->toString(), duration: '86401')->assertUnprocessable();
 });
 
 // ─── HTTP: object storage ────────────────────────────────────────

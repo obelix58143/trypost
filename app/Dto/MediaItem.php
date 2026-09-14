@@ -8,7 +8,6 @@ use App\Enums\Media\Source;
 use App\Enums\Media\Type;
 use App\Enums\SocialAccount\Platform;
 use App\Models\Media;
-use Illuminate\Support\Facades\File;
 
 class MediaItem
 {
@@ -78,17 +77,27 @@ class MediaItem
 
     public function isVideo(): bool
     {
-        return Type::classify($this->mime_type, $this->path) === Type::Video;
+        return $this->kind() === Type::Video;
     }
 
     public function isImage(): bool
     {
-        return Type::classify($this->mime_type, $this->path) === Type::Image;
+        return $this->kind() === Type::Image;
     }
 
     public function isDocument(): bool
     {
-        return Type::classify($this->mime_type, $this->path) === Type::Document;
+        return $this->kind() === Type::Document;
+    }
+
+    /**
+     * The stored `type` wins, like `typeOf()` in ContentTypeCompatibleWithMedia
+     * and `classify()` in mediaType.ts; items saved before it existed classify
+     * by MIME, then by path.
+     */
+    private function kind(): ?Type
+    {
+        return $this->type ?? Type::classify($this->mime_type, $this->path);
     }
 
     /**
@@ -150,7 +159,7 @@ class MediaItem
     public static function fromArray(array $data): self
     {
         $path = data_get($data, 'path', '');
-        $mimeType = data_get($data, 'mime_type') ?: Type::mimeTypeFromExtension(File::extension($path));
+        $mimeType = data_get($data, 'mime_type') ?: Type::mimeTypeFromExtension(Type::extensionOf($path));
 
         $sourceValue = data_get($data, 'source');
         $source = is_string($sourceValue) ? Source::tryFrom($sourceValue) : null;

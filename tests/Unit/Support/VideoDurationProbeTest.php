@@ -143,5 +143,18 @@ test('merges a positive duration into meta and leaves the rest untouched', funct
         ->toBe(['width' => 1920, 'duration' => 1.24])
         ->and(VideoDurationProbe::mergeInto(['width' => 1920], null))->toBe(['width' => 1920])
         ->and(VideoDurationProbe::mergeInto(['width' => 1920], 0.0))->toBe(['width' => 1920])
-        ->and(VideoDurationProbe::mergeInto(['width' => 1920], -3.0))->toBe(['width' => 1920]);
+        ->and(VideoDurationProbe::mergeInto(['width' => 1920], -3.0))->toBe(['width' => 1920])
+        ->and(VideoDurationProbe::mergeInto(['width' => 1920], INF))->toBe(['width' => 1920])
+        ->and(VideoDurationProbe::mergeInto(['width' => 1920], NAN))->toBe(['width' => 1920]);
+});
+
+test('returns null for a zero timescale or an mvhd payload shorter than its version needs', function () {
+    $zeroTimescale = probeMp4(probeAtom('ftyp', 'isom'), probeAtom('moov', probeMvhd(0, 1000)));
+    // Version 1 needs 32 bytes; this payload declares v1 but carries only the v0 length.
+    $shortV1 = probeMp4(probeAtom('ftyp', 'isom'), probeAtom('moov', probeAtom('mvhd', "\x01".str_repeat("\0", 19))));
+    $shortV0 = probeMp4(probeAtom('ftyp', 'isom'), probeAtom('moov', probeAtom('mvhd', str_repeat("\0", 8))));
+
+    expect(VideoDurationProbe::fromReader(probeReader($zeroTimescale), strlen($zeroTimescale)))->toBeNull()
+        ->and(VideoDurationProbe::fromReader(probeReader($shortV1), strlen($shortV1)))->toBeNull()
+        ->and(VideoDurationProbe::fromReader(probeReader($shortV0), strlen($shortV0)))->toBeNull();
 });

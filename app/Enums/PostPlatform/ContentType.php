@@ -184,7 +184,7 @@ enum ContentType: string
      * Maximum video duration in seconds for this content type, when the
      * platform publishes a hard cap via API. Null when unlimited or unknown.
      * TikTok's `creator_info` may lower the 10 min ceiling per account; the
-     * publisher enforces that.
+     * editor reads it per account and TikTok rejects longer uploads itself.
      *
      * Single source of truth for web (via Inertia shared props), REST API,
      * and MCP content-type listings.

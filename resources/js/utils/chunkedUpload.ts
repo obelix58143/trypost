@@ -1,4 +1,4 @@
-import { MediaType, classifyBy } from '@/lib/mediaType';
+import { classifyBy, MediaType } from '@/lib/mediaType';
 import { probeVideoDuration } from '@/lib/videoDuration';
 
 interface ChunkedUploadOptions {

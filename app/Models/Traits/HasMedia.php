@@ -105,7 +105,7 @@ trait HasMedia
             'mime_type' => $normalizedMime,
             'size' => strlen($normalizedBytes),
             'order' => 0,
-            'meta' => array_merge($this->getMediaMetaFromBytes($normalizedBytes, $type, $meta), $meta),
+            'meta' => [...$this->imageDimensions($normalizedBytes, $type), ...$meta],
         ]);
     }
 
@@ -215,7 +215,7 @@ trait HasMedia
             'path' => $path,
             'mime_type' => $storedMime,
             'size' => strlen($bytes),
-            'meta' => array_merge($this->getMediaMetaFromBytes($bytes, $type, $meta), $meta),
+            'meta' => [...$this->imageDimensions($bytes, $type), ...$meta],
         ];
     }
 
@@ -277,22 +277,16 @@ trait HasMedia
     }
 
     /**
-     * Extract width/height from raw image bytes (used after format normalization
-     * when we no longer have the original file path).
+     * Pixel width / height of raw image bytes (read after format normalization,
+     * when the original file path is gone); nothing for other types.
+     *
+     * @return array<string, int>
      */
-    private function getMediaMetaFromBytes(string $bytes, Type $type, array $clientMeta = []): array
+    private function imageDimensions(string $bytes, Type $type): array
     {
-        $meta = [];
+        $info = $type === Type::Image ? @getimagesizefromstring($bytes) : false;
 
-        if ($type === Type::Image) {
-            $imageInfo = @getimagesizefromstring($bytes);
-            if ($imageInfo) {
-                $meta['width'] = $imageInfo[0];
-                $meta['height'] = $imageInfo[1];
-            }
-        }
-
-        return $meta;
+        return $info ? ['width' => $info[0], 'height' => $info[1]] : [];
     }
 
     /**

@@ -1,28 +1,24 @@
 const PROBE_TIMEOUT_MS = 5000;
 
 /** Video duration in seconds from the file's metadata; null when undecodable or timed out. */
-export const probeVideoDuration = async (file: File): Promise<number | null> => {
-    const video = document.createElement('video');
-    const url = URL.createObjectURL(file);
+export const probeVideoDuration = (file: File): Promise<number | null> =>
+    new Promise((resolve) => {
+        const video = document.createElement('video');
+        const url = URL.createObjectURL(file);
 
-    const metadata = new Promise<number | null>((resolve) => {
+        // Whichever fires first — metadata, error or timeout — settles the promise and releases the element.
+        const finish = (duration: number | null): void => {
+            clearTimeout(timer);
+            video.removeAttribute('src');
+            video.load();
+            URL.revokeObjectURL(url);
+            resolve(duration);
+        };
+
+        const timer = setTimeout(() => finish(null), PROBE_TIMEOUT_MS);
+
         video.preload = 'metadata';
-        video.onloadedmetadata = () => resolve(Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null);
-        video.onerror = () => resolve(null);
+        video.onloadedmetadata = () => finish(Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null);
+        video.onerror = () => finish(null);
         video.src = url;
     });
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), PROBE_TIMEOUT_MS);
-    });
-
-    try {
-        return await Promise.race([metadata, timeout]);
-    } finally {
-        clearTimeout(timer);
-        video.removeAttribute('src');
-        video.load();
-        URL.revokeObjectURL(url);
-    }
-};

@@ -87,7 +87,8 @@ it('attaches media from url with alt text', function () {
         ->assertOk()
         ->assertJsonPath('attached_count', 1);
 
-    expect(data_get($this->post->fresh()->media, '0.meta.alt_text'))->toBe('A red bicycle by a wall');
+    // The alt text joins the measured dimensions instead of replacing them.
+    expect(data_get($this->post->fresh()->media, '0.meta'))->toEqual(['width' => 1, 'height' => 1, 'alt_text' => 'A red bicycle by a wall']);
 });
 
 it('does not store alt text on a non-image url', function () {

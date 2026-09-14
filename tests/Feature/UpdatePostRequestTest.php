@@ -141,7 +141,10 @@ test('publishing a bluesky post with an oversized video is rejected server-side'
             ],
         ]);
 
-    $response->assertSessionHasErrors('platforms.0.content_type');
+    // Bluesky's cap is decimal, so both numbers render in decimal units.
+    $response->assertSessionHasErrors([
+        'platforms.0.content_type' => trans('posts.form.warnings.video_too_large', ['max' => '300 MB', 'current' => '300.0 MB']),
+    ]);
 });
 
 test('publishing a bluesky post with a video over the duration cap is rejected server-side', function () {

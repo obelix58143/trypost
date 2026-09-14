@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\Media\Type;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
@@ -16,17 +17,19 @@ test('the typescript media classifier agrees with the php enum on every corpus e
     $corpusPath = base_path('tests/fixtures/media-type-corpus.json');
     $corpus = json_decode(file_get_contents($corpusPath), true, flags: JSON_THROW_ON_ERROR);
 
-    $process = new Process([
-        'node',
+    $node = (new ExecutableFinder)->find('node');
+
+    if ($node === null) {
+        $this->markTestSkipped('node is unavailable');
+    }
+
+    // mustRun(): a broken harness or a syntax error in mediaType.ts is a failure, not a skip.
+    $process = (new Process([
+        $node,
         base_path('tests/fixtures/media-type-harness.js'),
         resource_path('js/lib/mediaType.ts'),
         $corpusPath,
-    ]);
-    $process->run();
-
-    if (! $process->isSuccessful()) {
-        $this->markTestSkipped('node is unavailable: '.$process->getErrorOutput());
-    }
+    ]))->mustRun();
 
     $fromPhp = array_map(function (array $item): array {
         $fileName = data_get($item, 'original_filename') ?? data_get($item, 'path');

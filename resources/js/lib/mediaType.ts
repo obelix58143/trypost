@@ -29,8 +29,8 @@ const MEDIA_TYPES = Object.values(MediaType);
 // still resolve. The backend (Type::fromExtension) consults the MIME registry;
 // the browser has none, so this is the subset of formats we have seen stored.
 const CLASSIFIABLE_EXTENSIONS: Record<MediaType, readonly string[]> = {
-    [MediaType.Image]: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'],
-    [MediaType.Video]: ['mp4', 'mov', 'avi', 'wmv', 'webm', 'mkv', 'm4v'],
+    [MediaType.Image]: ['jpg', 'jpeg', 'jfif', 'png', 'gif', 'webp', 'avif', 'bmp', 'tif', 'tiff', 'svg', 'psd', 'heic', 'heif'],
+    [MediaType.Video]: ['mp4', 'm4v', 'mov', 'avi', 'wmv', 'webm', 'mkv', 'mpeg', 'mpg', '3gp', 'flv', 'ogv'],
     [MediaType.Document]: ['pdf'],
 };
 

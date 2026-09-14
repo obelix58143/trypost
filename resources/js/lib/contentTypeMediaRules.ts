@@ -58,21 +58,22 @@ export const mediaRuleFor = (contentType: string): ContentTypeMediaRule | undefi
     return cachedRules?.[contentType];
 };
 
+/** A null cap from the server is simply no cap: every consumer reads the optional fields with `??` / `&&`. */
 export const toMediaRules = (rule: ContentTypeMediaRule): MediaRules => ({
     maxFiles: rule.max_files,
-    ...(rule.min_files !== null && { minFiles: rule.min_files }),
+    minFiles: rule.min_files ?? undefined,
     acceptImages: rule.accept_images,
     acceptVideos: rule.accept_videos,
-    ...(rule.accept_documents && { acceptDocuments: true }),
+    acceptDocuments: rule.accept_documents,
     requiresMedia: rule.requires_media,
     acceptsGif: rule.accepts_gif,
     acceptsMov: rule.accepts_mov,
-    ...(rule.forbids_mixed_media && { forbidsMixedMedia: true }),
-    ...(rule.max_image_bytes !== null && { maxImageBytes: rule.max_image_bytes }),
-    ...(rule.max_video_bytes !== null && { maxVideoBytes: rule.max_video_bytes }),
-    ...(rule.max_document_bytes !== null && { maxDocumentBytes: rule.max_document_bytes }),
-    ...(rule.max_video_duration_sec !== null && { maxVideoDurationSec: rule.max_video_duration_sec }),
-    ...(rule.aspect_ratio_min !== null && { aspectRatioMin: rule.aspect_ratio_min }),
-    ...(rule.aspect_ratio_max !== null && { aspectRatioMax: rule.aspect_ratio_max }),
-    ...(rule.auto_fits_image && { autoFitsImage: true }),
+    forbidsMixedMedia: rule.forbids_mixed_media,
+    maxImageBytes: rule.max_image_bytes ?? undefined,
+    maxVideoBytes: rule.max_video_bytes ?? undefined,
+    maxDocumentBytes: rule.max_document_bytes ?? undefined,
+    maxVideoDurationSec: rule.max_video_duration_sec ?? undefined,
+    aspectRatioMin: rule.aspect_ratio_min ?? undefined,
+    aspectRatioMax: rule.aspect_ratio_max ?? undefined,
+    autoFitsImage: rule.auto_fits_image,
 });

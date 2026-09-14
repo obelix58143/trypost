@@ -138,7 +138,7 @@ const pickAspectRatio = (value: string) => {
                 </div>
             </div>
 
-            <MediaRulesWarning :content-type="contentType" :media="media" :platform="socialAccount?.platform ?? Platform.Instagram" />
+            <MediaRulesWarning :content-type="contentType" :media="media" :platform="Platform.Instagram" />
         </div>
     </div>
 </template>

@@ -180,6 +180,10 @@ return [
     // instead of needing a separate invite each.
     'oidc_auto_join_enabled' => env('OIDC_AUTO_JOIN_ENABLED', false),
     'oidc_auto_join_role' => env('OIDC_AUTO_JOIN_ROLE', 'member'),
+    // Groups whose members administer the workspace. Set this and the role of
+    // every OIDC user follows the provider on each sign-in, which is what lets
+    // an instance run without a standing local admin account.
+    'oidc_admin_groups' => env('OIDC_ADMIN_GROUPS', ''),
     'oidc_auto_join_account_id' => env('OIDC_AUTO_JOIN_ACCOUNT_ID'),
 
     /*

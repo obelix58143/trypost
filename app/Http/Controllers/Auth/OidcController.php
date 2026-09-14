@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Actions\Auth\JoinOidcUserToAccount;
+use App\Actions\Auth\SyncOidcWorkspaceRole;
 use App\Actions\User\CreateUser;
 use App\Enums\Auth\SocialAuthProvider;
 use App\Enums\UserWorkspace\Role as WorkspaceRole;
@@ -102,10 +103,10 @@ class OidcController extends Controller
         }
 
         if ($user) {
-            return $this->loginExistingUser($user, $oidcUser->getId());
+            return $this->loginExistingUser($user, $oidcUser->getId(), $this->groupsOf($oidcUser));
         }
 
-        return $this->registerNewUser($oidcUser);
+        return $this->registerNewUser($oidcUser, $this->groupsOf($oidcUser));
     }
 
     private function connectToCurrentUser(User $user, string $oidcId): RedirectResponse
@@ -127,11 +128,18 @@ class OidcController extends Controller
             ->with('flash.success', __('settings.authentication.providers.flash_connected', ['provider' => SocialAuthProvider::Oidc->label()]));
     }
 
-    private function loginExistingUser(User $user, string $oidcId): RedirectResponse
+    /**
+     * @param  array<int, string>  $groups
+     */
+    private function loginExistingUser(User $user, string $oidcId, array $groups = []): RedirectResponse
     {
         if (! $user->oidc_id) {
             $user->update(['oidc_id' => $oidcId]);
         }
+
+        // Roles follow the provider on every sign-in, so revoking admin there
+        // takes effect here without anyone touching the application.
+        SyncOidcWorkspaceRole::execute($user, $groups);
 
         if (! $user->hasVerifiedEmail()) {
             $user->markEmailAsVerified();
@@ -153,6 +161,18 @@ class OidcController extends Controller
     }
 
     /**
+     * Group names as reported by the provider.
+     *
+     * @return array<int, string>
+     */
+    private function groupsOf(\Laravel\Socialite\Contracts\User $oidcUser): array
+    {
+        $claim = (string) config('trypost.oidc_groups_claim', 'groups');
+
+        return array_map('strval', (array) data_get($oidcUser->getRaw(), $claim, []));
+    }
+
+    /**
      * Whether the provider reported a group that is allowed to sign in. With no
      * allow-list configured, anyone the provider lets through is welcome - the
      * provider is then the only gate, which is the usual setup.
@@ -168,10 +188,7 @@ class OidcController extends Controller
             return true;
         }
 
-        $claim = (string) config('trypost.oidc_groups_claim', 'groups');
-        $groups = array_map('strval', (array) data_get($oidcUser->getRaw(), $claim, []));
-
-        return array_intersect($groups, $allowed) !== [];
+        return array_intersect($this->groupsOf($oidcUser), $allowed) !== [];
     }
 
     /**
@@ -185,7 +202,10 @@ class OidcController extends Controller
             && (bool) config('trypost.self_hosted');
     }
 
-    private function registerNewUser(\Laravel\Socialite\Contracts\User $oidcUser): RedirectResponse
+    /**
+     * @param  array<int, string>  $groups
+     */
+    private function registerNewUser(\Laravel\Socialite\Contracts\User $oidcUser, array $groups = []): RedirectResponse
     {
         // With auto-join on, provider group membership replaces the invite, so
         // a missing invite must not be a hard stop.
@@ -224,6 +244,8 @@ class OidcController extends Controller
             $role = WorkspaceRole::tryFrom((string) config('trypost.oidc_auto_join_role')) ?? WorkspaceRole::Member;
 
             if (JoinOidcUserToAccount::execute($user, $role)) {
+                SyncOidcWorkspaceRole::execute($user->fresh(), $groups);
+
                 return redirect()->route('app.home');
             }
         }

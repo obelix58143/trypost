@@ -629,3 +629,75 @@ test('logging out from the app hands the browser a full page visit', function ()
 
     $this->assertGuest();
 });
+
+// ------------------------------------------------- roles from provider groups ---
+
+/**
+ * A workspace with one member, so role changes have something to act on.
+ *
+ * @return array{0: User, 1: Workspace}
+ */
+function memberInWorkspace(string $email, string $role = 'member'): array
+{
+    $account = Account::factory()->create(['created_at' => now()->subDay()]);
+    $owner = User::factory()->create(['account_id' => $account->id]);
+    $account->update(['owner_id' => $owner->id]);
+    $workspace = Workspace::factory()->create([
+        'account_id' => $account->id,
+        'user_id' => $owner->id,
+    ]);
+
+    $user = User::factory()->create([
+        'email' => $email,
+        'account_id' => $account->id,
+        'oidc_id' => 'provider-subject-1',
+    ]);
+    $workspace->members()->attach($user->id, ['role' => $role]);
+
+    return [$user, $workspace];
+}
+
+test('a member of an admin group becomes workspace admin on sign-in', function () {
+    config(['trypost.oidc_admin_groups' => 'board, ops']);
+
+    [$user, $workspace] = memberInWorkspace('member@example.com');
+
+    fakeOidcDriver(['groups' => ['staff', 'ops']]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
+        ->toBe('admin');
+});
+
+test('losing the admin group drops the role again on the next sign-in', function () {
+    // This is what makes offboarding work in one place: take someone out of
+    // the group at the provider and their rights go with it.
+    config([
+        'trypost.oidc_admin_groups' => 'board',
+        'trypost.oidc_auto_join_role' => 'member',
+    ]);
+
+    [$user, $workspace] = memberInWorkspace('member@example.com', 'admin');
+
+    fakeOidcDriver(['groups' => ['staff']]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
+        ->toBe('member');
+});
+
+test('roles are left alone while no admin group is configured', function () {
+    config(['trypost.oidc_admin_groups' => '']);
+
+    [$user, $workspace] = memberInWorkspace('member@example.com', 'admin');
+
+    fakeOidcDriver(['groups' => []]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    // Without the setting the application stays in charge of roles.
+    expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
+        ->toBe('admin');
+});

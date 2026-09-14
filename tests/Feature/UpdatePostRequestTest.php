@@ -112,7 +112,7 @@ test('scheduling a bluesky post with a mov video is not rejected on format', fun
     $response->assertSessionDoesntHaveErrors(['platforms.0.content_type']);
 });
 
-test('publishing a bluesky post with an oversized image is rejected server-side', function () {
+test('publishing a bluesky post with an oversized video is rejected server-side', function () {
     $blueskyAccount = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::Bluesky,
@@ -129,12 +129,12 @@ test('publishing a bluesky post with an oversized image is rejected server-side'
             'status' => Status::Publishing->value,
             'media' => [[
                 'id' => 'test-media-big',
-                'path' => 'media/2026-01/big.jpg',
-                'url' => 'https://example.com/media/2026-01/big.jpg',
-                'type' => 'image',
-                'mime_type' => 'image/jpeg',
-                'original_filename' => 'big.jpg',
-                'size' => 2_000_001,
+                'path' => 'media/2026-01/big.mp4',
+                'url' => 'https://example.com/media/2026-01/big.mp4',
+                'type' => 'video',
+                'mime_type' => 'video/mp4',
+                'original_filename' => 'big.mp4',
+                'size' => 300_000_001,
             ]],
             'platforms' => [
                 ['id' => $blueskyPlatform->id, 'content_type' => ContentType::BlueskyPost->value],

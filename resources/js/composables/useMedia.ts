@@ -17,19 +17,20 @@ export interface MediaValidationWarning {
     params: Record<string, string>;
 }
 
-export const formatBytes = (bytes: number, decimal = false): string => {
+/** Mirrors `formatBytes` in ContentTypeCompatibleWithMedia.php, so the editor and the server word a violation the same way. */
+export const formatBytes = (bytes: number, decimal = false, precision = 1): string => {
     const unit = decimal ? 1000 : 1024;
-    if (bytes >= unit ** 3) return (bytes / unit ** 3).toFixed(1) + ' GB';
-    if (bytes >= unit ** 2) return (bytes / unit ** 2).toFixed(1) + ' MB';
-    if (bytes >= unit) return (bytes / unit).toFixed(1) + ' KB';
+    if (bytes >= unit ** 3) return (bytes / unit ** 3).toFixed(precision) + ' GB';
+    if (bytes >= unit ** 2) return (bytes / unit ** 2).toFixed(precision) + ' MB';
+    if (bytes >= unit) return (bytes / unit).toFixed(precision) + ' KB';
     return bytes + ' B';
 };
 
-/** Caps declared in decimal megabytes (Bluesky) render as "300.0 MB", not "286.1 MB". */
+/** Caps declared in decimal megabytes (Bluesky) render as "300 MB", not "286 MB"; the cap is whole, the size keeps a decimal. */
 const sizeParams = (cap: number, size: number): Record<string, string> => {
     const decimal = cap % 1_000_000 === 0 && cap % (1024 * 1024) !== 0;
 
-    return { max: formatBytes(cap, decimal), current: formatBytes(size, decimal) };
+    return { max: formatBytes(cap, decimal, 0), current: formatBytes(size, decimal, 1) };
 };
 
 const formatAspect = (ratio: number): string => ratio.toFixed(2);
@@ -57,9 +58,10 @@ const itemConstraintWarning = (item: MediaItem, rules: MediaRules): MediaValidat
         }
 
         if (rules.maxVideoDurationSec && duration > rules.maxVideoDurationSec) {
+            // Ceil, like the server: a 60.2s clip is over a 60s cap and must not read as "60s".
             return warning('video_too_long', {
                 max: date.formatDurationWords(rules.maxVideoDurationSec),
-                current: date.formatDurationWords(duration),
+                current: date.formatDurationWords(Math.ceil(duration)),
             });
         }
     } else if (rules.maxImageBytes && size > rules.maxImageBytes) {
@@ -125,7 +127,10 @@ export const getMediaItemIssue = (item: MediaItem, contentType: string): string 
     const rules = getMediaRulesForContentType(contentType);
 
     if (isDocument(item)) {
-        return ! rules.acceptDocuments ? 'no_document_allowed' : itemConstraintWarning(item, rules)?.key ?? null;
+        return firstWarning(
+            ! rules.acceptDocuments && warning('no_document_allowed'),
+            itemConstraintWarning(item, rules),
+        )?.key ?? null;
     }
 
     return firstWarning(

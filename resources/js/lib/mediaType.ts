@@ -35,12 +35,23 @@ const CLASSIFIABLE_EXTENSIONS: Record<MediaType, readonly string[]> = {
 };
 
 /**
- * The path of a `File.name`, a storage key or a full URL, lower-cased. The
- * URL parser drops the host, `?query` and `#hash`; relative input resolves
- * against the page the same way an `<a href>` would.
+ * A `File.name`, a storage key or a full URL, lower-cased. Only an absolute
+ * URL is parsed (to drop the host, `?query` and `#hash`); a bare filename is
+ * taken as-is, so `Photo #3.jpg` keeps its extension.
  */
-const pathOf = (nameOrPath: string | null | undefined): string =>
-    URL.parse(nameOrPath ?? '', document.baseURI)?.pathname.toLowerCase() ?? '';
+const pathOf = (nameOrPath: string | null | undefined): string => {
+    const value = (nameOrPath ?? '').toLowerCase();
+
+    if (! value.includes('://')) {
+        return value;
+    }
+
+    try {
+        return new URL(value).pathname;
+    } catch {
+        return '';
+    }
+};
 
 /** Whether the path ends in one of the extensions. The dot is part of the match, so `clip` and `/v1.2/clip` match nothing. */
 const hasExtension = (path: string, extensions: readonly string[]): boolean =>
@@ -79,6 +90,14 @@ export const fromExtension = (nameOrPath: string | null | undefined): MediaType 
 };
 
 /**
+ * Mirror of `Type::classify($mimeType, $path)`: a present MIME decides on its
+ * own (an unrecognised one is null, never overridden by the extension); the
+ * extension is consulted only when there is no MIME at all.
+ */
+export const classifyBy = (mime: string | null | undefined, nameOrPath: string | null | undefined): MediaType | null =>
+    normalizeMime(mime) === '' ? fromExtension(nameOrPath) : fromMimeType(mime);
+
+/**
  * Classify a media item. Trusts the server-assigned `type` first, then the MIME,
  * then falls back to the filename extension so already-stored items still
  * resolve. Returns null only when nothing identifies the item.
@@ -91,7 +110,7 @@ export const classify = (item: ClassifiableMedia | null | undefined): MediaType 
         return explicit;
     }
 
-    return fromMimeType(item.mime_type) ?? fromExtension(item.original_filename ?? item.path);
+    return classifyBy(item.mime_type, item.original_filename ?? item.path);
 };
 
 export const isImage = (item: ClassifiableMedia | null | undefined): boolean => classify(item) === MediaType.Image;

@@ -362,6 +362,34 @@ test('chunked upload probes the duration from object storage on the multipart pa
     expect(test()->workspace->getMedia('assets')->first()->meta)->toEqual(['duration' => 1.0]);
 });
 
+test('chunked upload never probes object storage for a non-video on the multipart path', function () {
+    config(['filesystems.default' => 's3', 'filesystems.disks.s3.driver' => 's3']);
+    Storage::fake('s3');
+    seedChunkedUploadWorkspace();
+
+    $fake = Mockery::mock(ChunkedCloudUploader::class);
+    $fake->shouldReceive('shouldUseMultipart')->with('deck.pdf')->andReturn(true);
+    $fake->shouldReceive('receiveChunk')->once()->andReturn([
+        'done' => true, 'progress' => 100, 'path' => 'medias/deck.pdf', 'size' => 12, 'mime_type' => 'application/pdf',
+    ]);
+    $fake->shouldNotReceive('readRange');
+    app()->instance(ChunkedCloudUploader::class, $fake);
+
+    postChunkedAsset('deck.pdf', '%PDF-1.4 xx', uploadId: Str::uuid()->toString(), duration: '600')->assertSuccessful();
+
+    expect(test()->workspace->getMedia('assets')->first()->meta ?? [])->not->toHaveKey('duration');
+});
+
+test('chunked upload stores no duration when the browser reports zero and the file carries none', function () {
+    config(['filesystems.default' => 'local']);
+    Storage::fake('local');
+    seedChunkedUploadWorkspace();
+
+    postChunkedAsset('clip.mp4', fakeMp4Bytes(), uploadId: Str::uuid()->toString(), duration: '0')->assertSuccessful();
+
+    expect(test()->workspace->getMedia('assets')->first()->meta ?? [])->not->toHaveKey('duration');
+});
+
 test('chunked upload keeps the browser duration when object storage cannot be probed', function () {
     config(['filesystems.default' => 's3', 'filesystems.disks.s3.driver' => 's3']);
     Storage::fake('s3');

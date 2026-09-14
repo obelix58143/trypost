@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Enums\Media\Source;
-use App\Models\Media;
 use Closure;
 use Illuminate\Validation\Rule;
 
@@ -61,32 +60,6 @@ class PostMediaRules
             }],
             'media.*.source' => ['sometimes', 'nullable', 'string', Rule::in(array_column(Source::cases(), 'value'))],
             'media.*.source_meta' => ['sometimes', 'nullable', 'array'],
-        ];
-    }
-
-    /**
-     * The `posts.media` item for a stored asset. Carries the asset's `meta` so
-     * the publish-time checks can read the measured video duration.
-     *
-     * @return array<string, mixed>
-     */
-    public static function snapshot(Media $media, ?string $alt = null): array
-    {
-        $meta = (array) data_get($media, 'meta', []);
-
-        if (filled($alt) && $media->isImage()) {
-            data_set($meta, 'alt_text', $alt);
-        }
-
-        return [
-            'id' => $media->id,
-            'path' => $media->path,
-            'url' => $media->url,
-            'type' => $media->type->value,
-            'mime_type' => $media->mime_type,
-            'original_filename' => $media->original_filename,
-            'size' => $media->size,
-            ...($meta === [] ? [] : ['meta' => $meta]),
         ];
     }
 }

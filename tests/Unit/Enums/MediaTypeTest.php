@@ -67,6 +67,18 @@ test('classify falls back to the file extension when the mime is missing', funct
     expect(Type::classify(null, null))->toBeNull();
 });
 
+test('extensions outside the upload allow-list still classify but never yield an upload mime', function () {
+    // The Symfony registry knows these, so a stored `clip.3gp` is a video for cap/multipart purposes...
+    expect(Type::classify(null, 'clip.3gp'))->toBe(Type::Video);
+    expect(Type::classify(null, 'clip.flv'))->toBe(Type::Video);
+    expect(Type::classify(null, 'layers.psd'))->toBe(Type::Image);
+    // ...but the upload path only recognises MIMEs from the allow-list, so these get none.
+    expect(Type::mimeTypeFromExtension('3gp'))->toBeNull();
+    expect(Type::mimeTypeFromExtension('flv'))->toBeNull();
+    expect(Type::mimeTypeFromExtension('psd'))->toBeNull();
+    expect(Type::mimeTypeFromExtension('mov'))->toBe('video/quicktime');
+});
+
 test('classify prefers the mime over the extension', function () {
     // A mismatched extension never overrides a present, recognized mime.
     expect(Type::classify('video/mp4', 'thing.png'))->toBe(Type::Video);

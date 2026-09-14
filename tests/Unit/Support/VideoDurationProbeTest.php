@@ -100,6 +100,40 @@ test('reads only atom headers, never the mdat payload', function () {
         ->and($bytesRead)->toBeLessThan(200);
 });
 
+test('stops reading once mvhd is found and takes the first one, not the last', function () {
+    // Two mvhd atoms: the first is the real one; the trailing `trak`s and the second mvhd must never be read.
+    $moov = probeAtom('moov', probeMvhd(1, 12).probeAtom('trak', str_repeat('t', 64)).probeAtom('trak', str_repeat('t', 64)).probeMvhd(1, 99));
+    $bytes = probeMp4(probeAtom('ftyp', 'isom'), $moov);
+    $offsets = [];
+
+    $duration = VideoDurationProbe::fromReader(function (int $offset, int $length) use ($bytes, &$offsets): string {
+        $offsets[] = $offset;
+
+        return substr($bytes, $offset, $length);
+    }, strlen($bytes));
+
+    // ftyp header, moov header, mvhd header, mvhd payload — and nothing past the first mvhd.
+    expect($duration)->toBe(12.0)
+        ->and($offsets)->toHaveCount(4)
+        ->and(max($offsets))->toBeLessThan(strpos($bytes, 'trak'));
+});
+
+test('gives up after a bounded number of atoms so a padded upload cannot fan out into thousands of reads', function () {
+    // 10k empty `free` atoms in front of moov: every header would be one ranged GET on object storage.
+    $padding = str_repeat(probeAtom('free', ''), 10_000);
+    $bytes = probeMp4(probeAtom('ftyp', 'isom'), $padding, probeAtom('moov', probeMvhd(1, 12)));
+    $reads = 0;
+
+    $duration = VideoDurationProbe::fromReader(function (int $offset, int $length) use ($bytes, &$reads): string {
+        $reads++;
+
+        return substr($bytes, $offset, $length);
+    }, strlen($bytes));
+
+    expect($duration)->toBeNull()
+        ->and($reads)->toBeLessThanOrEqual(64);
+});
+
 test('returns null for an unreadable path', function () {
     expect(VideoDurationProbe::fromFile('/nonexistent/clip.mp4'))->toBeNull();
 });

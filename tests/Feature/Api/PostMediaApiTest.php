@@ -372,7 +372,8 @@ it('keeps the measured duration when an external video url is submitted with its
     $this->withHeaders(['Authorization' => 'Bearer '.$this->plainToken])
         ->postJson(route('api.posts.store'), [
             'content' => 'External video post',
-            'media' => [['url' => 'https://93.184.216.34/clip.mp4', 'meta' => ['alt_text' => 'ignored on video']]],
+            // A client-sent duration must not replace the one measured from the downloaded file.
+            'media' => [['url' => 'https://93.184.216.34/clip.mp4', 'meta' => ['alt_text' => 'ignored on video', 'duration' => 9999]]],
             'platforms' => [
                 ['social_account_id' => $this->socialAccount->id, 'content_type' => 'linkedin_post'],
             ],

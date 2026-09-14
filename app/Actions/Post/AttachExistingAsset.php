@@ -7,7 +7,6 @@ namespace App\Actions\Post;
 use App\Actions\Media\FindWorkspaceAsset;
 use App\Models\Media;
 use App\Models\Post;
-use App\Support\PostMediaRules;
 use App\Support\PostStatusRules;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -64,7 +63,7 @@ class AttachExistingAsset
             }
 
             $fresh->update([
-                'media' => collect($fresh->media ?? [])->push(PostMediaRules::snapshot($asset, $alt))->all(),
+                'media' => collect($fresh->media ?? [])->push($asset->toPostMediaItem($alt))->all(),
             ]);
             $post->setRawAttributes($fresh->getAttributes(), true);
         });

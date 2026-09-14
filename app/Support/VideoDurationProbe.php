@@ -6,7 +6,6 @@ namespace App\Support;
 
 use Closure;
 use Generator;
-use Illuminate\Support\Arr;
 
 /**
  * Reads a video's duration from the `moov > mvhd` atom of an MP4 / MOV file.
@@ -24,6 +23,14 @@ final class VideoDurationProbe
     private const MVHD_V1_BYTES = 32;
 
     private const MVHD_UNKNOWN_DURATION = 0xFFFFFFFF;
+
+    /**
+     * A real file has a handful of atoms per level (`ftyp`, `moov`, `mdat`, a
+     * few `trak`s). Each header is one read — a ranged GET on object storage —
+     * so an upload padded with thousands of tiny atoms must not turn into
+     * thousands of requests. Past this many, the duration is simply unknown.
+     */
+    private const MAX_ATOMS_PER_LEVEL = 64;
 
     /**
      * @param  Closure(int, int): string  $reader  Returns up to `$length` bytes starting at `$offset`.
@@ -89,23 +96,34 @@ final class VideoDurationProbe
      */
     private function payload(string $type, ?array $within): ?array
     {
-        return $within === null ? null : Arr::first(
-            $this->atoms(...$within),
-            fn (array $bounds, string $atomType): bool => $atomType === $type,
-        );
+        if ($within === null) {
+            return null;
+        }
+
+        // A plain loop, not Arr::first(): that would drain the generator first,
+        // reading every sibling header (one ranged GET each on object storage).
+        foreach ($this->atoms(...$within) as $atomType => $bounds) {
+            if ($atomType === $type) {
+                return $bounds;
+            }
+        }
+
+        return null;
     }
 
     /**
      * Walks the atoms laid out between `$from` and `$to`, yielding each type
-     * with its payload bounds. A header that cannot be read ends the walk.
+     * with its payload bounds. A header that cannot be read, or one atom too
+     * many, ends the walk.
      *
      * @return Generator<string, array{int, int}>
      */
     private function atoms(int $from, int $to): Generator
     {
         $offset = $from;
+        $remaining = self::MAX_ATOMS_PER_LEVEL;
 
-        while ($offset + self::ATOM_HEADER_BYTES <= $to && ($header = $this->header($offset, $to)) !== null) {
+        while ($remaining-- > 0 && $offset + self::ATOM_HEADER_BYTES <= $to && ($header = $this->header($offset, $to)) !== null) {
             [$size, $type, $headerBytes] = $header;
 
             yield $type => [$offset + $headerBytes, $offset + $size];

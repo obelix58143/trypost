@@ -12,11 +12,15 @@ export const probeVideoDuration = async (file: File): Promise<number | null> => 
         video.src = url;
     });
 
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PROBE_TIMEOUT_MS));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), PROBE_TIMEOUT_MS);
+    });
 
     try {
         return await Promise.race([metadata, timeout]);
     } finally {
+        clearTimeout(timer);
         video.removeAttribute('src');
         video.load();
         URL.revokeObjectURL(url);

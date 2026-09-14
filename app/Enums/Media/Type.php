@@ -99,9 +99,11 @@ enum Type: string
      */
     public static function classify(?string $mimeType, ?string $path = null): ?self
     {
-        return filled($mimeType)
-            ? self::owner($mimeType)
-            : self::fromExtension(self::extensionOf($path));
+        $mimeType = self::normalizeMime($mimeType);
+
+        return $mimeType === ''
+            ? self::fromExtension(self::extensionOf($path))
+            : self::owner($mimeType);
     }
 
     /**
@@ -159,16 +161,36 @@ enum Type: string
      */
     public static function isGif(?string $mimeType): bool
     {
-        return $mimeType === self::GIF_MIME;
+        return self::normalizeMime($mimeType) === self::GIF_MIME;
     }
 
     public static function isMov(?string $mimeType, ?string $path = null): bool
     {
-        return $mimeType === self::MOV_MIME || self::extensionOf($path) === 'mov';
+        return self::normalizeMime($mimeType) === self::MOV_MIME || self::extensionOf($path) === 'mov';
     }
 
+    /**
+     * Mirrors `pathOf` in mediaType.ts: only an absolute URL is parsed (to drop
+     * `?query` and `#hash`); a bare filename is taken as-is, so `Photo #3.jpg`
+     * keeps its extension.
+     */
     private static function extensionOf(?string $path): string
     {
-        return strtolower(File::extension((string) $path));
+        $path = (string) $path;
+
+        if (Str::contains($path, '://')) {
+            $path = (string) parse_url($path, PHP_URL_PATH);
+        }
+
+        return strtolower(File::extension($path));
+    }
+
+    /**
+     * Lower-cased `type/subtype` with any `; codecs=...` parameter dropped, so
+     * comparisons are exact. Mirrors `normalizeMime` in mediaType.ts.
+     */
+    private static function normalizeMime(?string $mimeType): string
+    {
+        return Str::of((string) $mimeType)->before(';')->trim()->lower()->value();
     }
 }

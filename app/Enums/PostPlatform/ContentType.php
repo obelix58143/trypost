@@ -248,6 +248,9 @@ enum ContentType: string
      * (trypost.media.max_size_mb.image). Null when images are not accepted or
      * the platform has no tighter editor-side limit than that hard cap.
      * Telegram is the URL-publish limit (5 MB), not the multipart one.
+     * Bluesky's blob limit is 2 MB, but BlueskyPublisher re-encodes every
+     * non-GIF image under it, so capping the original here would only block
+     * posts that publish fine.
      */
     public function maxImageBytes(): ?int
     {
@@ -258,7 +261,6 @@ enum ContentType: string
             self::PinterestPin, self::PinterestCarousel => self::bytesFromMb(20),
             self::XPost => self::bytesFromMb(5),
             self::ThreadsPost => self::bytesFromMb(8),
-            self::BlueskyPost => self::bytesFromDecimalMb(2),
             self::TikTokPhoto => self::bytesFromMb(20),
             self::MastodonPost => self::bytesFromMb(10),
             self::DiscordMessage => self::bytesFromMb(20),

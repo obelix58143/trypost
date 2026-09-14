@@ -139,7 +139,13 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
             return;
         }
 
-        $this->failOnKindRules($contentType, $media, $fail);
+        // One message per platform, like `firstWarning` in useMedia.ts: a kind violation
+        // ("does not accept GIF") is the root cause, so a size violation on the same
+        // item must not overwrite it in errorsFor().
+        if ($this->failOnKindRules($contentType, $media, $fail)) {
+            return;
+        }
+
         $this->failOnSizeAndDurationCaps($contentType, $media, $fail);
     }
 
@@ -157,10 +163,13 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     }
 
     /**
+     * Reports the first kind violation, in the editor's priority order.
+     *
      * @param  array<int, array<string, mixed>>  $media
      * @param  Closure(string, ?string=): PotentiallyTranslatedString  $fail
+     * @return bool Whether a violation was reported.
      */
-    private function failOnKindRules(ContentType $contentType, array $media, Closure $fail): void
+    private function failOnKindRules(ContentType $contentType, array $media, Closure $fail): bool
     {
         $items = collect($media);
         $hasImage = $items->contains($this->isImage(...));
@@ -168,25 +177,32 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
         $hasDocument = $items->contains($this->isDocument(...));
 
         $violations = [
-            'no_image_allowed' => $hasImage && ! $contentType->supportsImage(),
             'no_video_allowed' => $hasVideo && ! $contentType->supportsVideo(),
+            'no_image_allowed' => $hasImage && ! $contentType->supportsImage(),
             'no_document_allowed' => $hasDocument && ! $contentType->supportsDocument(),
-            'document_not_alone' => $hasDocument && count($media) > 1,
             'no_mixed_media' => $hasImage && $hasVideo && ! $contentType->supportsMixedMedia(),
+            'document_not_alone' => $hasDocument && count($media) > 1,
             'gif_not_allowed' => $items->contains($this->isGif(...)) && ! $contentType->acceptsGif(),
             'mov_not_allowed' => $items->contains($this->isMov(...)) && ! $contentType->acceptsMov(),
         ];
 
-        foreach ($violations as $key => $failed) {
-            if ($failed) {
-                $fail(trans("posts.form.warnings.{$key}"));
-            }
+        $key = array_find_key($violations, fn (bool $failed): bool => $failed);
+
+        if ($key === null) {
+            return false;
         }
+
+        $fail(trans("posts.form.warnings.{$key}"));
+
+        return true;
     }
 
     /**
-     * Server-side mirror of the editor's size / duration checks. `meta.duration`
-     * is read from the file on upload; an item without it is not checked.
+     * Server-side mirror of the editor's size / duration checks, so API and MCP
+     * clients get the same early warning the editor shows. `size` and
+     * `meta.duration` are the item's own values (written by the server on upload,
+     * resubmitted by the client); an item without them is not checked. This is a
+     * courtesy check, not a security boundary — the network enforces its own caps.
      *
      * @param  array<int, array<string, mixed>>  $media
      * @param  Closure(string, ?string=): PotentiallyTranslatedString  $fail
@@ -222,20 +238,19 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     }
 
     /**
+     * The cap an item is measured against; none when nothing identifies the item.
+     *
      * @param  array<string, mixed>  $item
-     * @return array{0: string, 1: int|null}
+     * @return array{0: string|null, 1: int|null}
      */
     private function byteCap(ContentType $contentType, array $item): array
     {
-        if ($this->isDocument($item)) {
-            return ['document_too_large', $contentType->maxDocumentBytes()];
-        }
-
-        if ($this->isVideo($item)) {
-            return ['video_too_large', $contentType->maxVideoBytes()];
-        }
-
-        return ['image_too_large', $contentType->maxImageBytes()];
+        return match ($this->typeOf($item)) {
+            MediaType::Document => ['document_too_large', $contentType->maxDocumentBytes()],
+            MediaType::Video => ['video_too_large', $contentType->maxVideoBytes()],
+            MediaType::Image => ['image_too_large', $contentType->maxImageBytes()],
+            null => [null, null],
+        };
     }
 
     /**
@@ -244,8 +259,8 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
      */
     private function formatBytes(int $bytes, int $cap, int $precision = 0): string
     {
-        return self::isDecimalCap($cap)
-            ? self::formatDecimalBytes($bytes, $precision)
+        return $this->isDecimalCap($cap)
+            ? $this->formatDecimalBytes($bytes, $precision)
             : Number::fileSize($bytes, $precision);
     }
 
@@ -253,19 +268,26 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
      * A cap built with ContentType::bytesFromDecimalMb(): a whole number of
      * megabytes that is not also a whole number of mebibytes.
      */
-    private static function isDecimalCap(int $cap): bool
+    private function isDecimalCap(int $cap): bool
     {
         return $cap % 1_000_000 === 0 && $cap % (1024 * 1024) !== 0;
     }
 
-    private static function formatDecimalBytes(int $bytes, int $precision): string
+    private function formatDecimalBytes(int $bytes, int $precision): string
     {
-        return match (true) {
-            $bytes >= 1_000_000_000 => Number::format($bytes / 1_000_000_000, $precision).' GB',
-            $bytes >= 1_000_000 => Number::format($bytes / 1_000_000, $precision).' MB',
-            $bytes >= 1_000 => Number::format($bytes / 1_000, $precision).' KB',
-            default => "{$bytes} B",
+        if ($bytes < 1_000) {
+            return "{$bytes} B";
+        }
+
+        [$divisor, $unit] = match (true) {
+            $bytes >= 1_000_000_000 => [1_000_000_000, 'GB'],
+            $bytes >= 1_000_000 => [1_000_000, 'MB'],
+            default => [1_000, 'KB'],
         };
+
+        $value = Number::format($bytes / $divisor, $precision);
+
+        return "{$value} {$unit}";
     }
 
     /**
@@ -296,10 +318,7 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
      */
     private function isMov(array $item): bool
     {
-        return MediaType::isMov(
-            data_get($item, 'mime_type'),
-            data_get($item, 'original_filename') ?? data_get($item, 'path'),
-        );
+        return MediaType::isMov(data_get($item, 'mime_type'), $this->fileNameOf($item));
     }
 
     /**
@@ -327,14 +346,32 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     }
 
     /**
-     * A media item matches a type when it carries that explicit `type`, or when
-     * its MIME classifies as that type.
+     * Mirrors `classify()` in mediaType.ts: the explicit `type` wins, otherwise
+     * the item classifies by MIME, then by filename — the same fallback
+     * MediaItem::fromArray() uses, so an item without a MIME is still measured
+     * against the right cap instead of the image one.
      *
      * @param  array<string, mixed>  $item
      */
     private function isType(array $item, MediaType $type): bool
     {
-        return data_get($item, 'type') === $type->value
-            || MediaType::classify(data_get($item, 'mime_type')) === $type;
+        return $this->typeOf($item) === $type;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function typeOf(array $item): ?MediaType
+    {
+        return MediaType::tryFrom((string) data_get($item, 'type', ''))
+            ?? MediaType::classify(data_get($item, 'mime_type'), $this->fileNameOf($item));
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function fileNameOf(array $item): ?string
+    {
+        return data_get($item, 'original_filename') ?? data_get($item, 'path');
     }
 }

@@ -9,7 +9,6 @@ use App\Models\Media;
 use App\Models\Post;
 use App\Models\Workspace;
 use App\Services\Brand\SafeHttpFetcher;
-use App\Support\PostMediaRules;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -93,8 +92,9 @@ class MediaAttacher
                 continue;
             }
 
+            // The client's meta (alt text) fills in; what the server measured from the file wins.
             if (is_array($meta = data_get($item, 'meta'))) {
-                $hosted['meta'] = [...data_get($hosted, 'meta', []), ...$meta];
+                $hosted['meta'] = [...$meta, ...data_get($hosted, 'meta', [])];
             }
 
             $media[] = $hosted;
@@ -136,7 +136,7 @@ class MediaAttacher
             $name = basename(parse_url($url, PHP_URL_PATH) ?? '') ?: 'download.bin';
             $media = $workspace->addMediaFromPath($download['path'], $name, 'assets');
 
-            return PostMediaRules::snapshot($media);
+            return $media->toPostMediaItem();
         } finally {
             @unlink($download['path']);
         }

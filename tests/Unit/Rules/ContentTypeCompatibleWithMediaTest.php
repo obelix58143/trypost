@@ -94,6 +94,27 @@ test('detects media type from mime when type field is missing', function () {
     expect($errors)->toHaveCount(1);
 });
 
+test('detects media type from the filename when both type and mime are missing', function () {
+    // Same fallback as MediaItem::fromArray(): a video is measured against the video cap, not the image one.
+    $overVideoCap = ContentType::MastodonPost->maxVideoBytes() + 1;
+
+    $byPath = runMediaRule(ContentType::MastodonPost->value, [['path' => 'medias/clip.mp4', 'size' => $overVideoCap]]);
+    $byName = runMediaRule(ContentType::MastodonPost->value, [['original_filename' => 'Clip.MOV', 'size' => $overVideoCap]]);
+    $imageOnly = runMediaRule(ContentType::TikTokVideo->value, [['path' => 'medias/photo.png']]);
+
+    expect($byPath)->toHaveCount(1)->and($byPath[0])->toContain('Video exceeds')
+        ->and($byName)->toHaveCount(1)->and($byName[0])->toContain('Video exceeds')
+        ->and($imageOnly)->toHaveCount(1)->and($imageOnly[0])->toContain('accepts only videos');
+});
+
+test('an explicit type wins over a contradicting mime', function () {
+    // Mirrors classify() in mediaType.ts: the server-assigned type is trusted first.
+    $media = [['type' => MediaType::Image->value, 'mime_type' => 'video/mp4']];
+
+    expect(runMediaRule(ContentType::TikTokVideo->value, $media))->toHaveCount(1)
+        ->and(runMediaRule(ContentType::InstagramStory->value, $media))->toBe([]);
+});
+
 test('bluesky rejects an image and a video in the same post', function () {
     $media = [
         ['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg'],
@@ -152,14 +173,37 @@ test('a gif passes on content types that accept gifs', function () {
 });
 
 test('an image over the content type cap is rejected by size', function () {
-    // One byte over the lexicon's 2 000 000, still under 2 MiB.
-    $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg', 'size' => 2_000_001]];
+    $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg', 'size' => 5 * 1024 * 1024 + 1]];
 
-    $errors = runMediaRule(ContentType::BlueskyPost->value, $media);
+    $errors = runMediaRule(ContentType::XPost->value, $media);
 
     expect($errors)->toHaveCount(1);
     expect($errors[0])->toContain('Image exceeds the');
-    expect($errors[0])->toContain('2 MB');
+    expect($errors[0])->toContain('5 MB');
+});
+
+test('a kind violation is reported alone and is not overwritten by a size violation on the same item', function () {
+    // A 6 MB GIF on LinkedIn breaks two rules; the root cause ("does not accept GIF") must be the one message.
+    $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/gif', 'size' => 6 * 1024 * 1024]];
+
+    $errors = runMediaRule(ContentType::LinkedInPost->value, $media);
+
+    expect($errors)->toHaveCount(1);
+    expect($errors[0])->toContain('GIF');
+});
+
+test('an item that cannot be classified is not measured against any cap', function () {
+    // An API `url`-only entry before download: no type, mime or filename, but a stray size.
+    $media = [['url' => 'https://example.com/asset', 'size' => 999_999_999]];
+
+    expect(runMediaRule(ContentType::XPost->value, $media))->toBe([]);
+});
+
+test('bluesky does not cap the original image because the publisher re-encodes it under the blob limit', function () {
+    // A phone JPEG well over Bluesky's 2 MB blob limit published fine before caps existed; it must still schedule.
+    $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg', 'size' => 8 * 1024 * 1024]];
+
+    expect(runMediaRule(ContentType::BlueskyPost->value, $media))->toBe([]);
 });
 
 test('decimal caps are reported in decimal units for both the cap and the file', function () {
@@ -181,9 +225,9 @@ test('binary caps keep binary units', function () {
 });
 
 test('an image exactly at the content type cap passes', function () {
-    $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg', 'size' => 2_000_000]];
+    $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg', 'size' => 5 * 1024 * 1024]];
 
-    expect(runMediaRule(ContentType::BlueskyPost->value, $media))->toBe([]);
+    expect(runMediaRule(ContentType::XPost->value, $media))->toBe([]);
 });
 
 test('a video over the content type cap is rejected by size', function () {

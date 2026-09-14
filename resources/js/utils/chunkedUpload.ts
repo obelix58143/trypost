@@ -1,4 +1,4 @@
-import { MediaType, fromExtension, fromMimeType } from '@/lib/mediaType';
+import { MediaType, classifyBy } from '@/lib/mediaType';
 import { probeVideoDuration } from '@/lib/videoDuration';
 
 interface ChunkedUploadOptions {
@@ -18,7 +18,7 @@ interface ChunkedUploadResult {
     id: string;
     path?: string;
     url: string;
-    type: string;
+    type: MediaType;
     mime_type?: string;
     original_filename: string;
     [key: string]: any;
@@ -47,7 +47,7 @@ export const uploadChunked = async (options: ChunkedUploadOptions): Promise<Chun
     let uploadedBytes = 0;
 
     // The server reads the duration from the file; the browser value is the fallback for containers without one.
-    const isVideo = (fromMimeType(file.type) ?? fromExtension(file.name)) === MediaType.Video;
+    const isVideo = classifyBy(file.type, file.name) === MediaType.Video;
     const duration = isVideo ? await probeVideoDuration(file) : null;
 
     try {

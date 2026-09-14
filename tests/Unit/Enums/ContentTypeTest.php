@@ -247,8 +247,8 @@ test('media rules preserve pre-centralization editor limits for mapped types', f
             'accepts_mov' => true,
             'max_files' => 4,
             'max_video_duration_sec' => 10 * 60,
-            // Lexicon maxSize is decimal bytes, not MiB.
-            'max_image_bytes' => min(2_000_000, $hardImage),
+            // Lexicon maxSize is decimal bytes, not MiB. Images are not capped: the publisher re-encodes them under the blob limit.
+            'max_image_bytes' => null,
             'max_video_bytes' => min(300_000_000, $hardVideo),
         ],
         'discord_message' => [
@@ -323,10 +323,12 @@ test('bluesky caps use the lexicon decimal byte values, not mebibytes', function
     config()->set('trypost.media.max_size_mb.image', 1024);
     config()->set('trypost.media.max_size_mb.video', 4096);
 
-    expect(ContentType::BlueskyPost->maxImageBytes())->toBe(2_000_000)
-        ->and(ContentType::BlueskyPost->maxVideoBytes())->toBe(300_000_000)
-        ->and(ContentType::BlueskyPost->maxVideoBytes())->toBeLessThan(300 * 1024 * 1024)
-        ->and(ContentType::BlueskyPost->maxImageBytes())->toBeLessThan(2 * 1024 * 1024);
+    expect(ContentType::BlueskyPost->maxVideoBytes())->toBe(300_000_000)
+        ->and(ContentType::BlueskyPost->maxVideoBytes())->toBeLessThan(300 * 1024 * 1024);
+});
+
+test('bluesky leaves the original image uncapped because the publisher re-encodes it under the 2 MB blob limit', function () {
+    expect(ContentType::BlueskyPost->maxImageBytes())->toBeNull();
 });
 
 test('bluesky publisher skip threshold is never below the advertised video cap', function () {

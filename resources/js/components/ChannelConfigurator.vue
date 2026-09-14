@@ -71,18 +71,18 @@ const settingsProps = (channel: Channel) => ({
                                 <span class="absolute -bottom-1 -right-1 inline-flex size-5 items-center justify-center overflow-hidden rounded-full border-2 border-foreground bg-card shadow-2xs">
                                     <img :src="getPlatformLogo(channel.platform)" :alt="channel.platform" class="size-full object-cover" />
                                 </span>
+                                <Badge v-if="channel.status === PostPlatformStatus.Published" variant="success" class="absolute -top-1 -right-1 h-4 w-4 p-0">
+                                    <IconCircleCheck class="h-2.5 w-2.5" />
+                                </Badge>
+                                <Badge v-else-if="channel.status === PostPlatformStatus.Failed" variant="destructive" class="absolute -top-1 -right-1 h-4 w-4 p-0 text-[9px]">!</Badge>
                                 <Badge
-                                    v-if="channel.issue"
+                                    v-else-if="channel.issue"
                                     variant="destructive"
                                     class="absolute -top-1 -right-1 h-4 w-4 p-0"
                                     :data-testid="`channel-issue-${channel.id}`"
                                 >
                                     <IconAlertCircle class="h-2.5 w-2.5" />
                                 </Badge>
-                                <Badge v-else-if="channel.status === PostPlatformStatus.Published" variant="success" class="absolute -top-1 -right-1 h-4 w-4 p-0">
-                                    <IconCircleCheck class="h-2.5 w-2.5" />
-                                </Badge>
-                                <Badge v-else-if="channel.status === PostPlatformStatus.Failed" variant="destructive" class="absolute -top-1 -right-1 h-4 w-4 p-0 text-[9px]">!</Badge>
                             </div>
                             <span
                                 class="line-clamp-2 text-center text-xs leading-tight"

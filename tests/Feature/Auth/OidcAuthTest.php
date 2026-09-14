@@ -739,3 +739,29 @@ test('the first user on an empty instance still gets a workspace', function () {
     expect($user->workspaces)->toHaveCount(1)
         ->and($user->account->owner_id)->toBe($user->id);
 });
+
+test('the account owner is left out of the group role sync', function () {
+    // Ownership outranks the workspace role, so demoting the owner would show
+    // "member" in the interface while every permission stays in place.
+    config(['trypost.oidc_admin_groups' => 'board']);
+
+    $account = Account::factory()->create(['created_at' => now()->subDay()]);
+    $owner = User::factory()->create([
+        'account_id' => $account->id,
+        'email' => 'member@example.com',
+        'oidc_id' => 'provider-subject-1',
+    ]);
+    $account->update(['owner_id' => $owner->id]);
+    $workspace = Workspace::factory()->create([
+        'account_id' => $account->id,
+        'user_id' => $owner->id,
+    ]);
+    $workspace->members()->attach($owner->id, ['role' => 'admin']);
+
+    fakeOidcDriver(['groups' => ['staff']]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    expect($workspace->members()->where('users.id', $owner->id)->first()->pivot->role)
+        ->toBe('admin');
+});

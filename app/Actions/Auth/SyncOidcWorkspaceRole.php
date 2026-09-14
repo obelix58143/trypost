@@ -31,6 +31,14 @@ class SyncOidcWorkspaceRole
             return;
         }
 
+        // Ownership is resolved through account.owner_id and outranks the
+        // workspace role, so demoting an owner here would show "member" in the
+        // interface while they keep every permission. Leave owners alone rather
+        // than display a right they still have as one they lost.
+        if ($user->account?->owner_id === $user->id) {
+            return;
+        }
+
         $target = array_intersect($groups, $adminGroups) !== []
             ? WorkspaceRole::Admin
             : WorkspaceRole::tryFrom((string) config('trypost.oidc_auto_join_role')) ?? WorkspaceRole::Member;

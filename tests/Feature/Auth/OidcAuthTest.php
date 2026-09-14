@@ -718,3 +718,24 @@ test('groups arrive whether the provider sends a list or a string', function (mi
     ['staff board'],
     ['staff,board'],
 ]);
+
+test('the first user on an empty instance still gets a workspace', function () {
+    // Auto-join suppresses the personal workspace because it expects a shared
+    // account to join. On a fresh install there is none, and without this the
+    // user lands in an application with nowhere to work.
+    config([
+        'trypost.self_hosted' => true,
+        'trypost.oidc_auto_join_enabled' => true,
+    ]);
+
+    expect(Account::count())->toBe(0);
+
+    fakeOidcDriver(['email' => 'first@example.com', 'sub' => 'subject-first']);
+
+    $this->get(route('auth.oidc.callback'));
+
+    $user = User::where('email', 'first@example.com')->firstOrFail();
+
+    expect($user->workspaces)->toHaveCount(1)
+        ->and($user->account->owner_id)->toBe($user->id);
+});

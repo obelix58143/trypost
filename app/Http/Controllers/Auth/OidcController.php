@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Actions\Auth\JoinOidcUserToAccount;
 use App\Actions\Auth\SyncOidcWorkspaceRole;
 use App\Actions\User\CreateUser;
+use App\Actions\Workspace\CreateWorkspace;
 use App\Enums\Auth\SocialAuthProvider;
 use App\Enums\UserWorkspace\Role as WorkspaceRole;
 use App\Http\Controllers\Auth\Concerns\PreservesAttributionParameters;
@@ -256,6 +257,13 @@ class OidcController extends Controller
 
                 return redirect()->route('app.home');
             }
+
+            // Nothing to join yet: this is the first user on a fresh instance,
+            // and the account they were just given has no workspace because
+            // auto-join suppressed it. Give them the one an ordinary signup
+            // would have created, or they land in an application with nowhere
+            // to work - and nobody can ever join them either.
+            CreateWorkspace::execute($user, ['name' => $user->name."'s Workspace"]);
         }
 
         return redirect()->route('app.welcome');

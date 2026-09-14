@@ -14,7 +14,11 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\InvalidStateException;
 use Laravel\Socialite\Two\User as SocialiteUser;
 use Mockery\MockInterface;
 
@@ -1021,3 +1025,146 @@ test('the nonce is consumed, so the same token cannot be used twice', function (
     expect(idTokenAccepted($ctx['provider'], $token))->toBeTrue()
         ->and(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
 });
+
+// --------------------------------------------- the authorization round-trip ---
+
+/**
+ * Drives the real provider (no mocked driver), so state and PKCE are actually
+ * exercised instead of being skipped.
+ *
+ * @return array{provider: OidcProvider, private: string, kid: string}
+ */
+function oidcProviderForRoundTrip(Request $request): array
+{
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    openssl_pkey_export($key, $privatePem);
+    $details = openssl_pkey_get_details($key);
+    $b64 = fn (string $b): string => rtrim(strtr(base64_encode($b), '+/', '-_'), '=');
+    $kid = 'test-key';
+
+    $discovery = [
+        'issuer' => 'https://idp.example.com',
+        'authorization_endpoint' => 'https://idp.example.com/authorize',
+        'token_endpoint' => 'https://idp.example.com/token',
+        'userinfo_endpoint' => 'https://idp.example.com/userinfo',
+        'jwks_uri' => 'https://idp.example.com/jwks',
+    ];
+    $jwks = ['keys' => [[
+        'kty' => 'RSA', 'kid' => $kid, 'use' => 'sig', 'alg' => 'RS256',
+        'n' => $b64($details['rsa']['n']), 'e' => $b64($details['rsa']['e']),
+    ]]];
+
+    $queue = [];
+    for ($i = 0; $i < 6; $i++) {
+        $queue[] = new Response(200, [], json_encode($discovery));
+        $queue[] = new Response(200, [], json_encode($jwks));
+    }
+
+    config(['services.oidc.discovery_url' => 'https://idp.example.com', 'cache.default' => 'array']);
+    cache()->clear();
+
+    $provider = new OidcProvider($request, 'client-id', 'client-secret', 'https://app.example.com/auth/oidc/callback');
+    $provider->setHttpClient(new Client(['handler' => HandlerStack::create(new MockHandler($queue))]));
+
+    return ['provider' => $provider, 'private' => $privatePem, 'kid' => $kid];
+}
+
+test('a callback whose state does not match the session is refused', function () {
+    // Without this, an attacker can start a login with their own account and
+    // hand the victim the callback URL, landing the victim in the attacker's
+    // session. The mocked driver used elsewhere skips this check entirely.
+    $this->startSession();
+    session(['state' => 'the-state-we-issued']);
+
+    $request = Request::create('/auth/oidc/callback', 'GET', [
+        'code' => 'whatever',
+        'state' => 'a-state-from-somewhere-else',
+    ]);
+    $request->setLaravelSession(app('session.store'));
+
+    $ctx = oidcProviderForRoundTrip($request);
+
+    expect(fn () => $ctx['provider']->user())
+        ->toThrow(InvalidStateException::class);
+});
+
+test('a callback with no state at all is refused', function () {
+    $this->startSession();
+    session(['state' => 'the-state-we-issued']);
+
+    $request = Request::create('/auth/oidc/callback', 'GET', ['code' => 'whatever']);
+    $request->setLaravelSession(app('session.store'));
+
+    $ctx = oidcProviderForRoundTrip($request);
+
+    expect(fn () => $ctx['provider']->user())
+        ->toThrow(InvalidStateException::class);
+});
+
+test('the authorization request carries PKCE, a nonce and a state', function () {
+    $this->startSession();
+
+    $request = Request::create('/auth/oidc/redirect', 'GET');
+    $request->setLaravelSession(app('session.store'));
+
+    $ctx = oidcProviderForRoundTrip($request);
+
+    $target = $ctx['provider']->redirect()->getTargetUrl();
+    parse_str((string) parse_url($target, PHP_URL_QUERY), $query);
+
+    expect($query['code_challenge_method'] ?? null)->toBe('S256')
+        ->and($query['code_challenge'] ?? null)->not->toBeEmpty()
+        ->and($query['state'] ?? null)->not->toBeEmpty()
+        ->and($query['nonce'] ?? null)->not->toBeEmpty()
+        ->and($query['scope'] ?? '')->toContain('openid');
+
+    // Both have to be held server-side, or neither proves anything.
+    expect(session('state'))->toBe($query['state'])
+        ->and(session('oidc.nonce'))->toBe($query['nonce'])
+        ->and(session('code_verifier'))->not->toBeEmpty();
+
+    // The challenge must actually derive from the stored verifier.
+    $expected = rtrim(strtr(base64_encode(hash('sha256', (string) session('code_verifier'), true)), '+/', '-_'), '=');
+    expect($query['code_challenge'])->toBe($expected);
+});
+
+test('a failed sign-in never writes credentials to the log', function () {
+    // The callback logs why it failed, which is the only way to debug a
+    // misconfigured provider. It must not turn the log into a place where
+    // client secrets or tokens end up.
+    config([
+        'trypost.oidc_auth_enabled' => true,
+        'services.oidc.client_secret' => 'super-secret-client-value',
+    ]);
+
+    $captured = [];
+    Log::listen(function ($message) use (&$captured) {
+        $captured[] = $message->message.' '.json_encode($message->context);
+    });
+
+    $driver = Mockery::mock(OidcProvider::class);
+    $driver->shouldReceive('user')->andThrow(new RuntimeException(
+        'token endpoint said: {"error":"invalid_client"}'
+    ));
+    Socialite::shouldReceive('driver')->with('oidc')->andReturn($driver);
+
+    $this->get(route('auth.oidc.callback'))->assertRedirect(route('login'));
+
+    $log = implode("\n", $captured);
+
+    expect($log)->not->toBeEmpty()
+        ->and($log)->not->toContain('super-secret-client-value')
+        ->and($log)->not->toContain('client_secret')
+        ->and($log)->not->toContain('id_token')
+        ->and($log)->not->toContain('access_token');
+});
+
+test('the oidc endpoints are throttled', function (string $route) {
+    // Both are public and make the server call out to the provider, so they
+    // must not be free to hammer.
+    $middleware = collect(Route::getRoutes())
+        ->first(fn ($r) => $r->getName() === $route)
+        ?->gatherMiddleware() ?? [];
+
+    expect($middleware)->toContain('throttle:30,1');
+})->with(['auth.oidc.redirect', 'auth.oidc.callback']);

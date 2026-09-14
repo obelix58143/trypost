@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Actions\Auth\JoinOidcUserToAccount;
+use App\Actions\Auth\ReleaseAccountOwnership;
 use App\Actions\Auth\SyncOidcWorkspaceRole;
 use App\Actions\User\CreateUser;
 use App\Actions\Workspace\CreateWorkspace;
@@ -140,7 +141,8 @@ class OidcController extends Controller
 
         // Roles follow the provider on every sign-in, so revoking admin there
         // takes effect here without anyone touching the application.
-        SyncOidcWorkspaceRole::execute($user, $groups);
+        ReleaseAccountOwnership::execute($user);
+        SyncOidcWorkspaceRole::execute($user->fresh(), $groups);
 
         if (! $user->hasVerifiedEmail()) {
             $user->markEmailAsVerified();
@@ -264,6 +266,7 @@ class OidcController extends Controller
             // would have created, or they land in an application with nowhere
             // to work - and nobody can ever join them either.
             CreateWorkspace::execute($user, ['name' => $user->name."'s Workspace"]);
+            ReleaseAccountOwnership::execute($user);
         }
 
         return redirect()->route('app.welcome');

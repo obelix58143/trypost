@@ -765,3 +765,57 @@ test('the account owner is left out of the group role sync', function () {
     expect($workspace->members()->where('users.id', $owner->id)->first()->pivot->role)
         ->toBe('admin');
 });
+
+// ------------------------------------------ handing the account to the groups ---
+
+test('ownership is released so no one sits outside the group system', function () {
+    config([
+        'trypost.oidc_admin_groups' => 'board',
+        'trypost.oidc_release_ownership' => true,
+    ]);
+
+    $account = Account::factory()->create(['created_at' => now()->subDay()]);
+    $owner = User::factory()->create([
+        'account_id' => $account->id,
+        'email' => 'member@example.com',
+        'oidc_id' => 'provider-subject-1',
+    ]);
+    $account->update(['owner_id' => $owner->id]);
+    $workspace = Workspace::factory()->create([
+        'account_id' => $account->id,
+        'user_id' => $owner->id,
+    ]);
+    $workspace->members()->attach($owner->id, ['role' => 'admin']);
+
+    fakeOidcDriver(['groups' => ['staff']]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    // Ownership gone, and with it the exemption: the role now follows the
+    // groups like everyone else's.
+    expect($account->fresh()->owner_id)->toBeNull()
+        ->and($workspace->members()->where('users.id', $owner->id)->first()->pivot->role)
+        ->toBe('member');
+});
+
+test('ownership is left alone unless releasing it was asked for', function () {
+    config([
+        'trypost.oidc_admin_groups' => 'board',
+        'trypost.oidc_release_ownership' => false,
+    ]);
+
+    $account = Account::factory()->create(['created_at' => now()->subDay()]);
+    $owner = User::factory()->create([
+        'account_id' => $account->id,
+        'email' => 'member@example.com',
+        'oidc_id' => 'provider-subject-1',
+    ]);
+    $account->update(['owner_id' => $owner->id]);
+    Workspace::factory()->create(['account_id' => $account->id, 'user_id' => $owner->id]);
+
+    fakeOidcDriver(['groups' => ['staff']]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    expect($account->fresh()->owner_id)->toBe($owner->id);
+});

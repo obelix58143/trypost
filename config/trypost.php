@@ -184,6 +184,10 @@ return [
     // every OIDC user follows the provider on each sign-in, which is what lets
     // an instance run without a standing local admin account.
     'oidc_admin_groups' => env('OIDC_ADMIN_GROUPS', ''),
+    // Hand the account over to group management entirely by clearing its
+    // owner. Ownership outranks the workspace role, so whoever holds it sits
+    // outside the group system for good.
+    'oidc_release_ownership' => env('OIDC_RELEASE_OWNERSHIP', false),
     'oidc_auto_join_account_id' => env('OIDC_AUTO_JOIN_ACCOUNT_ID'),
 
     /*

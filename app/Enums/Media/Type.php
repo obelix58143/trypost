@@ -109,7 +109,9 @@ enum Type: string
     /**
      * Classify by filename extension. Broader than extensions(): any format the
      * MIME registry knows as image/*, video/* or PDF resolves, so legacy files
-     * already on disk (heic, mkv, avi, ...) still classify.
+     * already on disk (heic, mkv, avi, ...) still classify. The registry's order
+     * decides: `.pdf` lists `application/pdf` before `image/pdf`, so it is a
+     * Document, not an Image.
      */
     public static function fromExtension(?string $extension): ?self
     {

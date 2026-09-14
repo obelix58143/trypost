@@ -25,6 +25,8 @@ const PDF_MIME = 'application/pdf';
 
 const MEDIA_TYPES = Object.values(MediaType);
 
+const isMediaType = (value: unknown): value is MediaType => MEDIA_TYPES.includes(value as MediaType);
+
 // Broader than the upload allow-list so already-stored files in legacy formats
 // still resolve. The backend (Type::fromExtension) consults the MIME registry;
 // the browser has none, so this is the subset of formats we have seen stored.
@@ -105,12 +107,7 @@ export const classifyBy = (mime: string | null | undefined, nameOrPath: string |
 export const classify = (item: ClassifiableMedia | null | undefined): MediaType | null => {
     if (! item) return null;
 
-    const explicit = item.type;
-    if (explicit === MediaType.Image || explicit === MediaType.Video || explicit === MediaType.Document) {
-        return explicit;
-    }
-
-    return classifyBy(item.mime_type, item.original_filename ?? item.path);
+    return isMediaType(item.type) ? item.type : classifyBy(item.mime_type, item.original_filename ?? item.path);
 };
 
 export const isImage = (item: ClassifiableMedia | null | undefined): boolean => classify(item) === MediaType.Image;

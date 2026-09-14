@@ -98,21 +98,16 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     public static function errorsFor(array $entries, array $media): array
     {
         $errors = [];
+        $rule = new self($media);
 
-        foreach ($entries as $entry) {
-            $contentType = data_get($entry, 'content_type');
-
+        foreach ($entries as ['key' => $key, 'content_type' => $contentType]) {
             if ($contentType === null) {
                 continue;
             }
 
-            (new self($media))->validate(
-                $entry['key'],
-                (string) $contentType,
-                function (string $message) use (&$errors, $entry): void {
-                    $errors[$entry['key']] = $message;
-                },
-            );
+            $rule->validate($key, $contentType, function (string $message) use (&$errors, $key): void {
+                $errors[$key] = $message;
+            });
         }
 
         return $errors;
@@ -172,16 +167,17 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     private function failOnKindRules(ContentType $contentType, array $media, Closure $fail): bool
     {
         $items = collect($media);
-        $hasImage = $items->contains($this->isImage(...));
-        $hasVideo = $items->contains($this->isVideo(...));
-        $hasDocument = $items->contains($this->isDocument(...));
+        $types = $items->map($this->typeOf(...));
+        $hasImage = $types->contains(MediaType::Image);
+        $hasVideo = $types->contains(MediaType::Video);
+        $hasDocument = $types->contains(MediaType::Document);
 
         $violations = [
             'no_video_allowed' => $hasVideo && ! $contentType->supportsVideo(),
             'no_image_allowed' => $hasImage && ! $contentType->supportsImage(),
             'no_document_allowed' => $hasDocument && ! $contentType->supportsDocument(),
             'no_mixed_media' => $hasImage && $hasVideo && ! $contentType->supportsMixedMedia(),
-            'document_not_alone' => $hasDocument && count($media) > 1,
+            'document_not_alone' => $hasDocument && $items->count() > 1,
             'gif_not_allowed' => $items->contains($this->isGif(...)) && ! $contentType->acceptsGif(),
             'mov_not_allowed' => $items->contains($this->isMov(...)) && ! $contentType->acceptsMov(),
         ];
@@ -215,7 +211,7 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
             $size = (int) data_get($item, 'size', 0);
             [$key, $max] = $this->byteCap($contentType, $item);
 
-            if ($size > 0 && $max !== null && $size > $max) {
+            if ($max !== null && $size > $max) {
                 $fail(trans("posts.form.warnings.{$key}", [
                     'max' => $this->formatBytes($max, $max),
                     'current' => $this->formatBytes($size, $max, 1),
@@ -226,7 +222,7 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
 
             $duration = data_get($item, 'meta.duration');
 
-            if ($maxDuration !== null && $this->isVideo($item) && is_numeric($duration) && (float) $duration > $maxDuration) {
+            if ($maxDuration !== null && is_numeric($duration) && $duration > $maxDuration && $this->typeOf($item) === MediaType::Video) {
                 $fail(trans('posts.form.warnings.video_too_long', [
                     'max' => $this->formatDuration($maxDuration),
                     'current' => $this->formatDuration((int) ceil((float) $duration)),
@@ -322,43 +318,11 @@ class ContentTypeCompatibleWithMedia implements DataAwareRule, ValidationRule
     }
 
     /**
-     * @param  array<string, mixed>  $item
-     */
-    private function isImage(array $item): bool
-    {
-        return $this->isType($item, MediaType::Image);
-    }
-
-    /**
-     * @param  array<string, mixed>  $item
-     */
-    private function isVideo(array $item): bool
-    {
-        return $this->isType($item, MediaType::Video);
-    }
-
-    /**
-     * @param  array<string, mixed>  $item
-     */
-    private function isDocument(array $item): bool
-    {
-        return $this->isType($item, MediaType::Document);
-    }
-
-    /**
-     * Mirrors `classify()` in mediaType.ts: the explicit `type` wins, otherwise
-     * the item classifies by MIME, then by filename — the same fallback
-     * MediaItem::fromArray() uses, so an item without a MIME is still measured
-     * against the right cap instead of the image one.
+     * Mirrors `classify()` in mediaType.ts and `MediaItem::kind()`: the explicit
+     * `type` wins, otherwise the item classifies by MIME, then by filename — so
+     * an item without a MIME is still measured against the right cap instead of
+     * the image one.
      *
-     * @param  array<string, mixed>  $item
-     */
-    private function isType(array $item, MediaType $type): bool
-    {
-        return $this->typeOf($item) === $type;
-    }
-
-    /**
      * @param  array<string, mixed>  $item
      */
     private function typeOf(array $item): ?MediaType

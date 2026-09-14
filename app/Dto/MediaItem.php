@@ -69,9 +69,11 @@ class MediaItem
             'mime_type' => $this->mime_type,
             'original_filename' => $this->original_filename,
             'size' => $this->size,
-            ...($this->meta ? ['meta' => $this->meta] : []),
-            ...($this->source ? ['source' => $this->source->value] : []),
-            ...($this->source_meta ? ['source_meta' => $this->source_meta] : []),
+            ...array_filter([
+                'meta' => $this->meta,
+                'source' => $this->source?->value,
+                'source_meta' => $this->source_meta,
+            ]),
         ];
     }
 

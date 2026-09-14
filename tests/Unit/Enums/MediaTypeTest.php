@@ -89,6 +89,7 @@ test('classify prefers the mime over the extension', function () {
 test('fromExtension classifies broadly and is case-insensitive', function () {
     expect(Type::fromExtension('JPG'))->toBe(Type::Image);
     expect(Type::fromExtension('webm'))->toBe(Type::Video);
+    // The registry also lists `image/pdf` for .pdf; MIME order must win over case order.
     expect(Type::fromExtension('pdf'))->toBe(Type::Document);
     expect(Type::fromExtension('txt'))->toBeNull();
     expect(Type::fromExtension(null))->toBeNull();

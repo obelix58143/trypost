@@ -94,9 +94,7 @@ class MediaAttacher
             }
 
             // The client's meta (alt text) fills in; what the server measured from the file wins.
-            if (is_array($meta = data_get($item, 'meta'))) {
-                $hosted['meta'] = [...$meta, ...data_get($hosted, 'meta', [])];
-            }
+            $hosted['meta'] = [...data_get($item, 'meta') ?? [], ...data_get($hosted, 'meta', [])];
 
             $media[] = $hosted;
             $hostedIds[] = data_get($hosted, 'id');

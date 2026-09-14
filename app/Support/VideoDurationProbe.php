@@ -6,6 +6,7 @@ namespace App\Support;
 
 use Closure;
 use Generator;
+use Illuminate\Support\Str;
 
 /**
  * Reads a video's duration from the `moov > mvhd` atom of an MP4 / MOV file.
@@ -144,7 +145,8 @@ final class VideoDurationProbe
      */
     private function header(int $offset, int $to): ?array
     {
-        $bytes = $this->read($offset, min(self::ATOM_LARGE_HEADER_BYTES, $to - $offset));
+        $available = $to - $offset;
+        $bytes = $this->read($offset, min(self::ATOM_LARGE_HEADER_BYTES, $available));
 
         if (strlen($bytes) < self::ATOM_HEADER_BYTES) {
             return null;
@@ -157,10 +159,10 @@ final class VideoDurationProbe
             [1 => $size] = unpack('J', $bytes, self::ATOM_HEADER_BYTES);
             $headerBytes = self::ATOM_LARGE_HEADER_BYTES;
         } elseif ($size === 0) {
-            $size = $to - $offset;
+            $size = $available;
         }
 
-        $size = min($size, $to - $offset);
+        $size = min($size, $available);
 
         return $size < $headerBytes ? null : [$size, $type, $headerBytes];
     }
@@ -178,13 +180,19 @@ final class VideoDurationProbe
      */
     private function seconds(?array $bounds): ?float
     {
-        if ($bounds === null || $bounds[1] - $bounds[0] < self::MVHD_V0_BYTES) {
+        if ($bounds === null) {
             return null;
         }
 
-        $mvhd = $this->read($bounds[0], min($bounds[1] - $bounds[0], self::MVHD_V1_BYTES));
+        [$start, $end] = $bounds;
 
-        [$needed, $format] = ($mvhd[0] ?? '') === "\x01"
+        if ($end - $start < self::MVHD_V0_BYTES) {
+            return null;
+        }
+
+        $mvhd = $this->read($start, min($end - $start, self::MVHD_V1_BYTES));
+
+        [$needed, $format] = Str::startsWith($mvhd, "\x01")
             ? [self::MVHD_V1_BYTES, 'x20/Ntimescale/Jduration']
             : [self::MVHD_V0_BYTES, 'x12/Ntimescale/Nduration'];
 

@@ -66,6 +66,7 @@ return [
     'login' => [
         'title' => 'Log in to your account',
         'description' => 'Enter your email and password below to log in',
+        'description_without_password' => 'Sign in with your organisation account to continue',
         'page_title' => 'Log in',
         'email' => 'Email address',
         'password' => 'Password',

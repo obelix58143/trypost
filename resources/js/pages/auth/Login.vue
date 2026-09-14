@@ -46,7 +46,11 @@ const pageErrors = usePageErrors();
 <template>
     <AuthBase
         :title="$t('auth.login.title')"
-        :description="$t('auth.login.description')"
+        :description="
+            passwordLoginEnabled
+                ? $t('auth.login.description')
+                : $t('auth.login.description_without_password')
+        "
     >
         <Head :title="$t('auth.login.page_title')" />
 

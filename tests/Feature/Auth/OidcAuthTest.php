@@ -1168,3 +1168,23 @@ test('the oidc endpoints are throttled', function (string $route) {
 
     expect($middleware)->toContain('throttle:30,1');
 })->with(['auth.oidc.redirect', 'auth.oidc.callback']);
+
+test('every string the login page can show is translated', function (string $locale) {
+    // A missing key renders as the raw key name in the interface, which is how
+    // "Enter your email and password below" stayed on a page that has no
+    // password field.
+    app()->setLocale($locale);
+
+    foreach ([
+        'auth.login.description',
+        'auth.login.description_without_password',
+        'auth.oidc_login',
+        'auth.oidc_signup',
+        'auth.oidc_failed',
+        'auth.oidc_group_denied',
+        'auth.oidc_email_missing',
+        'auth.oidc_email_unverified',
+    ] as $key) {
+        expect(__($key))->not->toBe($key, "missing translation: {$key} ({$locale})");
+    }
+})->with(['en', 'de']);

@@ -68,6 +68,7 @@ return [
     'login' => [
         'title' => 'Melde dich bei deinem Konto an',
         'description' => 'Gib unten deine E-Mail-Adresse und dein Passwort ein, um dich anzumelden',
+        'description_without_password' => 'Melde dich mit deinem Organisationskonto an, um fortzufahren',
         'page_title' => 'Anmelden',
         'email' => 'E-Mail-Adresse',
         'password' => 'Passwort',

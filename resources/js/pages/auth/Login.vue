@@ -37,6 +37,9 @@ const showPassword = ref(false);
 
 const page = usePage();
 const isSelfHosted = computed(() => Boolean(page.props.selfHosted));
+const passwordLoginEnabled = computed(() =>
+    Boolean(page.props.passwordLoginEnabled),
+);
 const pageErrors = usePageErrors();
 </script>
 
@@ -55,9 +58,14 @@ const pageErrors = usePageErrors();
         </div>
 
         <div class="flex flex-col gap-6">
-            <SocialLogin mode="login" :invite="invite" />
+            <SocialLogin
+                mode="login"
+                :invite="invite"
+                :hide-divider="!passwordLoginEnabled"
+            />
 
             <Form
+                v-if="passwordLoginEnabled"
                 v-bind="store.form()"
                 :reset-on-success="['password']"
                 v-slot="{ errors, processing }"

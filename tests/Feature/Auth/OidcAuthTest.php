@@ -8,6 +8,7 @@ use App\Models\Account;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Socialite\OidcProvider;
+use App\Support\Auth\LoginMethods;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -474,4 +475,94 @@ test('a refresh refetches the key set', function () {
 
     // Forces a second trip to the provider, which the mock handler answers.
     expect($method->invoke($provider, true))->toBeArray()->not->toBeEmpty();
+});
+
+// ------------------------------------------------- password sign-in toggle ---
+
+test('the password routes stay open by default', function (string $route) {
+    config(['trypost.password_login_enabled' => true]);
+
+    $this->get(route($route))->assertOk();
+})->with(['login', 'password.request']);
+
+test('switching password sign-in off closes its routes', function () {
+    config([
+        'trypost.password_login_enabled' => false,
+        'trypost.oidc_auth_enabled' => true,
+    ]);
+
+    // The login page itself stays - it is where the provider buttons live.
+    $this->get(route('login'))->assertOk();
+
+    $this->post(route('login.store'), [
+        'email' => 'member@example.com',
+        'password' => 'Password123!',
+    ])->assertNotFound();
+
+    $this->get(route('password.request'))->assertNotFound();
+    $this->post(route('password.email'), ['email' => 'member@example.com'])->assertNotFound();
+    $this->get(route('password.reset', ['token' => 'whatever']))->assertNotFound();
+});
+
+test('a correct password is still refused once sign-in is switched off', function () {
+    config([
+        'trypost.password_login_enabled' => false,
+        'trypost.oidc_auth_enabled' => true,
+    ]);
+
+    User::factory()->create([
+        'email' => 'member@example.com',
+        'password' => 'Password123!',
+    ]);
+
+    $this->post(route('login.store'), [
+        'email' => 'member@example.com',
+        'password' => 'Password123!',
+    ])->assertNotFound();
+
+    $this->assertGuest();
+});
+
+test('password sign-in cannot be switched off while it is the only way in', function () {
+    // Otherwise one environment variable locks every user out of the instance.
+    config([
+        'trypost.password_login_enabled' => false,
+        'trypost.oidc_auth_enabled' => false,
+        'trypost.google_auth_enabled' => false,
+        'trypost.github_auth_enabled' => false,
+    ]);
+
+    expect(LoginMethods::passwordEnabled())->toBeTrue();
+
+    $this->get(route('password.request'))->assertOk();
+});
+
+test('the login page says whether the password form belongs there', function (bool $enabled) {
+    config([
+        'trypost.password_login_enabled' => $enabled,
+        'trypost.oidc_auth_enabled' => true,
+    ]);
+
+    $props = $this->get(route('login'))->original->getData()['page']['props'];
+
+    expect($props['passwordLoginEnabled'])->toBe($enabled);
+})->with([true, false]);
+
+test('registering with a password is closed while password sign-in is off', function () {
+    config([
+        'trypost.self_hosted' => false,
+        'trypost.password_login_enabled' => false,
+        'trypost.oidc_auth_enabled' => true,
+    ]);
+
+    // The page stays - it carries the provider buttons.
+    $this->get(route('register'))->assertOk();
+
+    $this->post(route('register.store'), [
+        'name' => 'Test User',
+        'email' => 'nobody@example.com',
+        'password' => 'Password123!',
+    ])->assertNotFound();
+
+    expect(User::where('email', 'nobody@example.com')->exists())->toBeFalse();
 });

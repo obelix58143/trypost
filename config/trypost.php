@@ -157,6 +157,11 @@ return [
 
     'github_auth_enabled' => env('GITHUB_AUTH_ENABLED', false),
 
+    // Instances behind an identity provider usually want the local password
+    // form gone. Ignored while no other provider is configured, so a single
+    // variable can never lock everybody out.
+    'password_login_enabled' => env('PASSWORD_LOGIN_ENABLED', true),
+
     'oidc_auth_enabled' => env('OIDC_AUTH_ENABLED', false),
     'oidc_display_name' => env('OIDC_DISPLAY_NAME', 'SSO'),
     // Ends the session at the identity provider too, so logging out really

@@ -19,18 +19,28 @@ Route::get('/invites/{invite}', [AcceptInviteController::class, 'show'])->name('
 
 Route::middleware(['guest'])->group(function () {
     Route::middleware('registration.enabled')->group(function () {
+        // The page itself stays reachable with password sign-in off - it is
+        // where the provider buttons live - but creating an account with a
+        // password it could never be used with does not.
         Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
-        Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
+        Route::post('/register', [RegisteredUserController::class, 'store'])
+            ->middleware('password.login.enabled')
+            ->name('register.store');
     });
 
+    // The login page itself stays reachable with password sign-in switched
+    // off - it is where the provider buttons live.
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
-    Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login.store');
 
-    Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])->name('password.request');
-    Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])->name('password.email');
+    Route::middleware('password.login.enabled')->group(function () {
+        Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login.store');
 
-    Route::get('/reset-password/{token}', [NewPasswordController::class, 'create'])->name('password.reset');
-    Route::post('/reset-password', [NewPasswordController::class, 'store'])->name('password.store');
+        Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])->name('password.request');
+        Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])->name('password.email');
+
+        Route::get('/reset-password/{token}', [NewPasswordController::class, 'create'])->name('password.reset');
+        Route::post('/reset-password', [NewPasswordController::class, 'store'])->name('password.store');
+    });
 
     Route::get('/auth/google/redirect', [GoogleController::class, 'redirect'])->name('auth.google.redirect');
     Route::get('/auth/github/redirect', [GitHubController::class, 'redirect'])->name('auth.github.redirect');

@@ -198,7 +198,47 @@ test('a share root confines browsing to that folder', function () {
 
     $this->actingAs($this->user)->getJson(route('app.assets.webdav.browse'))->assertOk();
 
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/files/team/Marketing'));
+    // Asserted whole, not as a fragment: a URL missing the separator after the
+    // root still contains the root, and would pass a str_contains check while
+    // pointing at a path that does not exist.
+    Http::assertSent(fn ($request) => $request->url() === 'https://cloud.example.com/remote.php/dav/files/team/Marketing');
+});
+
+test('a path below the configured root keeps its separators', function (string $root, string $path, string $expected) {
+    // The bug this pins down: building the URL by concatenation dropped the
+    // slash between the root and the path, so every file below a configured
+    // root 404'd while the listing above it worked.
+    config(['services.webdav.root' => $root]);
+
+    Http::fake(['cloud.example.com/*' => Http::response(davListing(), 207)]);
+
+    $this->actingAs($this->user)
+        ->getJson(route('app.assets.webdav.browse', ['path' => $path]))
+        ->assertOk();
+
+    Http::assertSent(fn ($request) => $request->url() === $expected);
+})->with([
+    'a file below a root' => ['Marketing', 'plakat.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/plakat.jpg'],
+    'a folder below a root' => ['Marketing', 'Bilder', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Bilder'],
+    'nested below a root' => ['Marketing', 'Bilder/2026', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Bilder/2026'],
+    'a nested root' => ['Marketing/Social', 'plakat.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Social/plakat.jpg'],
+    'no root at all' => ['', 'Bilder/plakat.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Bilder/plakat.jpg'],
+    'a name that needs encoding' => ['Marketing', 'Bühne 2026.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/B%C3%BChne%202026.jpg'],
+]);
+
+test('a download below a configured root reaches the file', function () {
+    // The listing worked while the download 404'd, because only the download
+    // path carried a segment after the root.
+    config(['services.webdav.root' => 'Marketing']);
+
+    Http::fake(['cloud.example.com/*' => Http::response(davImageBytes(), 200, ['Content-Type' => 'image/png'])]);
+
+    $this->actingAs($this->user)
+        ->postJson(route('app.assets.webdav.store'), ['paths' => ['plakat.jpg']])
+        ->assertOk();
+
+    Http::assertSent(fn ($request) => $request->method() === 'GET'
+        && $request->url() === 'https://cloud.example.com/remote.php/dav/files/team/Marketing/plakat.jpg');
 });
 
 test('a file the editor cannot use is refused, not crashed on', function () {

@@ -7,7 +7,6 @@ namespace App\Services;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -164,16 +163,21 @@ class WebdavService
     private function absoluteUrl(string $path): string
     {
         $base = rtrim((string) config('services.webdav.url'), '/');
-        $root = trim((string) config('services.webdav.root', ''), '/');
+        $root = $this->encodeSegments(trim((string) config('services.webdav.root', ''), '/'));
+        $path = $this->encodeSegments($path);
 
-        $full = implode('/', array_filter([$base, $root, $path === '' ? null : $path]));
+        return implode('/', array_filter([$base, $root, $path], static fn (string $part): bool => $part !== ''));
+    }
 
-        // Each segment is encoded on its own so that slashes stay separators
-        // while spaces and non-ASCII names survive the round-trip.
-        $prefix = $base.($root === '' ? '' : '/'.$root);
-        $relative = Str::after($full, $prefix);
+    /**
+     * Encodes each segment on its own so that slashes stay separators while
+     * spaces and non-ASCII names survive the round-trip.
+     */
+    private function encodeSegments(string $path): string
+    {
+        $segments = array_filter(explode('/', $path), static fn (string $segment): bool => $segment !== '');
 
-        return $prefix.implode('/', array_map('rawurlencode', array_filter(explode('/', $relative))));
+        return implode('/', array_map('rawurlencode', $segments));
     }
 
     private function propfindBody(): string

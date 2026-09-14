@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Post;
 
+use App\Dto\MediaItem;
 use App\Enums\Media\Type as MediaType;
 use App\Models\Media;
 use App\Models\Post;
@@ -136,7 +137,7 @@ class MediaAttacher
             $name = basename(parse_url($url, PHP_URL_PATH) ?? '') ?: 'download.bin';
             $media = $workspace->addMediaFromPath($download['path'], $name, 'assets');
 
-            return $media->toPostMediaItem();
+            return MediaItem::fromMedia($media)->toArray();
         } finally {
             @unlink($download['path']);
         }

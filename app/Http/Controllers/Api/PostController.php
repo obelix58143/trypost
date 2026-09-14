@@ -9,6 +9,7 @@ use App\Actions\Post\CreatePost;
 use App\Actions\Post\DeletePost;
 use App\Actions\Post\HostInlineMedia;
 use App\Actions\Post\UpdatePost;
+use App\Dto\MediaItem;
 use App\Enums\Media\Type as MediaType;
 use App\Enums\Post\Action as PostAction;
 use App\Enums\Post\CreatedVia;
@@ -134,7 +135,7 @@ class PostController extends Controller
 
         $media = $post->workspace->addMedia($file, 'assets');
 
-        $post->appendMedia([$media->toPostMediaItem()]);
+        $post->appendMedia([MediaItem::fromMedia($media)->toArray()]);
 
         $post->refresh()->load(['postPlatforms.socialAccount', 'labels']);
 

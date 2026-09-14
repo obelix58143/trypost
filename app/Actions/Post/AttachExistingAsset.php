@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Post;
 
 use App\Actions\Media\FindWorkspaceAsset;
+use App\Dto\MediaItem;
 use App\Models\Media;
 use App\Models\Post;
 use App\Support\PostStatusRules;
@@ -63,7 +64,7 @@ class AttachExistingAsset
             }
 
             $fresh->update([
-                'media' => collect($fresh->media ?? [])->push($asset->toPostMediaItem($alt))->all(),
+                'media' => collect($fresh->media ?? [])->push(MediaItem::fromMedia($asset, $alt)->toArray())->all(),
             ]);
             $post->setRawAttributes($fresh->getAttributes(), true);
         });

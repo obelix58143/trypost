@@ -7,6 +7,7 @@ namespace App\Dto;
 use App\Enums\Media\Source;
 use App\Enums\Media\Type;
 use App\Enums\SocialAccount\Platform;
+use App\Models\Media;
 use Illuminate\Support\Facades\File;
 
 class MediaItem
@@ -24,7 +25,56 @@ class MediaItem
         public readonly ?Source $source = null,
         public readonly ?array $source_meta = null,
         public readonly ?array $meta = null,
+        public readonly ?Type $type = null,
+        public readonly ?int $size = null,
     ) {}
+
+    /**
+     * The item to store in `posts.media` for an asset. Carries `meta` so the
+     * publish-time checks can read the measured video duration; alt text only
+     * applies to images.
+     */
+    public static function fromMedia(Media $media, ?string $alt = null): self
+    {
+        $meta = $media->meta ?? [];
+
+        if (filled($alt) && $media->isImage()) {
+            $meta['alt_text'] = $alt;
+        }
+
+        return new self(
+            id: $media->id,
+            path: $media->path,
+            url: $media->url,
+            mime_type: $media->mime_type,
+            original_filename: $media->original_filename,
+            meta: $meta ?: null,
+            type: $media->type,
+            size: $media->size,
+        );
+    }
+
+    /**
+     * The stored `posts.media` shape — the same keys the editor keeps from a
+     * MediaResource response, so every attach flow writes the same item.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'path' => $this->path,
+            'url' => $this->url,
+            'type' => $this->type?->value,
+            'mime_type' => $this->mime_type,
+            'original_filename' => $this->original_filename,
+            'size' => $this->size,
+            ...($this->meta ? ['meta' => $this->meta] : []),
+            ...($this->source ? ['source' => $this->source->value] : []),
+            ...($this->source_meta ? ['source_meta' => $this->source_meta] : []),
+        ];
+    }
 
     public function isVideo(): bool
     {
@@ -107,6 +157,8 @@ class MediaItem
 
         $sourceMeta = data_get($data, 'source_meta');
         $meta = data_get($data, 'meta');
+        $type = data_get($data, 'type');
+        $size = data_get($data, 'size');
 
         return new self(
             id: (string) data_get($data, 'id', ''),
@@ -117,6 +169,8 @@ class MediaItem
             source: $source,
             source_meta: is_array($sourceMeta) ? $sourceMeta : null,
             meta: is_array($meta) ? $meta : null,
+            type: is_string($type) ? Type::tryFrom($type) : null,
+            size: is_numeric($size) ? (int) $size : null,
         );
     }
 }

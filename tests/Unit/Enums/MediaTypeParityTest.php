@@ -18,7 +18,7 @@ test('the typescript media classifier agrees with the php enum on every corpus e
 
     $process = new Process([
         'node',
-        base_path('tests/fixtures/media-type-harness.mjs'),
+        base_path('tests/fixtures/media-type-harness.js'),
         resource_path('js/lib/mediaType.ts'),
         $corpusPath,
     ]);

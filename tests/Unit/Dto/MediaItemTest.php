@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Dto\MediaItem;
+use App\Models\Media;
+use App\Models\Workspace;
 
 test('fromArray backfills the mime type from the path extension when missing', function () {
     expect(MediaItem::fromArray(['path' => 'a/b/photo.JPG'])->mime_type)->toBe('image/jpeg');
@@ -83,4 +85,47 @@ test('numeric string dimensions are coerced to integers', function () {
 
     expect($item->width())->toBe(1080)
         ->and($item->height())->toBe(1920);
+});
+
+test('fromMedia builds the stored post media item and carries the measured meta', function () {
+    $workspace = Workspace::factory()->create();
+    $video = Media::factory()->video()->for($workspace, 'mediable')->create(['meta' => ['duration' => 12.5]]);
+
+    expect(MediaItem::fromMedia($video, 'ignored on video')->toArray())->toEqual([
+        'id' => $video->id,
+        'path' => $video->path,
+        'url' => $video->url,
+        'type' => 'video',
+        'mime_type' => 'video/mp4',
+        'original_filename' => $video->original_filename,
+        'size' => $video->size,
+        'meta' => ['duration' => 12.5],
+    ]);
+});
+
+test('fromMedia puts alt text in meta for images only and omits an empty meta', function () {
+    $workspace = Workspace::factory()->create();
+    $image = Media::factory()->for($workspace, 'mediable')->create(['meta' => ['width' => 10, 'height' => 20]]);
+    $document = Media::factory()->document()->for($workspace, 'mediable')->create();
+
+    expect(MediaItem::fromMedia($image, 'A red bicycle')->meta)->toEqual(['width' => 10, 'height' => 20, 'alt_text' => 'A red bicycle'])
+        ->and(MediaItem::fromMedia($image, '')->meta)->toEqual(['width' => 10, 'height' => 20])
+        ->and(MediaItem::fromMedia($document, 'ignored on pdf')->toArray())->not->toHaveKey('meta');
+});
+
+test('a stored item round-trips through fromArray and toArray', function () {
+    $stored = [
+        'id' => 'abc',
+        'path' => 'medias/photo.jpg',
+        'url' => 'https://cdn.example.com/photo.jpg',
+        'type' => 'image',
+        'mime_type' => 'image/jpeg',
+        'original_filename' => 'photo.jpg',
+        'size' => 1234,
+        'meta' => ['width' => 10, 'height' => 20],
+        'source' => 'unsplash',
+        'source_meta' => ['photographer' => 'Ana'],
+    ];
+
+    expect(MediaItem::fromArray($stored)->toArray())->toEqual($stored);
 });

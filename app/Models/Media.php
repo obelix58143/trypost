@@ -74,32 +74,6 @@ class Media extends Model
         return MediaType::classify($this->mime_type, $this->path) === MediaType::Document;
     }
 
-    /**
-     * The `posts.media` item for this asset. Carries `meta` so the publish-time
-     * checks can read the measured video duration; alt text only applies to images.
-     *
-     * @return array<string, mixed>
-     */
-    public function toPostMediaItem(?string $alt = null): array
-    {
-        $meta = $this->meta ?? [];
-
-        if (filled($alt) && $this->isImage()) {
-            $meta['alt_text'] = $alt;
-        }
-
-        return [
-            'id' => $this->id,
-            'path' => $this->path,
-            'url' => $this->url,
-            'type' => $this->type->value,
-            'mime_type' => $this->mime_type,
-            'original_filename' => $this->original_filename,
-            'size' => $this->size,
-            ...($meta ? ['meta' => $meta] : []),
-        ];
-    }
-
     public function getTemporaryUrl(int $expirationMinutes = 60): string
     {
         return Storage::temporaryUrl(

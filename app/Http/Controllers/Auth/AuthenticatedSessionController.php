@@ -106,10 +106,20 @@ class AuthenticatedSessionController extends Controller
             return null;
         }
 
-        return $endpoint.(str_contains($endpoint, '?') ? '&' : '?').http_build_query([
+        $parameters = [
             'id_token_hint' => $idToken,
-            'post_logout_redirect_uri' => url('/'),
             'client_id' => config('services.oidc.client_id'),
-        ]);
+        ];
+
+        // Only sent when the operator configured one. A post-logout redirect
+        // has to match a URI registered with the provider character for
+        // character; sending an unregistered one makes providers reject the
+        // whole request, and the user is left signed in while believing they
+        // are not. Without it they simply stay on the provider's page.
+        if (filled($returnTo = config('trypost.oidc_post_logout_redirect_uri'))) {
+            $parameters['post_logout_redirect_uri'] = $returnTo;
+        }
+
+        return $endpoint.(str_contains($endpoint, '?') ? '&' : '?').http_build_query($parameters);
     }
 }

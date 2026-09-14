@@ -167,6 +167,10 @@ return [
     // Ends the session at the identity provider too, so logging out really
     // logs out instead of silently signing straight back in.
     'oidc_logout_enabled' => env('OIDC_LOGOUT_ENABLED', true),
+    // Where the provider sends the browser after logout. Leave empty unless
+    // the exact same URI is registered with the provider - a mismatch makes
+    // providers reject the logout entirely.
+    'oidc_post_logout_redirect_uri' => env('OIDC_POST_LOGOUT_REDIRECT_URI'),
     // Group handling. The claim is whatever the provider puts the group names
     // in; allowed_groups gates who may sign in at all.
     'oidc_groups_claim' => env('OIDC_GROUPS_CLAIM', 'groups'),

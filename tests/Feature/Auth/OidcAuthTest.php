@@ -337,6 +337,42 @@ test('logging out also ends the session at the provider', function () {
     $this->assertGuest();
 });
 
+test('no post-logout redirect is sent unless one is configured', function () {
+    // Providers reject the whole logout when the URI is not registered with
+    // them character for character, which would leave the user signed in while
+    // believing they are not.
+    config(['trypost.oidc_post_logout_redirect_uri' => null]);
+
+    $user = User::factory()->create(['oidc_id' => 'provider-subject-1']);
+
+    $driver = Mockery::mock(OidcProvider::class);
+    $driver->shouldReceive('endSessionEndpoint')->andReturn('https://idp.example.com/logout');
+    Socialite::shouldReceive('driver')->with('oidc')->andReturn($driver);
+
+    $response = $this->actingAs($user)
+        ->withSession([OidcController::ID_TOKEN_SESSION_KEY => 'id-token-value'])
+        ->post(route('logout'));
+
+    expect($response->headers->get('Location'))->not->toContain('post_logout_redirect_uri');
+});
+
+test('a configured post-logout redirect is passed through untouched', function () {
+    config(['trypost.oidc_post_logout_redirect_uri' => 'https://app.example.com/']);
+
+    $user = User::factory()->create(['oidc_id' => 'provider-subject-1']);
+
+    $driver = Mockery::mock(OidcProvider::class);
+    $driver->shouldReceive('endSessionEndpoint')->andReturn('https://idp.example.com/logout');
+    Socialite::shouldReceive('driver')->with('oidc')->andReturn($driver);
+
+    $response = $this->actingAs($user)
+        ->withSession([OidcController::ID_TOKEN_SESSION_KEY => 'id-token-value'])
+        ->post(route('logout'));
+
+    expect($response->headers->get('Location'))
+        ->toContain('post_logout_redirect_uri='.urlencode('https://app.example.com/'));
+});
+
 test('logout stays local when the user did not use oidc', function () {
     $user = User::factory()->create();
 

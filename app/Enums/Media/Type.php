@@ -134,7 +134,7 @@ enum Type: string
     {
         return match ($this) {
             self::Document => $mimeType === self::PDF_MIME,
-            default => Str::contains($mimeType, '/') && Str::before($mimeType, '/') === $this->value,
+            default => Str::is("{$this->value}/*", $mimeType),
         };
     }
 

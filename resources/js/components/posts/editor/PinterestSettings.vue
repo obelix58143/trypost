@@ -3,6 +3,7 @@ import { IconAlertTriangle, IconChevronDown, IconChevronUp } from '@tabler/icons
 import { computed, ref } from 'vue';
 
 import InputError from '@/components/InputError.vue';
+import MediaRulesWarning from '@/components/posts/editor/MediaRulesWarning.vue';
 import { Avatar } from '@/components/ui/avatar';
 import {
     Combobox,
@@ -15,12 +16,12 @@ import {
     ComboboxTrigger,
 } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
-import { getMediaValidationWarning } from '@/composables/useMedia';
 import { usePageErrors } from '@/composables/usePageErrors';
 import { getPlatformLogo } from '@/composables/usePlatformLogo';
 import type { PinterestBoard } from '@/types';
 import { ContentType } from '@/types/content-type';
 import type { MediaItem } from '@/types/media';
+import { Platform } from '@/types/platform';
 
 interface SocialAccount {
     id: string;
@@ -69,8 +70,6 @@ const pickVariant = (value: string) => {
     if (props.disabled) return;
     emit('update:contentType', value);
 };
-
-const warning = computed(() => getMediaValidationWarning(props.contentType, props.media));
 
 const boardOptions = computed<BoardOption[]>(() =>
     props.boards.map((b) => ({ value: b.id, label: b.name })),
@@ -248,13 +247,7 @@ const linkError = computed<string | undefined>(() => {
                 <InputError :message="linkError" />
             </div>
 
-            <p
-                v-if="warning"
-                class="flex items-start gap-2 rounded-lg border-2 border-foreground bg-rose-50 p-2 text-xs font-semibold text-rose-700"
-            >
-                <IconAlertTriangle class="mt-0.5 size-3.5 shrink-0" />
-                {{ $t(`posts.form.warnings.${warning.key}`, warning.params) }}
-            </p>
+            <MediaRulesWarning :content-type="contentType" :media="media" :platform="Platform.Pinterest" />
         </div>
     </div>
 </template>

@@ -73,16 +73,6 @@ class OidcController extends Controller
             ]);
         }
 
-        // Accounts are matched by email below, so an address the provider says
-        // it has not verified must not be accepted: it could otherwise be used
-        // to claim someone else's account. Marking it verified on our side
-        // would be untrue as well.
-        if (data_get($oidcUser->getRaw(), 'email_verified') === false) {
-            return redirect()->route('login')->withErrors([
-                'email' => __('auth.oidc_email_unverified'),
-            ]);
-        }
-
         if ($driver instanceof OidcProvider && filled($idToken = $driver->idToken())) {
             $request->session()->put(self::ID_TOKEN_SESSION_KEY, $idToken);
         }
@@ -92,9 +82,24 @@ class OidcController extends Controller
             return $this->connectToCurrentUser(Auth::user(), $oidcUser->getId());
         }
 
-        $user = User::where('oidc_id', $oidcUser->getId())
-            ->orWhere('email', $oidcUser->getEmail())
-            ->first();
+        $user = User::where('oidc_id', $oidcUser->getId())->first();
+
+        if (! $user) {
+            // Matching on the email address is how someone with a local account
+            // moves over to SSO. An address the provider has not verified must
+            // not be able to do that, or anyone able to sign up there with
+            // someone else's address could walk into their account. Signing in
+            // is still fine - it just creates a separate account.
+            $byEmail = User::where('email', $oidcUser->getEmail())->first();
+
+            if ($byEmail && data_get($oidcUser->getRaw(), 'email_verified') === false) {
+                return redirect()->route('login')->withErrors([
+                    'email' => __('auth.oidc_email_unverified'),
+                ]);
+            }
+
+            $user = $byEmail;
+        }
 
         if ($user) {
             return $this->loginExistingUser($user, $oidcUser->getId());

@@ -184,6 +184,36 @@ test('a verified email is accepted', function () {
     $this->assertAuthenticatedAs($user);
 });
 
+test('an unverified email still signs in when it collides with nothing', function () {
+    // Providers that simply do not do email verification report false for
+    // everyone. That must not lock them out - it only rules out taking over
+    // an account that already exists.
+    config([
+        'trypost.self_hosted' => false,
+        'trypost.oidc_auto_join_enabled' => false,
+    ]);
+
+    fakeOidcDriver(['email' => 'newcomer@example.com', 'email_verified' => false]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    $this->assertAuthenticated();
+    expect(User::where('email', 'newcomer@example.com')->exists())->toBeTrue();
+});
+
+test('the subject matches even when the email is unverified', function () {
+    $user = User::factory()->create([
+        'oidc_id' => 'provider-subject-1',
+        'email' => 'member@example.com',
+    ]);
+
+    fakeOidcDriver(['email_verified' => false]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    $this->assertAuthenticatedAs($user);
+});
+
 test('a provider that returns no email is refused', function () {
     fakeOidcDriver(['email' => null]);
 

@@ -60,8 +60,8 @@ return [
     'oidc_login' => 'Mit :provider anmelden',
     'oidc_signup' => 'Mit :provider registrieren',
     'oidc_group_denied' => 'Dein Konto ist in keiner Gruppe, die diese Anwendung nutzen darf.',
-    'oidc_email_missing' => 'Dein Anmeldedienst hat keine E-Mail-Adresse uebermittelt.',
-    'oidc_email_unverified' => 'Deine E-Mail-Adresse ist bei deinem Anmeldedienst nicht bestaetigt.',
+    'oidc_email_missing' => 'Dein Anmeldedienst hat keine E-Mail-Adresse übermittelt.',
+    'oidc_email_unverified' => 'Deine E-Mail-Adresse ist bei deinem Anmeldedienst nicht bestätigt.',
     'oidc_failed' => 'Die Anmeldung ist fehlgeschlagen. Bitte versuche es erneut.',
     'github_email_unavailable' => 'Deine E-Mail-Adresse konnte nicht von GitHub abgerufen werden. Mache deine GitHub-E-Mail-Adresse öffentlich oder erteile die Berechtigung für den E-Mail-Zugriff und versuche es dann erneut.',
 

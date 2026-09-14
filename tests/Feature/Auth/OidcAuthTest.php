@@ -701,3 +701,20 @@ test('roles are left alone while no admin group is configured', function () {
     expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
         ->toBe('admin');
 });
+
+test('groups arrive whether the provider sends a list or a string', function (mixed $claim) {
+    // Keycloak-style arrays and ADFS-style strings both have to work.
+    config(['trypost.oidc_allowed_groups' => 'board']);
+
+    $user = User::factory()->create(['email' => 'member@example.com']);
+
+    fakeOidcDriver(['groups' => $claim]);
+
+    $this->get(route('auth.oidc.callback'));
+
+    $this->assertAuthenticatedAs($user);
+})->with([
+    [['staff', 'board']],
+    ['staff board'],
+    ['staff,board'],
+]);

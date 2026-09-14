@@ -168,8 +168,16 @@ class OidcController extends Controller
     private function groupsOf(\Laravel\Socialite\Contracts\User $oidcUser): array
     {
         $claim = (string) config('trypost.oidc_groups_claim', 'groups');
+        $value = data_get($oidcUser->getRaw(), $claim, []);
 
-        return array_map('strval', (array) data_get($oidcUser->getRaw(), $claim, []));
+        // Most providers send an array, some a single space- or
+        // comma-separated string. Both have to work, or group handling
+        // silently does nothing on half the providers out there.
+        if (is_string($value)) {
+            $value = preg_split('/[\s,]+/', trim($value), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        }
+
+        return array_values(array_map('strval', array_filter((array) $value, 'is_scalar')));
     }
 
     /**

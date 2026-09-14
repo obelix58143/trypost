@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Socialite\OidcProvider;
 use App\Support\Auth\LoginMethods;
+use Firebase\JWT\JWT;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -818,4 +819,205 @@ test('ownership is left alone unless releasing it was asked for', function () {
     $this->get(route('auth.oidc.callback'));
 
     expect($account->fresh()->owner_id)->toBe($owner->id);
+});
+
+// ------------------------------------------------- ID token attack surface ---
+
+/**
+ * A provider wired to a throwaway key pair, plus the pieces needed to forge
+ * tokens against it.
+ *
+ * @return array{provider: OidcProvider, private: string, public: string, kid: string}
+ */
+function oidcProviderUnderTest(): array
+{
+    $key = openssl_pkey_new([
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    openssl_pkey_export($key, $privatePem);
+    $details = openssl_pkey_get_details($key);
+    $publicPem = $details['key'];
+
+    $b64 = fn (string $bytes): string => rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+    $kid = 'test-key';
+
+    $jwks = ['keys' => [[
+        'kty' => 'RSA', 'kid' => $kid, 'use' => 'sig', 'alg' => 'RS256',
+        'n' => $b64($details['rsa']['n']), 'e' => $b64($details['rsa']['e']),
+    ]]];
+
+    $discovery = [
+        'issuer' => 'https://idp.example.com',
+        'authorization_endpoint' => 'https://idp.example.com/authorize',
+        'token_endpoint' => 'https://idp.example.com/token',
+        'userinfo_endpoint' => 'https://idp.example.com/userinfo',
+        'jwks_uri' => 'https://idp.example.com/jwks',
+    ];
+
+    // Enough responses for repeated discovery/JWKS fetches, including a
+    // refresh attempt after a rejected signature.
+    $queue = [];
+    for ($i = 0; $i < 8; $i++) {
+        $queue[] = new Response(200, [], json_encode($discovery));
+        $queue[] = new Response(200, [], json_encode($jwks));
+    }
+
+    config([
+        'services.oidc.discovery_url' => 'https://idp.example.com',
+        'cache.default' => 'array',
+    ]);
+    cache()->clear();
+
+    // The provider reads the nonce from the request's session. Without binding
+    // it here, validation fails before it ever looks at a signature - and every
+    // attack test would pass for the wrong reason.
+    $request = request();
+    $request->setLaravelSession(app('session.store'));
+
+    $provider = new OidcProvider($request, 'client-id', 'client-secret', 'https://app.example.com/auth/oidc/callback');
+    $provider->setHttpClient(new Client(['handler' => HandlerStack::create(new MockHandler($queue))]));
+
+    return ['provider' => $provider, 'private' => $privatePem, 'public' => $publicPem, 'kid' => $kid];
+}
+
+/**
+ * Runs the provider's ID token validation and says whether it accepted.
+ */
+function idTokenAccepted(OidcProvider $provider, string $token): bool
+{
+    $method = new ReflectionMethod($provider, 'validateIdToken');
+    $method->setAccessible(true);
+
+    try {
+        $method->invoke($provider, $token);
+
+        return true;
+    } catch (Throwable) {
+        return false;
+    }
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function idTokenClaims(array $overrides = []): array
+{
+    return array_merge([
+        'iss' => 'https://idp.example.com',
+        'aud' => ['client-id'],
+        'sub' => 'provider-subject-1',
+        'exp' => time() + 300,
+        'iat' => time(),
+        'nonce' => 'the-expected-nonce',
+    ], $overrides);
+}
+
+beforeEach(function () {
+    $this->startSession();
+});
+
+test('a properly signed token is accepted (control)', function () {
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(), $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeTrue();
+});
+
+test('an unsigned token is rejected', function () {
+    // The alg=none attack: strip the signature and claim the token needs none.
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $b64 = fn (array $d): string => rtrim(strtr(base64_encode(json_encode($d)), '+/', '-_'), '=');
+    $token = $b64(['alg' => 'none', 'typ' => 'JWT', 'kid' => $ctx['kid']]).'.'.$b64(idTokenClaims()).'.';
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('a token signed with the public key as an HMAC secret is rejected', function () {
+    // Algorithm confusion: hand back HS256 and use the provider's own public
+    // key as the shared secret. Fatal wherever the algorithm is taken from the
+    // token instead of the key.
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(), $ctx['public'], 'HS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('a token signed by a different key is rejected', function () {
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $attacker = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    openssl_pkey_export($attacker, $attackerPem);
+
+    $token = JWT::encode(idTokenClaims(), $attackerPem, 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('a token for a different audience is rejected', function () {
+    // Token substitution: a token the provider issued for another client.
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(['aud' => ['some-other-client']]), $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('a token from a different issuer is rejected', function () {
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(['iss' => 'https://evil.example.com']), $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('an expired token is rejected', function () {
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(['exp' => time() - 3600]), $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('a token replayed from another login is rejected', function () {
+    // Right signature, right audience, wrong login: the nonce ties a token to
+    // the one authorization request that asked for it.
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(['nonce' => 'a-nonce-from-another-login']), $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('a token without a nonce is rejected', function () {
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $claims = idTokenClaims();
+    unset($claims['nonce']);
+    $token = JWT::encode($claims, $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
+});
+
+test('the nonce is consumed, so the same token cannot be used twice', function () {
+    $ctx = oidcProviderUnderTest();
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $token = JWT::encode(idTokenClaims(), $ctx['private'], 'RS256', $ctx['kid']);
+
+    expect(idTokenAccepted($ctx['provider'], $token))->toBeTrue()
+        ->and(idTokenAccepted($ctx['provider'], $token))->toBeFalse();
 });

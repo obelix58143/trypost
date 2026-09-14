@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { IconAlertTriangle, IconChevronDown, IconChevronUp } from '@tabler/icons-vue';
+import { IconChevronDown, IconChevronUp } from '@tabler/icons-vue';
 import { computed, ref } from 'vue';
 
+import MediaRulesWarning from '@/components/posts/editor/MediaRulesWarning.vue';
 import { Avatar } from '@/components/ui/avatar';
-import { getMediaValidationWarning } from '@/composables/useMedia';
 import { getPlatformLogo } from '@/composables/usePlatformLogo';
 import { ContentType } from '@/types/content-type';
 import type { MediaItem } from '@/types/media';
+import { Platform } from '@/types/platform';
 
 interface SocialAccount {
     id: string;
@@ -63,8 +64,6 @@ const pickAspectRatio = (value: string) => {
     if (props.disabled) return;
     emit('update:meta', { ...props.meta, aspect_ratio: value });
 };
-
-const warning = computed(() => getMediaValidationWarning(props.contentType, props.media));
 </script>
 
 <template>
@@ -139,13 +138,7 @@ const warning = computed(() => getMediaValidationWarning(props.contentType, prop
                 </div>
             </div>
 
-            <p
-                v-if="warning"
-                class="flex items-start gap-2 rounded-lg border-2 border-foreground bg-rose-50 p-2 text-xs font-semibold text-rose-700"
-            >
-                <IconAlertTriangle class="mt-0.5 size-3.5 shrink-0" />
-                {{ $t(`posts.form.warnings.${warning.key}`, warning.params) }}
-            </p>
+            <MediaRulesWarning :content-type="contentType" :media="media" :platform="Platform.Instagram" />
         </div>
     </div>
 </template>

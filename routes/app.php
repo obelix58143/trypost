@@ -236,6 +236,7 @@ Route::middleware(['auth', EnsureAccountReady::class, EnsureHasWorkspace::class]
     Route::post('assets', [AssetController::class, 'store'])->name('app.assets.store');
     Route::post('assets/chunked', [AssetController::class, 'storeChunked'])->name('app.assets.store-chunked');
     Route::post('assets/from-url', [AssetController::class, 'storeFromUrl'])->name('app.assets.store-from-url');
+    Route::get('assets/{media}/download', [AssetController::class, 'download'])->name('app.assets.download');
     Route::delete('assets/{media}', [AssetController::class, 'destroy'])->name('app.assets.destroy');
     Route::get('assets/unsplash/search', [UnsplashController::class, 'search'])->name('app.assets.unsplash.search');
     Route::get('assets/unsplash/trending', [UnsplashController::class, 'trending'])->name('app.assets.unsplash.trending');

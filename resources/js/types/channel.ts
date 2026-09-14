@@ -32,6 +32,7 @@ export interface Channel {
     contentType: string;
     meta: Record<string, any>;
     issue?: string | null;
+    issueDocsUrl?: string | null;
     status?: string | null;
     contentTypeError?: string;
     publishConfig?: Record<string, any> | null;

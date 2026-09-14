@@ -13,6 +13,7 @@ use Firebase\JWT\JWT;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -1188,3 +1189,320 @@ test('every string the login page can show is translated', function (string $loc
         expect(__($key))->not->toBe($key, "missing translation: {$key} ({$locale})");
     }
 })->with(['en', 'de']);
+
+// ------------------------------------------------- discovery & userinfo ---
+
+/**
+ * A provider whose HTTP answers the test dictates, so the paths around a
+ * misconfigured or thin identity provider can be exercised directly.
+ *
+ * @param  array<int, Response>  $responses
+ */
+function oidcProviderAnswering(array $responses, string $discoveryUrl = 'https://idp.example.com'): array
+{
+    config([
+        'services.oidc.discovery_url' => $discoveryUrl,
+        'cache.default' => 'array',
+    ]);
+    cache()->clear();
+
+    $history = [];
+    $stack = HandlerStack::create(new MockHandler($responses));
+    $stack->push(Middleware::history($history));
+
+    $request = request();
+    $request->setLaravelSession(app('session.store'));
+
+    $provider = new OidcProvider($request, 'client-id', 'client-secret', 'https://app.example.com/auth/oidc/callback');
+    $provider->setHttpClient(new Client(['handler' => $stack]));
+
+    return ['provider' => $provider, 'history' => &$history];
+}
+
+/** Calls a protected method on the provider. */
+function callOnProvider(OidcProvider $provider, string $method, mixed ...$arguments): mixed
+{
+    $reflection = new ReflectionMethod($provider, $method);
+    $reflection->setAccessible(true);
+
+    return $reflection->invoke($provider, ...$arguments);
+}
+
+function fullDiscovery(array $overrides = []): array
+{
+    return array_merge([
+        'issuer' => 'https://idp.example.com',
+        'authorization_endpoint' => 'https://idp.example.com/authorize',
+        'token_endpoint' => 'https://idp.example.com/token',
+        'userinfo_endpoint' => 'https://idp.example.com/userinfo',
+        'jwks_uri' => 'https://idp.example.com/jwks',
+    ], $overrides);
+}
+
+test('a discovery document without the endpoints we need is refused', function (array $document) {
+    // Half a document is worse than none: the login would fail later, on a
+    // page that cannot say why.
+    $ctx = oidcProviderAnswering([new Response(200, [], json_encode($document))]);
+
+    expect(fn () => $ctx['provider']->discovery())->toThrow(RuntimeException::class);
+})->with([
+    'nothing at all' => [[]],
+    'no authorization endpoint' => [['token_endpoint' => 'https://idp.example.com/token']],
+    'no token endpoint' => [['authorization_endpoint' => 'https://idp.example.com/authorize']],
+]);
+
+test('a discovery response that is not a document at all is refused', function () {
+    $ctx = oidcProviderAnswering([new Response(200, [], '<html>login here</html>')]);
+
+    expect(fn () => $ctx['provider']->discovery())->toThrow(RuntimeException::class);
+});
+
+test('the discovery document is fetched once and then reused', function () {
+    // Every sign-in would otherwise pay for the round-trip, and a provider
+    // under load would feel it.
+    // Three answers are queued on purpose: without the cache the extra calls
+    // would be served rather than blowing up, so the count is what fails.
+    $ctx = oidcProviderAnswering(array_fill(0, 3, new Response(200, [], json_encode(fullDiscovery()))));
+
+    $ctx['provider']->discovery();
+    $ctx['provider']->discovery();
+    $ctx['provider']->discovery();
+
+    expect($ctx['history'])->toHaveCount(1);
+});
+
+test('a bare issuer URL is expanded to the well-known path', function () {
+    // Pasting the issuer is the easier thing to get right, so it has to work.
+    $ctx = oidcProviderAnswering(
+        [new Response(200, [], json_encode(fullDiscovery()))],
+        'https://idp.example.com/realms/club',
+    );
+
+    $ctx['provider']->discovery();
+
+    expect((string) $ctx['history'][0]['request']->getUri())
+        ->toBe('https://idp.example.com/realms/club/.well-known/openid-configuration');
+});
+
+test('a discovery URL that already points at the document is left alone', function () {
+    $ctx = oidcProviderAnswering(
+        [new Response(200, [], json_encode(fullDiscovery()))],
+        'https://idp.example.com/.well-known/openid-configuration',
+    );
+
+    $ctx['provider']->discovery();
+
+    expect((string) $ctx['history'][0]['request']->getUri())
+        ->toBe('https://idp.example.com/.well-known/openid-configuration');
+});
+
+test('an unconfigured discovery URL fails instead of guessing', function () {
+    $ctx = oidcProviderAnswering([]);
+    config(['services.oidc.discovery_url' => '']);
+
+    expect(fn () => $ctx['provider']->discovery())->toThrow(RuntimeException::class);
+});
+
+test('a provider that publishes no logout endpoint reports none', function () {
+    // Not every provider offers RP-initiated logout; that is not an error.
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery(['end_session_endpoint' => null]))),
+    ]);
+
+    expect($ctx['provider']->endSessionEndpoint())->toBeNull();
+});
+
+test('an unreachable provider does not stop anyone logging out', function () {
+    // Logout has to work even when the provider is down, or a user is stuck
+    // signed in with no way to end the session.
+    $ctx = oidcProviderAnswering([new Response(500, [], 'gateway down')]);
+
+    expect($ctx['provider']->endSessionEndpoint())->toBeNull();
+});
+
+test('a provider without a userinfo endpoint is refused', function () {
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery(['userinfo_endpoint' => null]))),
+    ]);
+
+    expect(fn () => callOnProvider($ctx['provider'], 'getUserByToken', 'access-token'))
+        ->toThrow(RuntimeException::class);
+});
+
+test('claims the userinfo endpoint leaves out are filled in from the ID token', function () {
+    // Providers commonly put `groups` in the ID token only. Losing it here
+    // would silently strip everyone of their group-derived role.
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery())),
+        new Response(200, [], json_encode(['sub' => 'provider-subject-1', 'email' => 'member@example.com'])),
+    ]);
+
+    $reflection = new ReflectionProperty($ctx['provider'], 'idTokenClaims');
+    $reflection->setAccessible(true);
+    $reflection->setValue($ctx['provider'], ['groups' => ['board'], 'sub' => 'provider-subject-1']);
+
+    $claims = callOnProvider($ctx['provider'], 'getUserByToken', 'access-token');
+
+    expect($claims['groups'])->toBe(['board'])
+        ->and($claims['email'])->toBe('member@example.com');
+});
+
+test('userinfo wins over the ID token where both carry a claim', function () {
+    // The precedence is worth pinning down: userinfo is the fresher answer.
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery())),
+        new Response(200, [], json_encode(['sub' => 'provider-subject-1', 'email' => 'new@example.com'])),
+    ]);
+
+    $reflection = new ReflectionProperty($ctx['provider'], 'idTokenClaims');
+    $reflection->setAccessible(true);
+    $reflection->setValue($ctx['provider'], ['email' => 'stale@example.com', 'sub' => 'provider-subject-1']);
+
+    expect(callOnProvider($ctx['provider'], 'getUserByToken', 'access-token')['email'])
+        ->toBe('new@example.com');
+});
+
+test('a provider that returns no subject is refused', function () {
+    // Without a subject there is nothing stable to tie the account to.
+    $ctx = oidcProviderAnswering([]);
+
+    expect(fn () => callOnProvider($ctx['provider'], 'mapUserToObject', ['email' => 'member@example.com']))
+        ->toThrow(RuntimeException::class);
+});
+
+test('the display name falls back through what the provider did send', function (array $claims, string $expected) {
+    $ctx = oidcProviderAnswering([]);
+
+    $user = callOnProvider($ctx['provider'], 'mapUserToObject', $claims + ['sub' => 'provider-subject-1']);
+
+    expect($user->getName())->toBe($expected);
+})->with([
+    'a full name' => [['name' => 'Example Member'], 'Example Member'],
+    'given and family name' => [['given_name' => 'Example', 'family_name' => 'Member'], 'Example Member'],
+    'only a username' => [['preferred_username' => 'member'], 'member'],
+]);
+
+test('a response with no ID token at all is refused', function () {
+    $ctx = oidcProviderUnderTest();
+
+    expect(idTokenAccepted($ctx['provider'], ''))->toBeFalse();
+});
+
+// ----------------------------------------- linking a provider to oneself ---
+
+test('connecting stores the subject on the signed-in account', function () {
+    $user = User::factory()->create(['oidc_id' => null]);
+
+    fakeOidcDriver(['sub' => 'provider-subject-9']);
+
+    $this->actingAs($user)->get(route('auth.oidc.callback'));
+
+    expect($user->fresh()->oidc_id)->toBe('provider-subject-9');
+});
+
+test('a subject already linked to someone else cannot be taken over', function () {
+    // Otherwise anyone who can sign in at the provider could attach that
+    // identity to a second local account and reach it from both.
+    $owner = User::factory()->create(['oidc_id' => 'provider-subject-9']);
+    $other = User::factory()->create(['oidc_id' => null]);
+
+    fakeOidcDriver(['sub' => 'provider-subject-9']);
+
+    $this->actingAs($other)
+        ->get(route('auth.oidc.callback'))
+        ->assertSessionHas('flash.error');
+
+    expect($other->fresh()->oidc_id)->toBeNull()
+        ->and($owner->fresh()->oidc_id)->toBe('provider-subject-9');
+});
+
+test('connecting the same subject again changes nothing', function () {
+    $user = User::factory()->create(['oidc_id' => 'provider-subject-9']);
+
+    fakeOidcDriver(['sub' => 'provider-subject-9']);
+
+    $this->actingAs($user)
+        ->get(route('auth.oidc.callback'))
+        ->assertSessionHas('flash.success');
+
+    expect($user->fresh()->oidc_id)->toBe('provider-subject-9');
+});
+
+// ------------------------------------------------------- token exchange ---
+
+/**
+ * Key material plus the JWKS document that publishes it.
+ *
+ * @return array{private: string, kid: string, jwks: array<string, mixed>}
+ */
+function oidcTestKeys(): array
+{
+    $key = openssl_pkey_new([
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    openssl_pkey_export($key, $privatePem);
+    $details = openssl_pkey_get_details($key);
+
+    $b64 = fn (string $bytes): string => rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+    $kid = 'test-key';
+
+    return [
+        'private' => $privatePem,
+        'kid' => $kid,
+        'jwks' => ['keys' => [[
+            'kty' => 'RSA', 'kid' => $kid, 'use' => 'sig', 'alg' => 'RS256',
+            'n' => $b64($details['rsa']['n']), 'e' => $b64($details['rsa']['e']),
+        ]]],
+    ];
+}
+
+test('the token exchange verifies the ID token it was handed', function () {
+    // The whole chain in one go: discovery, the code-for-token call, and the
+    // signature check against the published keys.
+    $keys = oidcTestKeys();
+    $token = JWT::encode(idTokenClaims(), $keys['private'], 'RS256', $keys['kid']);
+
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery())),
+        new Response(200, [], json_encode(['access_token' => 'at', 'id_token' => $token])),
+        new Response(200, [], json_encode($keys['jwks'])),
+    ]);
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    $response = $ctx['provider']->getAccessTokenResponse('the-code');
+
+    expect($response['access_token'])->toBe('at')
+        ->and($ctx['provider']->idToken())->toBe($token);
+});
+
+test('a token response with no ID token is refused', function () {
+    // An OIDC provider that answers like a plain OAuth2 one proves nothing
+    // about who signed in.
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery())),
+        new Response(200, [], json_encode(['access_token' => 'at'])),
+    ]);
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    expect(fn () => $ctx['provider']->getAccessTokenResponse('the-code'))
+        ->toThrow(RuntimeException::class);
+});
+
+test('a token response carrying a forged ID token is refused', function () {
+    // Signed with a key the provider never published.
+    $published = oidcTestKeys();
+    $attacker = oidcTestKeys();
+    $token = JWT::encode(idTokenClaims(), $attacker['private'], 'RS256', $published['kid']);
+
+    $ctx = oidcProviderAnswering([
+        new Response(200, [], json_encode(fullDiscovery())),
+        new Response(200, [], json_encode(['access_token' => 'at', 'id_token' => $token])),
+        new Response(200, [], json_encode($published['jwks'])),
+        new Response(200, [], json_encode($published['jwks'])),
+    ]);
+    session(['oidc.nonce' => 'the-expected-nonce']);
+
+    expect(fn () => $ctx['provider']->getAccessTokenResponse('the-code'))
+        ->toThrow(RuntimeException::class, 'The ID token could not be verified');
+});

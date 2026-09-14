@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\GitHubController;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\NewPasswordController;
+use App\Http\Controllers\Auth\OidcController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
@@ -33,6 +34,7 @@ Route::middleware(['guest'])->group(function () {
 
     Route::get('/auth/google/redirect', [GoogleController::class, 'redirect'])->name('auth.google.redirect');
     Route::get('/auth/github/redirect', [GitHubController::class, 'redirect'])->name('auth.github.redirect');
+    Route::get('/auth/oidc/redirect', [OidcController::class, 'redirect'])->name('auth.oidc.redirect');
 });
 
 // Callbacks must be reachable by both guests (signup/login) and authenticated
@@ -41,6 +43,7 @@ Route::middleware(['guest'])->group(function () {
 // on `Auth::check()` to dispatch to the matching flow.
 Route::get('/auth/google/callback', [GoogleController::class, 'callback'])->name('auth.google.callback');
 Route::get('/auth/github/callback', [GitHubController::class, 'callback'])->name('auth.github.callback');
+Route::get('/auth/oidc/callback', [OidcController::class, 'callback'])->name('auth.oidc.callback');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/verify-email', EmailVerificationPromptController::class)->name('verification.notice');

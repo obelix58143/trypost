@@ -66,6 +66,8 @@ class HandleInertiaRequests extends Middleware
             'selfHosted' => $isSelfHosted,
             'googleAuthEnabled' => SocialAuthProvider::Google->isEnabled(),
             'githubAuthEnabled' => SocialAuthProvider::GitHub->isEnabled(),
+            'oidcAuthEnabled' => SocialAuthProvider::Oidc->isEnabled(),
+            'oidcDisplayName' => SocialAuthProvider::Oidc->label(),
         ];
     }
 

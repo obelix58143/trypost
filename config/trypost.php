@@ -157,6 +157,22 @@ return [
 
     'github_auth_enabled' => env('GITHUB_AUTH_ENABLED', false),
 
+    'oidc_auth_enabled' => env('OIDC_AUTH_ENABLED', false),
+    'oidc_display_name' => env('OIDC_DISPLAY_NAME', 'SSO'),
+    // Ends the session at the identity provider too, so logging out really
+    // logs out instead of silently signing straight back in.
+    'oidc_logout_enabled' => env('OIDC_LOGOUT_ENABLED', true),
+    // Group handling. The claim is whatever the provider puts the group names
+    // in; allowed_groups gates who may sign in at all.
+    'oidc_groups_claim' => env('OIDC_GROUPS_CLAIM', 'groups'),
+    'oidc_allowed_groups' => env('OIDC_ALLOWED_GROUPS', ''),
+    // Self-hosted teams usually want provider group membership to be the only
+    // onboarding step, so new OIDC users can be placed on the shared account
+    // instead of needing a separate invite each.
+    'oidc_auto_join_enabled' => env('OIDC_AUTO_JOIN_ENABLED', false),
+    'oidc_auto_join_role' => env('OIDC_AUTO_JOIN_ROLE', 'member'),
+    'oidc_auto_join_account_id' => env('OIDC_AUTO_JOIN_ACCOUNT_ID'),
+
     /*
     |--------------------------------------------------------------------------
     | Social Platforms

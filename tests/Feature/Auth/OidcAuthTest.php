@@ -8,6 +8,10 @@ use App\Models\Account;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Socialite\OidcProvider;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
 use Mockery\MockInterface;
@@ -343,4 +347,101 @@ test('the settings page lists oidc among the providers', function () {
         ->original->getData()['page']['props'];
 
     expect(collect($props['connectedAccounts'])->pluck('provider'))->toContain('oidc');
+});
+
+// ------------------------------------------------------------ key caching ---
+
+/**
+ * Builds a throwaway JWKS plus a Guzzle client that serves it, so the key
+ * handling can be exercised without touching the network.
+ *
+ * @return array{0: Client, 1: array<string, mixed>}
+ */
+function fakeJwksClient(): array
+{
+    $key = openssl_pkey_new([
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    $details = openssl_pkey_get_details($key);
+
+    $base64url = fn (string $bytes): string => rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+
+    $jwks = ['keys' => [[
+        'kty' => 'RSA',
+        'kid' => 'test-key',
+        'use' => 'sig',
+        'alg' => 'RS256',
+        'n' => $base64url($details['rsa']['n']),
+        'e' => $base64url($details['rsa']['e']),
+    ]]];
+
+    $discovery = [
+        'issuer' => 'https://idp.example.com',
+        'authorization_endpoint' => 'https://idp.example.com/authorize',
+        'token_endpoint' => 'https://idp.example.com/token',
+        'userinfo_endpoint' => 'https://idp.example.com/userinfo',
+        'jwks_uri' => 'https://idp.example.com/jwks',
+    ];
+
+    // Discovery is fetched once and then cached, so every later request in a
+    // test is for the key set.
+    $handler = new MockHandler([
+        new Response(200, [], json_encode($discovery)),
+        new Response(200, [], json_encode($jwks)),
+        new Response(200, [], json_encode($jwks)),
+        new Response(200, [], json_encode($jwks)),
+    ]);
+
+    return [new Client(['handler' => HandlerStack::create($handler)]), $jwks];
+}
+
+test('signing keys survive a cache store that serializes', function () {
+    // The array store keeps objects as they are; a store that serializes would
+    // choke on the OpenSSL key objects inside a parsed key set, so the raw
+    // document has to be what gets cached.
+    config(['cache.default' => 'file']);
+    cache()->clear();
+
+    config([
+        'services.oidc.discovery_url' => 'https://idp.example.com',
+        'services.oidc.client_id' => 'client-id',
+    ]);
+
+    [$client] = fakeJwksClient();
+
+    $provider = new OidcProvider(request(), 'client-id', 'client-secret', 'https://app.example.com/auth/oidc/callback');
+    $provider->setHttpClient($client);
+
+    $method = new ReflectionMethod($provider, 'signingKeys');
+    $method->setAccessible(true);
+
+    $first = $method->invoke($provider);
+
+    // Second call is served from the cache - this is where the old code blew up.
+    $second = $method->invoke($provider);
+
+    expect($first)->toBeArray()->not->toBeEmpty()
+        ->and($second)->toBeArray()->not->toBeEmpty()
+        ->and(array_keys($second))->toBe(array_keys($first));
+});
+
+test('a refresh refetches the key set', function () {
+    config(['cache.default' => 'file']);
+    cache()->clear();
+
+    config(['services.oidc.discovery_url' => 'https://idp.example.com']);
+
+    [$client] = fakeJwksClient();
+
+    $provider = new OidcProvider(request(), 'client-id', 'client-secret', 'https://app.example.com/auth/oidc/callback');
+    $provider->setHttpClient($client);
+
+    $method = new ReflectionMethod($provider, 'signingKeys');
+    $method->setAccessible(true);
+
+    $method->invoke($provider);
+
+    // Forces a second trip to the provider, which the mock handler answers.
+    expect($method->invoke($provider, true))->toBeArray()->not->toBeEmpty();
 });

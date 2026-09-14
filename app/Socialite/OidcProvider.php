@@ -300,16 +300,21 @@ class OidcProvider extends AbstractProvider implements ProviderInterface
             Cache::forget($cacheKey);
         }
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($jwksUri): array {
-            $jwks = json_decode((string) $this->getHttpClient()->get($jwksUri, [
+        // Cache the raw document rather than the parsed key set: parsed keys
+        // hold OpenSSL key objects, which no cache store can serialize.
+        // Parsing again on every login is cheap by comparison.
+        $jwks = Cache::remember($cacheKey, now()->addHour(), function () use ($jwksUri): array {
+            $document = json_decode((string) $this->getHttpClient()->get($jwksUri, [
                 RequestOptions::HEADERS => ['Accept' => 'application/json'],
             ])->getBody(), true);
 
-            if (! is_array($jwks) || blank($jwks['keys'] ?? null)) {
+            if (! is_array($document) || blank($document['keys'] ?? null)) {
                 throw new RuntimeException("The JWKS at {$jwksUri} is empty.");
             }
 
-            return JWK::parseKeySet($jwks);
+            return $document;
         });
+
+        return JWK::parseKeySet($jwks);
     }
 }

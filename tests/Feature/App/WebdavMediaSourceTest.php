@@ -224,6 +224,12 @@ test('a path below the configured root keeps its separators', function (string $
     'a nested root' => ['Marketing/Social', 'plakat.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Social/plakat.jpg'],
     'no root at all' => ['', 'Bilder/plakat.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Bilder/plakat.jpg'],
     'a name that needs encoding' => ['Marketing', 'Bühne 2026.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/B%C3%BChne%202026.jpg'],
+    // The characters a band name actually contains. Each one ends the path
+    // early, or changes its meaning, if it reaches the URL unencoded.
+    'an ampersand' => ['Marketing', 'Rock & Roll.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Rock%20%26%20Roll.jpg'],
+    'a hash' => ['Marketing', 'Set #3.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Set%20%233.jpg'],
+    'a question mark' => ['Marketing', 'Was solls?.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/Was%20solls%3F.jpg'],
+    'a plus sign' => ['Marketing', 'Süß+Sauer.jpg', 'https://cloud.example.com/remote.php/dav/files/team/Marketing/S%C3%BC%C3%9F%2BSauer.jpg'],
 ]);
 
 test('a download below a configured root reaches the file', function () {
@@ -327,4 +333,61 @@ test('a share that understates a file size is still caught after the download', 
     Http::assertSent(fn ($request) => $request->method() === 'GET');
 
     expect($this->workspace->media()->count())->toBe(0);
+});
+
+test('a folder whose name needs encoding does not list itself', function () {
+    // The first entry of a PROPFIND is the collection itself, recognised by
+    // comparing hrefs. The server sends them decoded while the URL we built is
+    // percent-encoded, so a folder called "Bilder 2026" used to appear inside
+    // itself - and clicking it went nowhere.
+    Http::fake(['cloud.example.com/*' => Http::response(<<<'XML'
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/remote.php/dav/files/team/Bilder 2026/</d:href>
+    <d:propstat><d:prop>
+      <d:displayname>Bilder 2026</d:displayname>
+      <d:resourcetype><d:collection/></d:resourcetype>
+    </d:prop></d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/remote.php/dav/files/team/Bilder 2026/plakat.jpg</d:href>
+    <d:propstat><d:prop>
+      <d:displayname>plakat.jpg</d:displayname>
+      <d:getcontentlength>2048</d:getcontentlength>
+      <d:getcontenttype>image/jpeg</d:getcontenttype>
+      <d:resourcetype/>
+    </d:prop></d:propstat>
+  </d:response>
+</d:multistatus>
+XML, 207)]);
+
+    $response = $this->actingAs($this->user)
+        ->getJson(route('app.assets.webdav.browse', ['path' => 'Bilder 2026']));
+
+    $response->assertOk()->assertJsonCount(1, 'entries');
+
+    expect($response->json('entries.0.name'))->toBe('plakat.jpg');
+});
+
+test('an empty folder whose name needs encoding comes back empty', function () {
+    // The same mismatch made an empty folder look like it held one item:
+    // itself.
+    Http::fake(['cloud.example.com/*' => Http::response(<<<'XML'
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/remote.php/dav/files/team/Leerer Ordner/</d:href>
+    <d:propstat><d:prop>
+      <d:displayname>Leerer Ordner</d:displayname>
+      <d:resourcetype><d:collection/></d:resourcetype>
+    </d:prop></d:propstat>
+  </d:response>
+</d:multistatus>
+XML, 207)]);
+
+    $this->actingAs($this->user)
+        ->getJson(route('app.assets.webdav.browse', ['path' => 'Leerer Ordner']))
+        ->assertOk()
+        ->assertJsonCount(0, 'entries');
 });

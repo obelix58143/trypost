@@ -202,7 +202,11 @@ class WebdavService
             throw new RuntimeException('The WebDAV share returned an unreadable listing.');
         }
 
-        $self = rtrim($this->hrefPathOf($currentPath), '/');
+        // Decoded, because the hrefs coming back are: a folder called
+        // "Bilder 2026" arrives with a space where the URL we built has %20,
+        // and a mismatch here makes the collection list itself as its own
+        // child.
+        $self = rawurldecode(rtrim($this->hrefPathOf($currentPath), '/'));
         $entries = [];
 
         // Properties live in the DAV namespace, so every step goes through

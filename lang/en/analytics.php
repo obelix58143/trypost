@@ -7,6 +7,11 @@ return [
     'select_account' => 'Select an account to view analytics.',
     'no_data' => 'No analytics data available.',
 
+    'search_keywords' => [
+        'title' => 'Search terms',
+        'estimated' => 'Google withholds the exact count for this term',
+    ],
+
     'metrics' => [
         'avg_view_duration' => 'Avg. View Duration (s)',
         'avg_view_percentage' => 'Avg. View Percentage',
@@ -35,6 +40,7 @@ return [
         'posts_reach' => 'Posts Reach',
         'quotes' => 'Quotes',
         'reach' => 'Reach',
+        'reactions' => 'Reactions',
         'reblogs' => 'Reblogs',
         'recent_comments' => 'Recent Comments',
         'recent_likes' => 'Recent Likes',
@@ -51,5 +57,16 @@ return [
         'video_views' => 'Video Views',
         'videos' => 'Videos',
         'views' => 'Views',
+        'website_clicks' => 'Website clicks',
+        'call_clicks' => 'Call clicks',
+        'direction_requests' => 'Direction requests',
+        'desktop_map_impressions' => 'Desktop map impressions',
+        'mobile_map_impressions' => 'Mobile map impressions',
+        'desktop_search_impressions' => 'Desktop search impressions',
+        'mobile_search_impressions' => 'Mobile search impressions',
+        'conversations' => 'Conversations',
+        'bookings' => 'Bookings',
+        'food_orders' => 'Food orders',
+        'food_menu_clicks' => 'Menu clicks',
     ],
 ];

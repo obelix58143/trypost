@@ -188,6 +188,48 @@ return [
             'embed_image' => 'Görsel URL\'si',
             'embed_color' => 'Renk',
         ],
+        'google_business' => [
+            'settings' => 'Google Business Profile Ayarları',
+            'posting_to' => 'Şuraya paylaşılıyor',
+            'topic_type_label' => 'Gönderi türü',
+            'topic_type' => [
+                'standard' => 'Yenilikler',
+                'event' => 'Etkinlik',
+                'offer' => 'Teklif',
+            ],
+            'cta_label' => 'Düğme',
+            'cta_none' => 'Yok',
+            'cta' => [
+                'book' => 'Rezervasyon',
+                'order' => 'Çevrimiçi sipariş',
+                'shop' => 'Satın al',
+                'learn_more' => 'Daha fazla bilgi',
+                'sign_up' => 'Kaydol',
+                'call' => 'Hemen ara',
+            ],
+            'cta_url' => 'Düğme bağlantısı',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'Bu düğme için bir bağlantı girin veya "Yok" seçeneğini seçin.',
+            'event_title' => 'Etkinlik başlığı',
+            'event_title_placeholder' => 'Etkinlik başlığın',
+            'event_title_required' => 'Bir etkinlik başlığı girin.',
+            'event_start_date' => 'Başlangıç',
+            'event_start_date_required' => 'Başlangıç tarihini girin.',
+            'event_end_date' => 'Bitiş',
+            'event_end_date_required' => 'Bitiş tarihini girin.',
+            'event_end_date_before_start' => 'Bitiş tarihi, başlangıç tarihiyle aynı veya daha sonra olmalıdır.',
+            'event_end_time_before_start' => 'Bitiş saati, başlangıç saatinden sonra olmalıdır.',
+            'title_max' => 'Başlık en fazla 58 karakter olabilir.',
+            'event_start_time' => 'Başlangıç saati',
+            'event_end_time' => 'Bitiş saati',
+            'offer_title' => 'Teklif başlığı',
+            'offer_title_placeholder' => 'Teklifin için bir başlık gir',
+            'offer_title_required' => 'Bir teklif başlığı girin.',
+            'offer_coupon_code' => 'Kupon kodu',
+            'offer_redeem_url' => 'Teklif bağlantısı',
+            'offer_terms' => 'Şartlar ve koşullar',
+            'event_times_use_location' => 'Saatler tarayıcınızın değil, konumun yerel saatine göredir.',
+        ],
         'warnings' => [
             'no_variant' => 'Devam etmek için bir gönderi türü seçin.',
             'requires_media' => 'Bu gönderi türü en az bir görsel veya video gerektirir.',
@@ -312,6 +354,7 @@ return [
         'metrics_loading' => 'Metrikler yükleniyor…',
         'metrics_unavailable' => 'Bu platform için metrikler henüz kullanılamıyor.',
         'metrics_empty' => 'Metrik döndürülmedi.',
+        'pending_review' => 'Google bu gönderiyi inceliyor. İnceleme bitince güncelleyeceğiz.',
     ],
 
     'edit' => [
@@ -426,6 +469,8 @@ return [
             'publishing' => 'Yayınlanıyor...',
             'retrying' => 'Yeniden deneniyor...',
             'failed' => 'Başarısız',
+            'pending_review' => 'Google incelemesinde',
+            'rejected' => 'Reddedildi',
         ],
 
         'delete_modal' => [
@@ -555,6 +600,10 @@ return [
             'label' => 'Mesaj',
             'description' => 'İsteğe bağlı medya ve yerleştirmeler içeren Discord kanalına mesaj',
         ],
+        'google_business_post' => [
+            'label' => 'Gönderi',
+            'description' => 'İşletme Profilinde Arama ve Haritalar\'da görünür',
+        ],
     ],
 
     'platforms' => [
@@ -583,10 +632,25 @@ return [
     'errors' => [
         'account_disconnected' => 'Sosyal hesabın bağlantısı kesildi',
         'account_inactive' => 'Sosyal hesap devre dışı bırakıldı',
+        'target_disabled' => 'Bu hedef kapatıldı',
         'account_token_expired' => 'Sosyal hesap oturumunun süresi doldu — lütfen yeniden bağlanın',
         'platform_unavailable' => 'Platform geçici olarak kullanılamıyor. Kısa süre içinde yeniden deneyeceğiz.',
         'platform_unavailable_exhausted' => 'Platform birkaç denemeden sonra kullanılamaz kaldı. Lütfen daha sonra tekrar deneyin.',
         'publishing_timed_out' => 'Yayınlama zaman aşımına uğradı. Lütfen tekrar deneyin.',
+        'rejected_in_review' => 'Google bu gönderiyi incelemede reddetti. İçeriği veya görseli düzenleyip tekrar deneyin.',
+        'review_unconfirmed' => 'Google bu gönderiyi hiç onaylamadı. İşletme Profili\'ni kontrol edip tekrar deneyin.',
+        'google_business' => [
+            'no_location' => 'Bu Google Business Profile hesabında yapılandırılmış bir konum yok. Yeniden bağlayın.',
+            'permission_denied' => 'İzin reddedildi. Yeniden bağlanın ve bu konuma erişimi onaylayın.',
+            'not_found' => 'Konum bulunamadı. Silinmiş olabilir — hesabı yeniden bağlayın.',
+            'invalid_content' => 'Geçersiz içerik. Gönderi ayrıntılarını kontrol edin.',
+            'rate_limited' => 'İstek sınırı aşıldı. Daha sonra tekrar deneyin.',
+            'server_error' => 'Google Business Profile sunucu hatası. Tekrar deneyin.',
+            'rejected' => 'Google Business Profile bu gönderiyi reddetti. Tekrar deneyin.',
+            'event_dates_required' => 'Bu gönderinin bir başlangıç ve bitiş tarihi olmalı. Ekleyip tekrar deneyin.',
+            'token_expired' => 'Google Business Profile erişim belirteci geçersiz veya süresi dolmuş',
+            'no_refresh_token' => 'Google Business Profile hesabı için yenileme belirteci yok',
+        ],
     ],
 
     'delete' => [

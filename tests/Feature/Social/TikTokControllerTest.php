@@ -27,6 +27,59 @@ test('tiktok authorize url disables auto auth', function () {
         ->toContain('disable_auto_auth=1');
 });
 
+test('tiktok authorize url carries the default scopes', function () {
+    $response = $this->actingAs($this->user)->get(route('app.social.tiktok.connect'));
+
+    expect(urldecode((string) $response->headers->get('Location')))
+        ->toStartWith('https://www.tiktok.com/v2/auth/authorize')
+        ->toContain('user.info.basic')
+        ->toContain('user.info.profile')
+        ->toContain('user.info.stats')
+        ->toContain('video.publish')
+        ->toContain('video.upload')
+        ->toContain('video.list');
+});
+
+/**
+ * Mock the TikTok driver, hit connect, and return the scopes the controller asked for.
+ *
+ * @return array<int, string>
+ */
+function captureTikTokConnectScopes(object $test): array
+{
+    $captured = [];
+
+    $driverMock = Mockery::mock();
+    $driverMock->shouldReceive('scopes')
+        ->withArgs(function (array $scopes) use (&$captured) {
+            $captured = $scopes;
+
+            return true;
+        })
+        ->andReturnSelf();
+    $driverMock->shouldReceive('with')->with(['disable_auto_auth' => 1])->andReturnSelf();
+    $driverMock->shouldReceive('redirect')->andReturn(Mockery::mock([
+        'getTargetUrl' => 'https://www.tiktok.com/v2/auth/authorize?test=1',
+    ]));
+
+    Socialite::shouldReceive('driver')->with('tiktok')->andReturn($driverMock);
+
+    $test->actingAs($test->user)
+        ->get(route('app.social.tiktok.connect'));
+
+    return $captured;
+}
+
+test('tiktok connect requests scopes from config', function () {
+    config(['trypost.platforms.tiktok.scopes' => ['user.info.basic', 'video.publish', 'video.upload']]);
+
+    expect(captureTikTokConnectScopes($this))->toEqual([
+        'user.info.basic',
+        'video.publish',
+        'video.upload',
+    ]);
+});
+
 test('tiktok connect redirects to oauth provider', function () {
     $driverMock = Mockery::mock();
     $driverMock->shouldReceive('scopes')->andReturnSelf();

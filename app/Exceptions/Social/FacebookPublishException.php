@@ -9,6 +9,30 @@ use Illuminate\Http\Client\Response;
 
 class FacebookPublishException extends SocialPublishException
 {
+    /**
+     * Graph codes that reject the Page feed `link` and leave the caption
+     * untouched: 1609005 (could not scrape the URL) and 1500 (invalid URL).
+     *
+     * @var list<string>
+     */
+    private const array LINK_REJECTION_CODES = ['1609005', '1500'];
+
+    /**
+     * Subcode under a code 200 "Permissions error" that means the `link`
+     * pointed at facebook.com, which Pages may not share through the API.
+     */
+    private const string FACEBOOK_URL_SUBCODE = '1609008';
+
+    public function __construct(
+        string $userMessage,
+        ErrorCategory $category,
+        ?string $platformErrorCode = null,
+        ?string $rawResponse = null,
+        public readonly ?string $platformErrorSubcode = null,
+    ) {
+        parent::__construct($userMessage, $category, $platformErrorCode, $rawResponse);
+    }
+
     public static function fromApiResponse(mixed $response): static
     {
         /** @var Response $response */
@@ -66,7 +90,18 @@ class FacebookPublishException extends SocialPublishException
             category: $category,
             platformErrorCode: $errorCode !== null ? (string) $errorCode : null,
             rawResponse: $rawResponse,
+            platformErrorSubcode: $errorSubcode !== null ? (string) $errorSubcode : null,
         );
+    }
+
+    /**
+     * Whether Graph rejected the `link` rather than the post. The same caption
+     * publishes as plain text once the link is dropped.
+     */
+    public function rejectsLink(): bool
+    {
+        return in_array($this->platformErrorCode, self::LINK_REJECTION_CODES, true)
+            || ($this->platformErrorCode === '200' && $this->platformErrorSubcode === self::FACEBOOK_URL_SUBCODE);
     }
 
     public function platform(): string

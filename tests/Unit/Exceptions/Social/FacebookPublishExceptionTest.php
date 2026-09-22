@@ -125,6 +125,38 @@ test('unknown code maps to Unknown category with error message', function () {
         ->and($exception->userMessage)->toBe('An unexpected error occurred.');
 });
 
+test('code 200 keeps the facebook-url subcode', function () {
+    $response = Http::response([
+        'error' => [
+            'message' => 'Permissions error',
+            'type' => 'OAuthException',
+            'code' => 200,
+            'error_subcode' => 1609008,
+        ],
+    ], 400);
+
+    $fakeResponse = Http::fake(['*' => $response])->post('https://graph.facebook.com/test');
+
+    $exception = FacebookPublishException::fromApiResponse($fakeResponse);
+
+    expect($exception->platformErrorCode)->toBe('200')
+        ->and($exception->platformErrorSubcode)->toBe('1609008')
+        ->and($exception->userMessage)->toBe('Permissions error');
+});
+
+test('a link rejection is told apart from a failed post', function (array $error, bool $rejectsLink) {
+    $fakeResponse = Http::fake(['*' => Http::response(['error' => $error], 400)])
+        ->post('https://graph.facebook.com/test');
+
+    expect(FacebookPublishException::fromApiResponse($fakeResponse)->rejectsLink())->toBe($rejectsLink);
+})->with([
+    'scrape failed' => [['message' => 'There was a problem scraping the URL.', 'code' => 1609005], true],
+    'invalid url' => [['message' => 'The url you supplied is invalid', 'code' => 1500], true],
+    'facebook.com link' => [['message' => 'Permissions error', 'code' => 200, 'error_subcode' => 1609008], true],
+    'permissions error without the subcode' => [['message' => 'Permissions error', 'code' => 200], false],
+    'duplicate post' => [['message' => 'Duplicate post', 'code' => 506], false],
+]);
+
 test('subcode 463 throws TokenExpiredException', function () {
     $response = Http::response([
         'error' => [

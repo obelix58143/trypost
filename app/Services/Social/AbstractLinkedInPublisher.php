@@ -11,23 +11,37 @@ use App\Exceptions\Social\LinkedInPublishException;
 use App\Exceptions\TokenExpiredException;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
+use App\Services\Brand\SafeHttpFetcher;
 use App\Services\Media\MediaOptimizer;
 use App\Services\Social\Concerns\HasSocialHttpClient;
+use App\Services\Social\LinkCard\LinkCardFetcher;
+use App\Services\Social\LinkCard\LinkCardMetadata;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use RuntimeException;
+use Throwable;
 
 /**
  * Shared LinkedIn publishing pipeline. The publish format follows the attached
- * media — a PDF becomes a document post, 2+ images a multi-image post, and
- * anything else (a single image/video or text only) a regular post. Subclasses
- * provide the author identity (member vs. company page) and its public URL.
+ * media: a PDF becomes a document post, two or more images a multi-image post,
+ * and a single image or video a media post. A text post with a link becomes an
+ * article, because the Posts API does not scrape URLs. Subclasses provide the
+ * author identity (member or company page) and its public URL.
  */
 abstract class AbstractLinkedInPublisher
 {
     use HasSocialHttpClient;
+
+    /** Article title must be under 400 characters, description under 4,086. */
+    private const int ARTICLE_TITLE_MAX = 399;
+
+    private const int ARTICLE_DESCRIPTION_MAX = 4085;
+
+    private const int ARTICLE_THUMB_TIMEOUT_SECONDS = 10;
 
     private string $apiVersion = '202601';
 
@@ -110,7 +124,7 @@ abstract class AbstractLinkedInPublisher
             $this->accessToken = $this->account->access_token;
 
             return $this->dispatchByMedia($content, $postPlatform);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error("{$this->label()} refresh failed during retry", [
                 'account_id' => $this->account->id,
                 'error' => $e->getMessage(),
@@ -133,9 +147,120 @@ abstract class AbstractLinkedInPublisher
                     'altText' => $item->isImage() ? $item->altTextFor($this->platform()) : null,
                 ], fn ($v) => $v !== null)];
             }
+        } else {
+            $article = $this->articleContent($content);
+
+            if ($article !== null) {
+                $payload['content'] = ['article' => $article];
+            }
         }
 
         return $this->createPost($payload, 'post creation');
+    }
+
+    /**
+     * Article payload for the first link in a text-only post. Null when there is
+     * no link, the page has no title, or the scrape fails: the post still goes
+     * out as text. The thumbnail is optional.
+     *
+     * @return array{source: string, title: string, description?: string, thumbnail?: string}|null
+     */
+    private function articleContent(?string $content): ?array
+    {
+        $card = filled($content) ? $this->articleCard($content) : null;
+
+        if ($card === null || blank($card->title)) {
+            return null;
+        }
+
+        return array_filter([
+            'source' => $card->uri,
+            'title' => Str::limit($card->title, self::ARTICLE_TITLE_MAX, ''),
+            'description' => Str::limit($card->description, self::ARTICLE_DESCRIPTION_MAX, ''),
+            'thumbnail' => $this->uploadArticleThumbnail($card),
+        ], filled(...));
+    }
+
+    private function articleCard(string $content): ?LinkCardMetadata
+    {
+        try {
+            return app(LinkCardFetcher::class)->fetch($content);
+        } catch (Throwable $e) {
+            Log::warning("{$this->label()} link preview lookup failed", ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Image URN for the card's og:image, or null when there is no usable image.
+     * A dead token still propagates so the publish retry can refresh it.
+     */
+    private function uploadArticleThumbnail(LinkCardMetadata $card): ?string
+    {
+        if (blank($card->imageUrl)) {
+            return null;
+        }
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'li_article_');
+
+        if ($tempFile === false) {
+            return null;
+        }
+
+        try {
+            $this->downloadArticleThumbnail($card->imageUrl, $tempFile);
+
+            return $this->uploadLocalImage($tempFile);
+        } catch (TokenExpiredException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            Log::warning("{$this->label()} article thumbnail skipped", ['error' => $e->getMessage()]);
+
+            return null;
+        } finally {
+            @unlink($tempFile);
+        }
+    }
+
+    /**
+     * Redirects are not followed: the og:image URL is attacker-influenced and
+     * was only guarded against SSRF once.
+     */
+    private function downloadArticleThumbnail(string $url, string $tempFile): void
+    {
+        $maxBytes = MediaType::Image->maxSizeInBytes();
+
+        $response = app(SafeHttpFetcher::class)
+            ->guardedRequest($url, followRedirects: false)
+            ->timeout(self::ARTICLE_THUMB_TIMEOUT_SECONDS)
+            ->sink($tempFile)
+            ->withOptions([
+                'progress' => static function ($total, $downloaded) use ($maxBytes): void {
+                    if ($total > $maxBytes || $downloaded > $maxBytes) {
+                        throw new RuntimeException('og:image exceeds the maximum image size');
+                    }
+                },
+            ])
+            ->get($url);
+
+        if (! $response->successful()) {
+            throw new RuntimeException("og:image responded with HTTP {$response->status()}");
+        }
+
+        $size = filesize($tempFile);
+
+        if ($size === false || $size === 0) {
+            throw new RuntimeException('og:image is empty');
+        }
+
+        if ($size > $maxBytes) {
+            throw new RuntimeException('og:image exceeds the maximum image size');
+        }
+
+        if (MediaType::classify(File::mimeType($tempFile) ?: '') !== MediaType::Image) {
+            throw new RuntimeException('og:image is not an image');
+        }
     }
 
     private function publishCarousel(?string $content, $media): array
@@ -261,6 +386,51 @@ abstract class AbstractLinkedInPublisher
 
     private function uploadImage($mediaItem): ?string
     {
+        $tempFile = tempnam(sys_get_temp_dir(), 'li_image_');
+
+        if ($tempFile === false) {
+            throw new LinkedInPublishException(
+                userMessage: "Could not prepare the image for {$this->label()}. Please try again.",
+                category: ErrorCategory::ServerError,
+            );
+        }
+
+        try {
+            $this->downloadToTempFile($mediaItem->url, $tempFile);
+
+            return $this->uploadLocalImage($tempFile);
+        } finally {
+            @unlink($tempFile);
+        }
+    }
+
+    /**
+     * Upload an image already on disk, re-encoded for LinkedIn first. GIFs are
+     * sent as they are so the animation survives. The caller owns the given
+     * file; the optimized copy is removed here.
+     */
+    private function uploadLocalImage(string $path): string
+    {
+        $mime = File::mimeType($path) ?: '';
+
+        if (MediaType::classify($mime) !== MediaType::Image || MediaType::isGif($mime)) {
+            return $this->uploadImageFile($path);
+        }
+
+        $optimized = app(MediaOptimizer::class)->optimizeImage($path, $this->platform());
+
+        try {
+            return $this->uploadImageFile($optimized);
+        } finally {
+            @unlink($optimized);
+        }
+    }
+
+    /**
+     * Initialize a LinkedIn image upload and PUT the bytes already on disk.
+     */
+    private function uploadImageFile(string $path): string
+    {
         $initResponse = $this->getHttpClient()
             ->post("{$this->baseUrl()}/rest/images?action=initializeUpload", [
                 'initializeUploadRequest' => ['owner' => $this->authorUrn()],
@@ -275,45 +445,37 @@ abstract class AbstractLinkedInPublisher
         $uploadUrl = data_get($initData, 'value.uploadUrl');
         $imageUrn = data_get($initData, 'value.image');
 
-        if (! $uploadUrl || ! $imageUrn) {
+        if (! is_string($uploadUrl) || $uploadUrl === '' || ! is_string($imageUrn) || $imageUrn === '') {
             throw new LinkedInPublishException(
                 userMessage: "{$this->label()} did not accept the image upload. Please try again.",
                 category: ErrorCategory::ServerError,
             );
         }
 
-        $tempFile = tempnam(sys_get_temp_dir(), 'li_image_');
+        $stream = fopen($path, 'r');
 
-        try {
-            $this->downloadToTempFile($mediaItem->url, $tempFile);
-
-            $detectedMime = File::mimeType($tempFile) ?: '';
-            if (MediaType::classify($detectedMime) === MediaType::Image && ! MediaType::isGif($detectedMime)) {
-                $optimizedPath = app(MediaOptimizer::class)->optimizeImage($tempFile, $this->platform());
-                @unlink($tempFile);
-                $tempFile = $optimizedPath;
-            }
-
-            $stream = fopen($tempFile, 'r');
-
-            $uploadResponse = Http::withToken($this->accessToken)
-                ->withHeaders(['Content-Type' => 'application/octet-stream'])
-                ->withBody($stream, 'application/octet-stream')
-                ->put($uploadUrl);
-
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
-
-            if ($uploadResponse->failed()) {
-                Log::error("{$this->label()} image upload failed", ['body' => $this->redactResponseBody($uploadResponse->body())]);
-                $this->handleApiError($uploadResponse);
-            }
-
-            return $imageUrn;
-        } finally {
-            @unlink($tempFile);
+        if ($stream === false) {
+            throw new LinkedInPublishException(
+                userMessage: "Could not read the image for {$this->label()}. Please try again.",
+                category: ErrorCategory::ServerError,
+            );
         }
+
+        $uploadResponse = Http::withToken($this->accessToken)
+            ->withHeaders(['Content-Type' => 'application/octet-stream'])
+            ->withBody($stream, 'application/octet-stream')
+            ->put($uploadUrl);
+
+        if (is_resource($stream)) {
+            fclose($stream);
+        }
+
+        if ($uploadResponse->failed()) {
+            Log::error("{$this->label()} image upload failed", ['body' => $this->redactResponseBody($uploadResponse->body())]);
+            $this->handleApiError($uploadResponse);
+        }
+
+        return $imageUrn;
     }
 
     private function uploadVideo($mediaItem): ?string

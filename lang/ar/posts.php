@@ -186,6 +186,48 @@ return [
             'embed_image' => 'رابط الصورة',
             'embed_color' => 'اللون',
         ],
+        'google_business' => [
+            'settings' => 'إعدادات ملف Google Business Profile',
+            'posting_to' => 'النشر إلى',
+            'topic_type_label' => 'نوع المنشور',
+            'topic_type' => [
+                'standard' => 'ما الجديد',
+                'event' => 'حدث',
+                'offer' => 'عرض',
+            ],
+            'cta_label' => 'زر',
+            'cta_none' => 'لا شيء',
+            'cta' => [
+                'book' => 'احجز',
+                'order' => 'اطلب عبر الإنترنت',
+                'shop' => 'اشتر',
+                'learn_more' => 'تعرف على المزيد',
+                'sign_up' => 'اشترك',
+                'call' => 'اتصل الآن',
+            ],
+            'cta_url' => 'رابط الزر',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'أدخل رابطًا لهذا الزر، أو اختر "لا شيء".',
+            'event_title' => 'عنوان الحدث',
+            'event_title_placeholder' => 'عنوان حدثك',
+            'event_title_required' => 'أدخل عنوان الحدث.',
+            'event_start_date' => 'البداية',
+            'event_start_date_required' => 'أدخل تاريخ البدء.',
+            'event_end_date' => 'النهاية',
+            'event_end_date_required' => 'أدخل تاريخ الانتهاء.',
+            'event_end_date_before_start' => 'يجب أن يكون تاريخ الانتهاء في يوم تاريخ البدء أو بعده.',
+            'event_end_time_before_start' => 'يجب أن يكون وقت الانتهاء بعد وقت البدء.',
+            'title_max' => 'يجب ألا يتجاوز العنوان 58 حرفًا.',
+            'event_start_time' => 'وقت البدء',
+            'event_end_time' => 'وقت الانتهاء',
+            'offer_title' => 'عنوان العرض',
+            'offer_title_placeholder' => 'أدخل عنوانًا لعرضك',
+            'offer_title_required' => 'أدخل عنوان العرض.',
+            'offer_coupon_code' => 'رمز القسيمة',
+            'offer_redeem_url' => 'رابط العرض',
+            'offer_terms' => 'الشروط والأحكام',
+            'event_times_use_location' => 'الأوقات تتبع التوقيت المحلي للموقع، وليس متصفحك.',
+        ],
         'warnings' => [
             'no_variant' => 'اختر نوع منشور للمتابعة.',
             'requires_media' => 'يتطلب هذا النوع من المنشورات صورة أو فيديو واحدًا على الأقل.',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => 'جارٍ تحميل المقاييس…',
         'metrics_unavailable' => 'المقاييس غير متاحة لهذه المنصة بعد.',
         'metrics_empty' => 'لم تُرجَع أي مقاييس.',
+        'pending_review' => 'يجري Google مراجعة هذا المنشور. سنحدّثه عند انتهاء المراجعة.',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => 'جارٍ النشر...',
             'retrying' => 'جارٍ إعادة المحاولة...',
             'failed' => 'فشل',
+            'pending_review' => 'قيد مراجعة Google',
+            'rejected' => 'مرفوض',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => 'رسالة',
             'description' => 'رسالة إلى قناة Discord مع وسائط وتضمينات اختيارية',
         ],
+        'google_business_post' => [
+            'label' => 'منشور',
+            'description' => 'يظهر على ملفك التجاري في البحث والخرائط',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => 'الحساب الاجتماعي مفصول',
         'account_inactive' => 'الحساب الاجتماعي مُعطَّل',
+        'target_disabled' => 'تم إيقاف وجهة النشر هذه',
         'account_token_expired' => 'انتهت جلسة الحساب الاجتماعي — يرجى إعادة الربط',
         'platform_unavailable' => 'المنصة غير متاحة مؤقتًا. سنعيد المحاولة قريبًا.',
         'platform_unavailable_exhausted' => 'ظلت المنصة غير متاحة بعد عدة محاولات. يرجى المحاولة لاحقًا.',
         'publishing_timed_out' => 'انتهت مهلة النشر. يرجى المحاولة مرة أخرى.',
+        'rejected_in_review' => 'رفضت Google هذا المنشور أثناء المراجعة. عدّل المحتوى أو الصورة وحاول مرة أخرى.',
+        'review_unconfirmed' => 'لم تؤكد Google حالة هذا المنشور. تحقّق من ملفك التجاري وحاول مرة أخرى.',
+        'google_business' => [
+            'no_location' => 'حساب Google Business Profile هذا بلا موقع مُعد. أعد ربطه.',
+            'permission_denied' => 'تم رفض الإذن. أعد الربط وأكّد الوصول إلى هذا الموقع.',
+            'not_found' => 'الموقع غير موجود. ربما حُذف — أعد ربط الحساب.',
+            'invalid_content' => 'المحتوى غير صالح. راجع تفاصيل المنشور.',
+            'rate_limited' => 'تم تجاوز حد الطلبات. حاول مرة أخرى لاحقًا.',
+            'server_error' => 'خطأ في خادم Google Business Profile. حاول مرة أخرى.',
+            'rejected' => 'رفض Google Business Profile هذا المنشور. حاول مرة أخرى.',
+            'event_dates_required' => 'يحتاج هذا المنشور إلى تاريخي بدء وانتهاء. أضفهما وحاول مرة أخرى.',
+            'token_expired' => 'رمز وصول Google Business Profile غير صالح أو منتهٍ',
+            'no_refresh_token' => 'لا يوجد رمز تحديث لحساب Google Business Profile',
+        ],
     ],
 
     'delete' => [

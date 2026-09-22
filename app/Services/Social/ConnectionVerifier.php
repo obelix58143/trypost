@@ -8,6 +8,7 @@ use App\Enums\SocialAccount\Platform;
 use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\BlueskyPublishException;
 use App\Exceptions\Social\DiscordPublishException;
+use App\Exceptions\Social\GoogleBusinessPublishException;
 use App\Exceptions\Social\LinkedInPublishException;
 use App\Exceptions\Social\MastodonPublishException;
 use App\Exceptions\Social\PinterestPublishException;
@@ -20,6 +21,7 @@ use App\Models\SocialAccount;
 use App\Services\Social\Discord\DiscordClient;
 use App\Services\Social\Meta\GraphError;
 use App\Services\Social\Telegram\TelegramApi;
+use App\Support\GoogleBusinessResourceName;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -52,6 +54,8 @@ class ConnectionVerifier
      */
     public function verify(SocialAccount $account): bool
     {
+        $this->assertConnectionConfigured($account);
+
         // Hard-expired tokens cannot make API calls — refresh is mandatory.
         // For tokens that are still valid OR only "expiring soon", try the
         // verify endpoint FIRST with the current access_token. This avoids
@@ -153,6 +157,20 @@ class ConnectionVerifier
     }
 
     /**
+     * Connections that cannot be verified until the user reconnects — throw
+     * before the refresh ladder so a missing location is not mistaken for a
+     * dead access token.
+     *
+     * @throws TokenExpiredException
+     */
+    private function assertConnectionConfigured(SocialAccount $account): void
+    {
+        if ($account->platform === Platform::GoogleBusiness && GoogleBusinessResourceName::connectedLocation($account->meta) === null) {
+            throw new TokenExpiredException(__('posts.errors.google_business.no_location'));
+        }
+    }
+
+    /**
      * Check the stored access token as it is, skipping the refresh-and-retry
      * ladder verify() runs — which would re-send a refresh_token the provider
      * just rejected, and on Bluesky re-run a rate-limited password re-auth.
@@ -184,6 +202,7 @@ class ConnectionVerifier
             Platform::Mastodon => $this->verifyMastodon($account),
             Platform::Telegram => $this->verifyTelegram($account),
             Platform::Discord => $this->verifyDiscord($account),
+            Platform::GoogleBusiness => $this->verifyGoogleBusiness($account),
         };
     }
 
@@ -235,6 +254,7 @@ class ConnectionVerifier
                 Platform::Pinterest => $this->refreshPinterestToken($account),
                 Platform::Threads => $this->refreshThreadsToken($account),
                 Platform::Instagram => $this->refreshInstagramToken($account),
+                Platform::GoogleBusiness => $this->refreshGoogleBusinessToken($account),
             };
 
             return true;
@@ -456,6 +476,31 @@ class ConnectionVerifier
             'access_token' => $newToken,
             'refresh_token' => $newToken,
             'token_expires_at' => now()->addSeconds(data_get($data, 'expires_in', $account->platform->defaultTokenTtlSeconds())),
+        ]);
+
+        $account->refresh();
+    }
+
+    private function refreshGoogleBusinessToken(SocialAccount $account): void
+    {
+        if (! $account->refresh_token) {
+            throw new TokenExpiredException(__('posts.errors.google_business.no_refresh_token'));
+        }
+
+        $response = TokenRefreshClient::for(Platform::GoogleBusiness)->send(fn () => $this->refreshHttp()->asForm()
+            ->post(config('trypost.platforms.google_business.oauth_api').'/token', [
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $account->refresh_token,
+                'client_id' => config('services.google-business.client_id'),
+                'client_secret' => config('services.google-business.client_secret'),
+            ]));
+
+        $data = $response->json();
+
+        $account->update([
+            'access_token' => $this->tokenFrom($data, $account->platform),
+            'refresh_token' => $this->rotatedTokenFrom($data, 'refresh_token', (string) $account->refresh_token),
+            'token_expires_at' => now()->addSeconds((int) (data_get($data, 'expires_in') ?: $account->platform->defaultTokenTtlSeconds())),
         ]);
 
         $account->refresh();
@@ -716,6 +761,35 @@ class ConnectionVerifier
         // MastodonPublishException::isConfirmedDeadToken().
         if (MastodonPublishException::isConfirmedDeadToken($response) || $response->status() === 403) {
             throw new TokenExpiredException('Mastodon access token is invalid or expired');
+        }
+
+        if ($response->successful()) {
+            return true;
+        }
+
+        throw new PlatformUnavailableException(
+            "{$account->platform->label()} verify failed ({$response->status()}).",
+            $response->status(),
+        );
+    }
+
+    private function verifyGoogleBusiness(SocialAccount $account): bool
+    {
+        $location = GoogleBusinessResourceName::connectedLocation($account->meta);
+
+        if ($location === null) {
+            throw new TokenExpiredException(__('posts.errors.google_business.no_location'));
+        }
+
+        $locationName = $location['name'];
+
+        $response = Http::withToken($account->access_token)
+            ->get(config('trypost.platforms.google_business.business_information_api')."/{$locationName}", [
+                'readMask' => 'name',
+            ]);
+
+        if (GoogleBusinessPublishException::isConfirmedDeadToken($response)) {
+            throw new TokenExpiredException(__('posts.errors.google_business.token_expired'));
         }
 
         if ($response->successful()) {

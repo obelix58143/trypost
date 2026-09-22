@@ -13,8 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePostEcho } from '@/composables/echo/usePostEcho';
-import { getPlatformLabel, getPlatformLogo } from '@/composables/usePlatformLogo';
-import { getPlatformStatusConfig, getPostStatusConfig } from '@/composables/usePostStatus';
+import { getContentTypeBadgeKey, getPlatformLabel, getPlatformLogo } from '@/composables/usePlatformLogo';
+import { getPlatformStatusConfig, getPostStatusConfig, isActivelyPublishing } from '@/composables/usePostStatus';
 import date from '@/date';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { classify, isDocument as isDocumentItem, isVideo as isVideoItem, MediaType } from '@/lib/mediaType';
@@ -37,7 +37,7 @@ interface PostPlatform {
     display_username: string | null;
     display_avatar: string | null;
     content_type: string | null;
-    status: 'pending' | 'publishing' | 'published' | 'failed';
+    status: 'pending' | 'publishing' | 'published' | 'failed' | 'retrying' | 'rejected' | 'pending_review';
     platform_url: string | null;
     error_message: string | null;
     published_at: string | null;
@@ -66,9 +66,13 @@ const props = defineProps<{
     post: Post;
 }>();
 
-const enabledPlatforms = computed(() => props.post.platforms.filter((pp) => pp.enabled));
+const enabledPlatforms = computed(() =>
+    props.post.platforms
+        .filter((pp) => pp.enabled)
+        .map((pp) => ({ ...pp, contentTypeBadgeKey: getContentTypeBadgeKey(pp.platform, pp.content_type) })),
+);
 
-const isPublishing = computed(() => props.post.status === PostStatus.Publishing);
+const isPublishing = computed(() => isActivelyPublishing(props.post.status, props.post.platforms));
 
 const postStatus = computed(() => getPostStatusConfig(props.post.status));
 
@@ -239,7 +243,16 @@ usePostEcho(props.post.id, '.post.platform.status.updated', () => {
                                         </span>
                                     </div>
                                     <div class="min-w-0 flex-1">
-                                        <p class="truncate text-sm font-bold text-foreground">{{ getDisplayName(pp) }}</p>
+                                        <div class="flex items-center gap-2">
+                                            <p class="truncate text-sm font-bold text-foreground">{{ getDisplayName(pp) }}</p>
+                                            <Badge
+                                                v-if="pp.contentTypeBadgeKey"
+                                                variant="outline"
+                                                :data-testid="`content-type-${pp.content_type}`"
+                                            >
+                                                {{ $t(pp.contentTypeBadgeKey) }}
+                                            </Badge>
+                                        </div>
                                         <p class="truncate text-xs font-medium text-foreground/60">
                                             <span v-if="getDisplayUsername(pp)">@{{ getDisplayUsername(pp) }} · </span>
                                             {{ getPlatformLabel(pp.platform) }}
@@ -273,9 +286,16 @@ usePostEcho(props.post.id, '.post.platform.status.updated', () => {
                                     </div>
                                 </div>
 
-                                <!-- Failed: error message -->
                                 <div
-                                    v-if="pp.status === PostPlatformStatus.Failed && pp.error_message"
+                                    v-if="pp.status === PostPlatformStatus.PendingReview"
+                                    class="border-t-2 border-foreground/10 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800"
+                                    data-testid="google-business-pending-review"
+                                >
+                                    {{ $t('posts.show.pending_review') }}
+                                </div>
+
+                                <div
+                                    v-if="(pp.status === PostPlatformStatus.Failed || pp.status === PostPlatformStatus.Rejected) && pp.error_message"
                                     class="border-t-2 border-foreground/10 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700"
                                 >
                                     {{ pp.error_message }}

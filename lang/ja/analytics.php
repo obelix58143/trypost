@@ -7,6 +7,11 @@ return [
     'select_account' => 'アナリティクスを表示するアカウントを選択してください。',
     'no_data' => '利用できるアナリティクスデータがありません。',
 
+    'search_keywords' => [
+        'title' => '検索キーワード',
+        'estimated' => 'この語句の正確な件数は Google が非公開にしています',
+    ],
+
     'metrics' => [
         'avg_view_duration' => '平均視聴時間（秒）',
         'avg_view_percentage' => '平均視聴率',
@@ -35,6 +40,7 @@ return [
         'posts_reach' => '投稿リーチ',
         'quotes' => '引用',
         'reach' => 'リーチ',
+        'reactions' => 'リアクション',
         'reblogs' => 'リブログ',
         'recent_comments' => '最近のコメント',
         'recent_likes' => '最近のいいね',
@@ -51,5 +57,16 @@ return [
         'video_views' => '動画再生数',
         'videos' => '動画',
         'views' => '再生数',
+        'website_clicks' => 'ウェブサイトクリック',
+        'call_clicks' => '通話クリック',
+        'direction_requests' => '経路リクエスト',
+        'desktop_map_impressions' => 'デスクトップ地図インプレッション',
+        'mobile_map_impressions' => 'モバイル地図インプレッション',
+        'desktop_search_impressions' => '検索での表示（デスクトップ）',
+        'mobile_search_impressions' => '検索での表示（モバイル）',
+        'conversations' => 'メッセージのやり取り',
+        'bookings' => '予約',
+        'food_orders' => 'フード注文',
+        'food_menu_clicks' => 'メニューのクリック',
     ],
 ];

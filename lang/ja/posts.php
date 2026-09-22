@@ -186,6 +186,48 @@ return [
             'embed_image' => '画像 URL',
             'embed_color' => '色',
         ],
+        'google_business' => [
+            'settings' => 'Google Business Profile 設定',
+            'posting_to' => '投稿先',
+            'topic_type_label' => '投稿タイプ',
+            'topic_type' => [
+                'standard' => '最新情報',
+                'event' => 'イベント',
+                'offer' => 'オファー',
+            ],
+            'cta_label' => 'ボタン',
+            'cta_none' => 'なし',
+            'cta' => [
+                'book' => '予約',
+                'order' => 'オンラインで注文',
+                'shop' => '購入',
+                'learn_more' => 'もっと詳しく',
+                'sign_up' => '登録',
+                'call' => '今すぐ電話',
+            ],
+            'cta_url' => 'ボタンリンク',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'このボタンのリンクを入力するか、「なし」を選択してください。',
+            'event_title' => 'イベントタイトル',
+            'event_title_placeholder' => 'イベントのタイトル',
+            'event_title_required' => 'イベントタイトルを入力してください。',
+            'event_start_date' => '開始',
+            'event_start_date_required' => '開始日を入力してください。',
+            'event_end_date' => '終了',
+            'event_end_date_required' => '終了日を入力してください。',
+            'event_end_date_before_start' => '終了日は開始日以降にしてください。',
+            'event_end_time_before_start' => '終了時刻は開始時刻より後にしてください。',
+            'title_max' => 'タイトルは58文字以内にしてください。',
+            'event_start_time' => '開始時刻',
+            'event_end_time' => '終了時刻',
+            'offer_title' => 'オファータイトル',
+            'offer_title_placeholder' => 'オファーのタイトルを入力',
+            'offer_title_required' => 'オファータイトルを入力してください。',
+            'offer_coupon_code' => 'クーポンコード',
+            'offer_redeem_url' => 'オファーリンク',
+            'offer_terms' => '利用規約',
+            'event_times_use_location' => '時刻はブラウザではなく、ビジネス所在地の現地時間です。',
+        ],
         'warnings' => [
             'no_variant' => '続けるには投稿タイプを選択してください。',
             'requires_media' => 'この投稿タイプには少なくとも 1 つの画像または動画が必要です。',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => 'メトリクスを読み込み中…',
         'metrics_unavailable' => 'このプラットフォームのメトリクスはまだ利用できません。',
         'metrics_empty' => 'メトリクスが返されませんでした。',
+        'pending_review' => 'Googleがこの投稿を審査しています。審査が終わると更新します。',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => '公開中...',
             'retrying' => '再試行中...',
             'failed' => '失敗',
+            'pending_review' => 'Google が審査中',
+            'rejected' => '拒否されました',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => 'メッセージ',
             'description' => 'メディアと埋め込み（任意）付きの Discord チャンネルへのメッセージ',
         ],
+        'google_business_post' => [
+            'label' => '投稿',
+            'description' => 'ビジネス プロフィールに検索とマップで表示されます',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => 'ソーシャルアカウントの接続が解除されています',
         'account_inactive' => 'ソーシャルアカウントが無効化されています',
+        'target_disabled' => 'この投稿先はオフになりました',
         'account_token_expired' => 'ソーシャルアカウントのセッションの有効期限が切れました — 再接続してください',
         'platform_unavailable' => 'プラットフォームが一時的に利用できません。まもなく再試行します。',
         'platform_unavailable_exhausted' => '何度か再試行しましたがプラットフォームが利用できませんでした。後でもう一度お試しください。',
         'publishing_timed_out' => '公開がタイムアウトしました。もう一度お試しください。',
+        'rejected_in_review' => 'Google の審査でこの投稿が拒否されました。本文または画像を修正して、もう一度お試しください。',
+        'review_unconfirmed' => 'Google からこの投稿の結果が返りませんでした。ビジネス プロフィールを確認して、もう一度お試しください。',
+        'google_business' => [
+            'no_location' => 'この Google ビジネス プロフィール アカウントには店舗が設定されていません。再接続してください。',
+            'permission_denied' => '権限がありません。再接続して、この店舗へのアクセスを確認してください。',
+            'not_found' => '店舗が見つかりません。削除された可能性があります。再接続してください。',
+            'invalid_content' => '投稿内容が無効です。詳細を確認してください。',
+            'rate_limited' => 'リクエスト上限を超えました。後でもう一度お試しください。',
+            'server_error' => 'Google ビジネス プロフィールのサーバーエラーです。もう一度お試しください。',
+            'rejected' => 'Google ビジネス プロフィールがこの投稿を拒否しました。もう一度お試しください。',
+            'event_dates_required' => 'この投稿には開始日と終了日が必要です。追加してもう一度お試しください。',
+            'token_expired' => 'Google ビジネス プロフィールのアクセストークンが無効または期限切れです',
+            'no_refresh_token' => 'Google ビジネス プロフィール アカウントのリフレッシュトークンがありません',
+        ],
     ],
 
     'delete' => [

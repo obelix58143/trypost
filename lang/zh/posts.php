@@ -186,6 +186,48 @@ return [
             'embed_image' => '图片 URL',
             'embed_color' => '颜色',
         ],
+        'google_business' => [
+            'settings' => 'Google Business Profile 设置',
+            'posting_to' => '发布到',
+            'topic_type_label' => '帖子类型',
+            'topic_type' => [
+                'standard' => '最新动态',
+                'event' => '活动',
+                'offer' => '优惠',
+            ],
+            'cta_label' => '按钮',
+            'cta_none' => '无',
+            'cta' => [
+                'book' => '预订',
+                'order' => '在线订购',
+                'shop' => '购买',
+                'learn_more' => '了解详情',
+                'sign_up' => '注册',
+                'call' => '立即致电',
+            ],
+            'cta_url' => '按钮链接',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => '请输入此按钮的链接，或选择"无"。',
+            'event_title' => '活动标题',
+            'event_title_placeholder' => '您的活动标题',
+            'event_title_required' => '请输入活动标题。',
+            'event_start_date' => '开始',
+            'event_start_date_required' => '请输入开始日期。',
+            'event_end_date' => '结束',
+            'event_end_date_required' => '请输入结束日期。',
+            'event_end_date_before_start' => '结束日期必须等于或晚于开始日期。',
+            'event_end_time_before_start' => '结束时间必须晚于开始时间。',
+            'title_max' => '标题不能超过 58 个字符。',
+            'event_start_time' => '开始时间',
+            'event_end_time' => '结束时间',
+            'offer_title' => '优惠标题',
+            'offer_title_placeholder' => '输入优惠标题',
+            'offer_title_required' => '请输入优惠标题。',
+            'offer_coupon_code' => '优惠券代码',
+            'offer_redeem_url' => '优惠链接',
+            'offer_terms' => '条款和条件',
+            'event_times_use_location' => '时间以门店当地时间为准，而不是浏览器时区。',
+        ],
         'warnings' => [
             'no_variant' => '请选择一个帖子类型以继续。',
             'requires_media' => '此帖子类型至少需要一张图片或一个视频。',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => '正在加载指标…',
         'metrics_unavailable' => '此平台暂无可用指标。',
         'metrics_empty' => '未返回任何指标。',
+        'pending_review' => 'Google 正在审核这篇帖子。审核结束后我们会更新状态。',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => '发布中…',
             'retrying' => '重试中…',
             'failed' => '已失败',
+            'pending_review' => 'Google 审核中',
+            'rejected' => '已拒绝',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => '消息',
             'description' => '发送到 Discord 频道的消息，可附带媒体和嵌入内容',
         ],
+        'google_business_post' => [
+            'label' => '帖子',
+            'description' => '在搜索和地图中显示在您的商业资料中',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => '社交账号已断开连接',
         'account_inactive' => '社交账号已停用',
+        'target_disabled' => '已关闭此发布目标',
         'account_token_expired' => '社交账号会话已过期——请重新连接',
         'platform_unavailable' => '平台暂时不可用。我们稍后会重试。',
         'platform_unavailable_exhausted' => '多次重试后平台仍不可用。请稍后再试。',
         'publishing_timed_out' => '发布超时。请重试。',
+        'rejected_in_review' => 'Google 在审核中拒绝了这篇帖子。请修改内容或图片后重试。',
+        'review_unconfirmed' => 'Google 始终未确认这篇帖子。请检查你的商家资料后重试。',
+        'google_business' => [
+            'no_location' => '此 Google 商家资料账号尚未配置地点。请重新连接。',
+            'permission_denied' => '权限被拒绝。请重新连接并确认对此地点的访问权限。',
+            'not_found' => '找不到该地点。可能已被删除 — 请重新连接。',
+            'invalid_content' => '帖子内容无效。请检查帖子详情。',
+            'rate_limited' => '已超出请求限额。请稍后再试。',
+            'server_error' => 'Google 商家资料服务器错误。请重试。',
+            'rejected' => 'Google 商家资料拒绝了这篇帖子。请重试。',
+            'event_dates_required' => '这篇帖子需要开始日期和结束日期。请添加后重试。',
+            'token_expired' => 'Google 商家资料访问令牌无效或已过期',
+            'no_refresh_token' => '此 Google 商家资料账号没有可用的刷新令牌',
+        ],
     ],
 
     'delete' => [

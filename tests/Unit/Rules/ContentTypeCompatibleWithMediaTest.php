@@ -156,7 +156,7 @@ test('x still accepts a mov video', function () {
 test('a gif is rejected on content types that do not accept gifs', function () {
     $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/gif']];
 
-    foreach ([ContentType::InstagramFeed, ContentType::LinkedInPost, ContentType::PinterestPin, ContentType::FacebookPost] as $type) {
+    foreach ([ContentType::InstagramFeed, ContentType::LinkedInPost, ContentType::PinterestPin, ContentType::FacebookPost, ContentType::GoogleBusinessPost] as $type) {
         $errors = runMediaRule($type->value, $media);
 
         expect($errors)->toHaveCount(1, $type->value);
@@ -339,14 +339,17 @@ test('linkedin rejects mixing an image and a video', function () {
     expect($errors[0])->toContain("can't be combined in the same post");
 });
 
-test('a pdf is rejected on content types that do not support documents', function () {
+test('a pdf is rejected on content types that do not support documents', function (ContentType $type) {
     $media = [['type' => MediaType::Document->value, 'mime_type' => 'application/pdf']];
 
-    $errors = runMediaRule(ContentType::XPost->value, $media);
+    $errors = runMediaRule($type->value, $media);
 
     expect($errors)->toHaveCount(1);
     expect($errors[0])->toContain('does not accept PDF documents');
-});
+})->with([
+    ContentType::XPost,
+    ContentType::GoogleBusinessPost,
+]);
 
 test('falls back to stored media when the request omits the media key', function () {
     // A PDF fallback on a document-capable type passes.

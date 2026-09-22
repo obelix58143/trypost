@@ -191,6 +191,10 @@ return [
         'tiktok' => [
             'enabled' => env('TIKTOK_ENABLED', true),
             'api' => env('TIKTOK_API', 'https://open.tiktokapis.com/v2'),
+            // OAuth scopes to request. Trim when the TikTok app lacks a product
+            // (e.g. no Display API => drop user.info.profile, user.info.stats,
+            // video.list; analytics degrade gracefully, username stays empty).
+            'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env('TIKTOK_SCOPES', 'user.info.basic,user.info.profile,user.info.stats,video.publish,video.upload,video.list'))))),
         ],
         'youtube' => [
             'enabled' => env('YOUTUBE_ENABLED', true),
@@ -201,6 +205,7 @@ return [
         'facebook' => [
             'enabled' => env('FACEBOOK_ENABLED', true),
             'graph_api' => env('FACEBOOK_GRAPH_API', 'https://graph.facebook.com/v25.0'),
+            'rupload_host' => env('FACEBOOK_RUPLOAD_HOST', 'rupload.facebook.com'),
         ],
         'instagram' => [
             'enabled' => env('INSTAGRAM_ENABLED', true),
@@ -269,6 +274,21 @@ return [
             // READ_MESSAGE_HISTORY (1<<16) + MENTION_EVERYONE (1<<17) = 248832.
             'permissions' => env('DISCORD_PERMISSIONS', '248832'),
             'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env('DISCORD_SCOPES', 'bot,identify,guilds'))))),
+        ],
+        'google_business' => [
+            'enabled' => env('GOOGLE_BUSINESS_ENABLED', true),
+            // Account Management API — lists the Business accounts a user administers.
+            'account_management_api' => env('GOOGLE_BUSINESS_ACCOUNT_MANAGEMENT_API', 'https://mybusinessaccountmanagement.googleapis.com/v1'),
+            // Business Information API — lists locations under an account.
+            'business_information_api' => env('GOOGLE_BUSINESS_BUSINESS_INFORMATION_API', 'https://mybusinessbusinessinformation.googleapis.com/v1'),
+            // Legacy but still-active v4 API — the only home for Local Post create/update/delete.
+            'local_posts_api' => env('GOOGLE_BUSINESS_LOCAL_POSTS_API', 'https://mybusiness.googleapis.com/v4'),
+            // Business Profile Performance API — location-level analytics.
+            'performance_api' => env('GOOGLE_BUSINESS_PERFORMANCE_API', 'https://businessprofileperformance.googleapis.com/v1'),
+            // OAuth token endpoint, same host Google uses for every OAuth2 client.
+            'oauth_api' => env('GOOGLE_BUSINESS_OAUTH_API', 'https://oauth2.googleapis.com'),
+            // Business Profile web UI — post URL fallback and the social-account profile link.
+            'dashboard' => env('GOOGLE_BUSINESS_DASHBOARD', 'https://business.google.com'),
         ],
     ],
 

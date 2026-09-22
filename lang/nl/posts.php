@@ -186,6 +186,48 @@ return [
             'embed_image' => 'Afbeeldings-URL',
             'embed_color' => 'Kleur',
         ],
+        'google_business' => [
+            'settings' => 'Google Business Profile-instellingen',
+            'posting_to' => 'Posten naar',
+            'topic_type_label' => 'Posttype',
+            'topic_type' => [
+                'standard' => 'Wat is nieuw',
+                'event' => 'Evenement',
+                'offer' => 'Aanbod',
+            ],
+            'cta_label' => 'Knop',
+            'cta_none' => 'Geen',
+            'cta' => [
+                'book' => 'Boeken',
+                'order' => 'Online bestellen',
+                'shop' => 'Kopen',
+                'learn_more' => 'Meer informatie',
+                'sign_up' => 'Aanmelden',
+                'call' => 'Nu bellen',
+            ],
+            'cta_url' => 'Koppelinformatie voor knop',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'Voer een link in voor deze knop, of kies "Geen".',
+            'event_title' => 'Evenementtitel',
+            'event_title_placeholder' => 'De titel van je evenement',
+            'event_title_required' => 'Voer een evenementtitel in.',
+            'event_start_date' => 'Start',
+            'event_start_date_required' => 'Voer een startdatum in.',
+            'event_end_date' => 'Einde',
+            'event_end_date_required' => 'Voer een einddatum in.',
+            'event_end_date_before_start' => 'De einddatum moet op of na de startdatum liggen.',
+            'event_end_time_before_start' => 'De eindtijd moet na de starttijd liggen.',
+            'title_max' => 'De titel mag maximaal 58 tekens zijn.',
+            'event_start_time' => 'Starttijd',
+            'event_end_time' => 'Eindtijd',
+            'offer_title' => 'Aanbodtitel',
+            'offer_title_placeholder' => 'Voer een titel in voor je aanbod',
+            'offer_title_required' => 'Voer een aanbodtitel in.',
+            'offer_coupon_code' => 'Couponcode',
+            'offer_redeem_url' => 'Aanbodlink',
+            'offer_terms' => 'Voorwaarden',
+            'event_times_use_location' => 'Tijden volgen de lokale tijd van de locatie, niet die van de browser.',
+        ],
         'warnings' => [
             'no_variant' => 'Kies een posttype om door te gaan.',
             'requires_media' => 'Dit posttype vereist ten minste één afbeelding of video.',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => 'Statistieken laden…',
         'metrics_unavailable' => 'Statistieken zijn voor dit platform nog niet beschikbaar.',
         'metrics_empty' => 'Geen statistieken teruggegeven.',
+        'pending_review' => 'Google beoordeelt dit bericht. We werken het bij wanneer de review klaar is.',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => 'Publiceren...',
             'retrying' => 'Opnieuw proberen...',
             'failed' => 'Mislukt',
+            'pending_review' => 'In beoordeling bij Google',
+            'rejected' => 'Afgewezen',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => 'Bericht',
             'description' => 'Bericht naar een Discord-kanaal met optionele media en embeds',
         ],
+        'google_business_post' => [
+            'label' => 'Bericht',
+            'description' => 'Wordt weergegeven in je Bedrijfsprofiel in Zoeken en Kaarten',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => 'Social account is losgekoppeld',
         'account_inactive' => 'Social account is gedeactiveerd',
+        'target_disabled' => 'Deze bestemming is uitgeschakeld',
         'account_token_expired' => 'Sessie van social account verlopen — koppel opnieuw',
         'platform_unavailable' => 'Het platform is tijdelijk niet beschikbaar. We proberen het zo opnieuw.',
         'platform_unavailable_exhausted' => 'Het platform bleef na meerdere pogingen niet beschikbaar. Probeer het later opnieuw.',
         'publishing_timed_out' => 'Publiceren is timed-out. Probeer het opnieuw.',
+        'rejected_in_review' => 'Google heeft dit bericht bij de beoordeling afgewezen. Pas de inhoud of afbeelding aan en probeer het opnieuw.',
+        'review_unconfirmed' => 'Google heeft dit bericht nooit bevestigd. Controleer je bedrijfsprofiel en probeer het opnieuw.',
+        'google_business' => [
+            'no_location' => 'Dit Google Business Profile-account heeft geen locatie ingesteld. Verbind het opnieuw.',
+            'permission_denied' => 'Toegang geweigerd. Verbind opnieuw en bevestig toegang tot deze locatie.',
+            'not_found' => 'Locatie niet gevonden. Die is mogelijk verwijderd — verbind opnieuw.',
+            'invalid_content' => 'Ongeldige inhoud. Controleer de berichtgegevens.',
+            'rate_limited' => 'Aanvraaglimiet overschreden. Probeer het later opnieuw.',
+            'server_error' => 'Serverfout bij Google Business Profile. Probeer het opnieuw.',
+            'rejected' => 'Google Business Profile heeft dit bericht geweigerd. Probeer het opnieuw.',
+            'event_dates_required' => 'Dit bericht heeft een start- en einddatum nodig. Voeg ze toe en probeer het opnieuw.',
+            'token_expired' => 'Het toegangstoken van Google Business Profile is ongeldig of verlopen',
+            'no_refresh_token' => 'Geen refresh-token beschikbaar voor het Google Business Profile-account',
+        ],
     ],
 
     'delete' => [

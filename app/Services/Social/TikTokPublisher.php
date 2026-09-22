@@ -6,6 +6,7 @@ namespace App\Services\Social;
 
 use App\Dto\MediaItem;
 use App\Enums\SocialAccount\Platform;
+use App\Enums\TikTok\PrivacyLevel;
 use App\Enums\TikTok\PublishStatus;
 use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\ErrorCategory;
@@ -14,6 +15,7 @@ use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Services\Media\MediaOptimizer;
 use App\Services\Social\Concerns\HasSocialHttpClient;
+use App\Support\PostPlatformMetaRules;
 use App\Support\Social\PublishCheckpoint;
 use App\Support\Social\TikTokPhotoDerivativeCleaner;
 use Illuminate\Http\Client\PendingRequest;
@@ -98,23 +100,23 @@ class TikTokPublisher
     }
 
     /**
-     * Resolve the user-selected privacy_level from meta, throwing when missing.
-     * TikTok UX Guideline Point 2b forbids any default — the user must pick
-     * explicitly. The FormRequest validates this upstream; this is the safety
-     * net for queue/job paths that bypass the request layer.
+     * Resolve the user-selected privacy_level from meta. TikTok UX Guideline
+     * Point 2b forbids any default — the user must pick explicitly. The
+     * FormRequest enforces the same rules upstream; this is the safety net for
+     * queue/job paths that bypass the request layer.
      */
-    private function resolveRequiredPrivacyLevel(PostPlatform $postPlatform): string
+    private function resolveRequiredPrivacyLevel(PostPlatform $postPlatform): PrivacyLevel
     {
-        $privacyLevel = data_get($postPlatform->meta ?? [], 'privacy_level');
+        $violation = PostPlatformMetaRules::requiredMetaViolation(Platform::TikTok, $postPlatform->meta);
 
-        if (blank($privacyLevel)) {
+        if ($violation !== null) {
             throw new TikTokPublishException(
-                userMessage: 'TikTok privacy level is required. Please open the post and pick a visibility option.',
+                userMessage: $violation[1],
                 category: ErrorCategory::ContentPolicy,
             );
         }
 
-        return (string) $privacyLevel;
+        return PrivacyLevel::from((string) data_get($postPlatform->meta, 'privacy_level'));
     }
 
     /**
@@ -130,7 +132,7 @@ class TikTokPublisher
 
         $postInfo = [
             'title' => $content ?? '',
-            'privacy_level' => $this->resolveRequiredPrivacyLevel($postPlatform),
+            'privacy_level' => $this->resolveRequiredPrivacyLevel($postPlatform)->value,
             'disable_duet' => ! data_get($meta, 'allow_duet', false),
             'disable_comment' => ! data_get($meta, 'allow_comments', false),
             'disable_stitch' => ! data_get($meta, 'allow_stitch', false),
@@ -165,7 +167,7 @@ class TikTokPublisher
 
         $postInfo = [
             'description' => $content ?? '',
-            'privacy_level' => $this->resolveRequiredPrivacyLevel($postPlatform),
+            'privacy_level' => $this->resolveRequiredPrivacyLevel($postPlatform)->value,
             'disable_comment' => ! data_get($meta, 'allow_comments', false),
         ];
 
@@ -479,6 +481,10 @@ class TikTokPublisher
         $statusData = $this->waitForPublishStatus($publishId);
         $postId = data_get($statusData, 'publicaly_available_post_id.0');
         $postId = is_string($postId) && $postId !== '' ? $postId : null;
+
+        if ($postId === null) {
+            $postId = app(TikTokAnalytics::class)->findVideoIdByCaption($postPlatform);
+        }
 
         return [
             'id' => $postId ?? $publishId,

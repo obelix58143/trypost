@@ -12,6 +12,7 @@ import { isVideo } from '@/lib/mediaType';
 import type { PinterestBoard, PinterestBoardsPayload } from '@/types';
 import type { Channel } from '@/types/channel';
 import type { MediaItem } from '@/types/media';
+import type { TikTokPrivacyLevelValue } from '@/types/tiktok-privacy';
 import { PostPlatformStatus } from '@/types/post';
 
 interface SocialAccount {
@@ -61,7 +62,7 @@ interface TikTokCreatorInfo {
     creator_nickname: string | null;
     creator_username: string | null;
     creator_avatar_url: string | null;
-    privacy_level_options: string[];
+    privacy_level_options: TikTokPrivacyLevelValue[];
     comment_disabled: boolean;
     duet_disabled: boolean;
     stitch_disabled: boolean;
@@ -181,31 +182,41 @@ const channels = computed<Channel[]>(() =>
                         <div
                             v-for="pp in postPlatforms.filter(p => p.enabled)"
                             :key="pp.id"
-                            class="flex items-center justify-between rounded-xl border-2 border-foreground bg-card p-3 shadow-2xs"
+                            class="rounded-xl border-2 border-foreground bg-card p-3 shadow-2xs"
                         >
-                            <div class="flex min-w-0 items-center gap-2">
-                                <span class="inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-foreground bg-card">
-                                    <img :src="getPlatformLogo(pp.platform)" :alt="pp.platform" class="size-full object-cover" />
-                                </span>
-                                <span class="truncate text-sm font-bold text-foreground">{{ getPlatformDisplayName(pp) }}</span>
+                            <div class="flex items-center justify-between">
+                                <div class="flex min-w-0 items-center gap-2">
+                                    <span class="inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-foreground bg-card">
+                                        <img :src="getPlatformLogo(pp.platform)" :alt="pp.platform" class="size-full object-cover" />
+                                    </span>
+                                    <span class="truncate text-sm font-bold text-foreground">{{ getPlatformDisplayName(pp) }}</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <Badge v-if="pp.status === PostPlatformStatus.Published" variant="success">{{ $t('posts.edit.status.published') }}</Badge>
+                                    <Badge v-else-if="pp.status === PostPlatformStatus.Publishing" variant="warning">
+                                        <IconLoader2 class="size-3 animate-spin" />
+                                        {{ $t('posts.edit.status.publishing') }}
+                                    </Badge>
+                                    <Badge v-else-if="pp.status === PostPlatformStatus.PendingReview" variant="warning">{{ $t('posts.edit.status.pending_review') }}</Badge>
+                                    <Badge v-else-if="pp.status === PostPlatformStatus.Rejected" variant="destructive">{{ $t('posts.edit.status.rejected') }}</Badge>
+                                    <Badge v-else-if="pp.status === PostPlatformStatus.Failed" variant="destructive">{{ $t('posts.edit.status.failed') }}</Badge>
+                                    <a
+                                        v-if="pp.platform_url"
+                                        :href="pp.platform_url"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="inline-flex size-7 items-center justify-center rounded-full border-2 border-foreground bg-card text-foreground shadow-2xs transition-transform hover:rotate-3 hover:bg-violet-100"
+                                    >
+                                        <IconExternalLink class="size-3.5" stroke-width="2.5" />
+                                    </a>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <Badge v-if="pp.status === PostPlatformStatus.Published" variant="success">{{ $t('posts.edit.status.published') }}</Badge>
-                                <Badge v-else-if="pp.status === PostPlatformStatus.Publishing" variant="warning">
-                                    <IconLoader2 class="size-3 animate-spin" />
-                                    {{ $t('posts.edit.status.publishing') }}
-                                </Badge>
-                                <Badge v-else-if="pp.status === PostPlatformStatus.Failed" variant="destructive">{{ $t('posts.edit.status.failed') }}</Badge>
-                                <a
-                                    v-if="pp.platform_url"
-                                    :href="pp.platform_url"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    class="inline-flex size-7 items-center justify-center rounded-full border-2 border-foreground bg-card text-foreground shadow-2xs transition-transform hover:rotate-3 hover:bg-violet-100"
-                                >
-                                    <IconExternalLink class="size-3.5" stroke-width="2.5" />
-                                </a>
-                            </div>
+                            <p
+                                v-if="(pp.status === PostPlatformStatus.Rejected || pp.status === PostPlatformStatus.Failed) && pp.error_message"
+                                class="mt-2 text-xs font-semibold text-rose-700"
+                            >
+                                {{ pp.error_message }}
+                            </p>
                         </div>
                     </div>
                 </div>

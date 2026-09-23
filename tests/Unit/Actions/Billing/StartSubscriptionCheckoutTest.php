@@ -187,8 +187,20 @@ test('redirect applies the plan first-month coupon on a monthly price', function
     $account->refresh();
 
     $builder = Mockery::mock(SubscriptionBuilder::class);
-    $builder->shouldReceive('withMetadata')->once()->andReturnSelf();
-    $builder->shouldReceive('withCoupon')->once()->with('SOCIALS_18USD')->andReturnSelf();
+    $builder->shouldReceive('withCoupon')
+        ->once()
+        ->with('SOCIALS_18USD')
+        ->ordered()
+        ->andReturnUsing(function () use ($builder): SubscriptionBuilder {
+            $builder->couponId = 'SOCIALS_18USD';
+
+            return $builder;
+        });
+    $builder->shouldReceive('withMetadata')
+        ->once()
+        ->with(['trypost_first_month_coupon_id' => 'SOCIALS_18USD'])
+        ->ordered()
+        ->andReturnSelf();
     $builder->shouldReceive('trialDays')->never();
     $builder->shouldReceive('checkout')
         ->once()
@@ -227,7 +239,7 @@ test('redirect skips the first-month coupon on a yearly price', function () {
     $account->refresh();
 
     $builder = Mockery::mock(SubscriptionBuilder::class);
-    $builder->shouldReceive('withMetadata')->once()->andReturnSelf();
+    $builder->shouldReceive('withMetadata')->once()->with([])->andReturnSelf();
     $builder->shouldReceive('withCoupon')->never();
     $builder->shouldReceive('trialDays')->once()->with(8)->andReturnSelf();
     $builder->shouldReceive('checkout')

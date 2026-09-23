@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Models\Account;
+use App\Support\Billing\ConfigureSubscriptionCheckout;
+use Illuminate\Support\Carbon;
 
 final class StripeSubscriptionConversion
 {
@@ -51,5 +53,59 @@ final class StripeSubscriptionConversion
         }
 
         return $properties;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public static function checkoutPropertiesFor(Account $account, array $payload): array
+    {
+        $properties = self::propertiesFor($account, $payload);
+        $firstMonthCouponId = self::firstMonthCouponId($payload);
+
+        $properties['is_first_month_offer'] = $firstMonthCouponId !== null;
+
+        if ($firstMonthCouponId === null) {
+            return $properties;
+        }
+
+        $properties['first_month_coupon_id'] = $firstMonthCouponId;
+        $firstMonthOfferEndsAt = self::firstMonthOfferEndsAt($payload);
+
+        if ($firstMonthOfferEndsAt !== null) {
+            $properties['first_month_offer_ends_at'] = $firstMonthOfferEndsAt;
+        }
+
+        return $properties;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public static function firstMonthOfferEndsAt(array $payload): ?string
+    {
+        if (self::firstMonthCouponId($payload) === null) {
+            return null;
+        }
+
+        $currentPeriodEnd = data_get($payload, 'data.object.items.data.0.current_period_end');
+
+        return is_int($currentPeriodEnd)
+            ? Carbon::createFromTimestamp($currentPeriodEnd)->toIso8601String()
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function firstMonthCouponId(array $payload): ?string
+    {
+        $couponId = data_get(
+            $payload,
+            'data.object.metadata.'.ConfigureSubscriptionCheckout::FIRST_MONTH_COUPON_METADATA_KEY,
+        );
+
+        return is_string($couponId) && $couponId !== '' ? $couponId : null;
     }
 }

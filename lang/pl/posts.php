@@ -186,6 +186,48 @@ return [
             'embed_image' => 'Adres URL obrazu',
             'embed_color' => 'Kolor',
         ],
+        'google_business' => [
+            'settings' => 'Ustawienia Google Business Profile',
+            'posting_to' => 'Publikowanie na',
+            'topic_type_label' => 'Typ posta',
+            'topic_type' => [
+                'standard' => 'Nowości',
+                'event' => 'Wydarzenie',
+                'offer' => 'Oferta',
+            ],
+            'cta_label' => 'Przycisk',
+            'cta_none' => 'Brak',
+            'cta' => [
+                'book' => 'Zarezerwuj',
+                'order' => 'Zamów online',
+                'shop' => 'Kup',
+                'learn_more' => 'Dowiedz się więcej',
+                'sign_up' => 'Zarejestruj się',
+                'call' => 'Zadzwoń teraz',
+            ],
+            'cta_url' => 'Link przycisku',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'Wpisz link dla tego przycisku lub wybierz "Brak".',
+            'event_title' => 'Tytuł wydarzenia',
+            'event_title_placeholder' => 'Tytuł Twojego wydarzenia',
+            'event_title_required' => 'Wpisz tytuł wydarzenia.',
+            'event_start_date' => 'Start',
+            'event_start_date_required' => 'Wpisz datę rozpoczęcia.',
+            'event_end_date' => 'Koniec',
+            'event_end_date_required' => 'Wpisz datę zakończenia.',
+            'event_end_date_before_start' => 'Data zakończenia musi być równa lub późniejsza niż data rozpoczęcia.',
+            'event_end_time_before_start' => 'Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia.',
+            'title_max' => 'Tytuł może mieć maksymalnie 58 znaków.',
+            'event_start_time' => 'Czas rozpoczęcia',
+            'event_end_time' => 'Czas zakończenia',
+            'offer_title' => 'Tytuł oferty',
+            'offer_title_placeholder' => 'Wpisz tytuł swojej oferty',
+            'offer_title_required' => 'Wpisz tytuł oferty.',
+            'offer_coupon_code' => 'Kod kuponu',
+            'offer_redeem_url' => 'Link oferty',
+            'offer_terms' => 'Warunki i postanowienia',
+            'event_times_use_location' => 'Godziny są w czasie lokalnym lokalizacji, nie przeglądarki.',
+        ],
         'warnings' => [
             'no_variant' => 'Wybierz typ posta, aby kontynuować.',
             'requires_media' => 'Ten typ posta wymaga co najmniej jednego obrazu lub filmu.',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => 'Wczytywanie metryk…',
         'metrics_unavailable' => 'Metryki dla tej platformy nie są jeszcze dostępne.',
         'metrics_empty' => 'Nie zwrócono żadnych metryk.',
+        'pending_review' => 'Google recenzuje ten wpis. Zaktualizujemy go po zakończeniu recenzji.',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => 'Publikowanie...',
             'retrying' => 'Ponawianie...',
             'failed' => 'Nieudany',
+            'pending_review' => 'W weryfikacji przez Google',
+            'rejected' => 'Odrzucony',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => 'Wiadomość',
             'description' => 'Wiadomość na kanale Discord z opcjonalnymi multimediami i osadzeniami',
         ],
+        'google_business_post' => [
+            'label' => 'Post',
+            'description' => 'Pojawia się w twoim Profilu Biznesowym w Wyszukiwaniu i Mapach',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => 'Konto społecznościowe jest rozłączone',
         'account_inactive' => 'Konto społecznościowe jest dezaktywowane',
+        'target_disabled' => 'Ten cel publikacji został wyłączony',
         'account_token_expired' => 'Sesja konta społecznościowego wygasła — połącz ponownie',
         'platform_unavailable' => 'Platforma jest tymczasowo niedostępna. Spróbujemy ponownie wkrótce.',
         'platform_unavailable_exhausted' => 'Platforma pozostała niedostępna po kilku próbach. Spróbuj ponownie później.',
         'publishing_timed_out' => 'Publikowanie przekroczyło limit czasu. Spróbuj ponownie.',
+        'rejected_in_review' => 'Google odrzuciło ten post podczas weryfikacji. Zmień treść lub obraz i spróbuj ponownie.',
+        'review_unconfirmed' => 'Google nie potwierdziło tego posta. Sprawdź swój profil firmy i spróbuj ponownie.',
+        'google_business' => [
+            'no_location' => 'To konto Google Business Profile nie ma skonfigurowanej lokalizacji. Połącz je ponownie.',
+            'permission_denied' => 'Brak uprawnień. Połącz ponownie i potwierdź dostęp do tej lokalizacji.',
+            'not_found' => 'Nie znaleziono lokalizacji. Mogła zostać usunięta — połącz konto ponownie.',
+            'invalid_content' => 'Nieprawidłowa treść. Sprawdź szczegóły posta.',
+            'rate_limited' => 'Przekroczono limit zapytań. Spróbuj ponownie później.',
+            'server_error' => 'Błąd serwera Google Business Profile. Spróbuj ponownie.',
+            'rejected' => 'Google Business Profile odrzuciło ten post. Spróbuj ponownie.',
+            'event_dates_required' => 'Ten post wymaga daty rozpoczęcia i zakończenia. Dodaj je i spróbuj ponownie.',
+            'token_expired' => 'Token dostępu Google Business Profile jest nieprawidłowy lub wygasł',
+            'no_refresh_token' => 'Brak refresh tokena dla konta Google Business Profile',
+        ],
     ],
 
     'delete' => [

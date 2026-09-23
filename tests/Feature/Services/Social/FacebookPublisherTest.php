@@ -15,6 +15,7 @@ use App\Models\Workspace;
 use App\Services\Social\FacebookPublisher;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Intervention\Image\Drivers\Gd\Driver;
@@ -124,7 +125,8 @@ test('facebook publisher can publish text only post', function () {
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), '/page_123/feed')
-            && $request['message'] === 'Check out this Facebook post!';
+            && $request['message'] === 'Check out this Facebook post!'
+            && ! array_key_exists('link', $request->data());
     });
 });
 
@@ -1210,5 +1212,227 @@ test('facebook publisher keeps links intact', function () {
     $this->publisher->publish($this->postPlatform);
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
-        && $request['message'] === 'New post: https://acme.com/blog');
+        && $request['message'] === 'New post: https://acme.com/blog'
+        && $request['link'] === 'https://acme.com/blog');
+});
+
+test('facebook publisher retries a text post without the link when the scrape fails', function () {
+    $this->post->update(['content' => 'Read https://example.com/post today']);
+
+    Http::fake([
+        '*/page_123/feed' => Http::sequence()
+            ->push(['error' => ['message' => 'There was a problem scraping the URL.', 'code' => 1609005]], 400)
+            ->push(['id' => 'page_123_post_456'], 200),
+    ]);
+
+    $result = $this->publisher->publish($this->postPlatform);
+
+    expect($result['id'])->toBe('page_123_post_456');
+
+    $feed = collect(Http::recorded())
+        ->map(fn (array $pair) => $pair[0])
+        ->filter(fn ($request) => str_contains($request->url(), '/page_123/feed'))
+        ->values();
+
+    expect($feed)->toHaveCount(2)
+        ->and($feed[0]['link'])->toBe('https://example.com/post')
+        ->and($feed[1]->data())->not->toHaveKey('link')
+        ->and($feed[1]['message'])->toBe('Read https://example.com/post today');
+});
+
+test('facebook publisher does not log an error when the rejected link is published without it', function () {
+    $this->post->update(['content' => 'Read https://example.com/post today']);
+
+    Log::spy();
+
+    Http::fake([
+        '*/page_123/feed' => Http::sequence()
+            ->push(['error' => ['message' => 'There was a problem scraping the URL.', 'code' => 1609005]], 400)
+            ->push(['id' => 'page_123_post_456'], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Log::shouldHaveReceived('warning')->once();
+    Log::shouldNotHaveReceived('error');
+});
+
+test('facebook publisher logs an error when a text post fails for a reason other than the link', function () {
+    $this->post->update(['content' => 'Read https://example.com/post']);
+
+    Log::spy();
+
+    Http::fake([
+        '*/page_123/feed' => Http::response([
+            'error' => ['message' => 'Duplicate post', 'code' => 506],
+        ], 400),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->postPlatform))
+        ->toThrow(FacebookPublishException::class);
+
+    Log::shouldHaveReceived('error')->once();
+    Log::shouldNotHaveReceived('warning');
+});
+
+test('facebook publisher does not drop the link on an unrelated feed error', function () {
+    $this->post->update(['content' => 'Read https://example.com/post']);
+
+    Http::fake([
+        '*/page_123/feed' => Http::response([
+            'error' => ['message' => 'Duplicate post', 'code' => 506],
+        ], 400),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->postPlatform))
+        ->toThrow(FacebookPublishException::class);
+
+    Http::assertSentCount(1);
+});
+
+test('facebook publisher does not send a facebook-owned url as the link', function (string $url) {
+    $this->post->update(['content' => "See {$url}"]);
+
+    Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
+
+    $result = $this->publisher->publish($this->postPlatform);
+
+    expect($result['id'])->toBe('page_123_post_456');
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
+        && $request['message'] === "See {$url}"
+        && ! array_key_exists('link', $request->data()));
+
+    Http::assertSentCount(1);
+})->with([
+    'www' => 'https://www.facebook.com/somepage',
+    'mobile' => 'https://m.facebook.com/somepage',
+    'apex' => 'https://facebook.com/events/1',
+    'fb.com' => 'https://fb.com/somepage',
+    'fb.me' => 'https://fb.me/abc',
+    'subdomain' => 'https://l.facebook.com/l.php?u=https://example.com',
+]);
+
+test('facebook publisher uses the first url that facebook can preview', function () {
+    $this->post->update(['content' => 'See https://www.facebook.com/page and https://example.com/post.']);
+
+    Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
+        && $request['message'] === 'See https://www.facebook.com/page and https://example.com/post.'
+        && $request['link'] === 'https://example.com/post');
+});
+
+test('facebook publisher still attaches a link on a host that only looks like facebook', function () {
+    $this->post->update(['content' => 'See https://notfacebook.com/post']);
+
+    Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
+        && $request['link'] === 'https://notfacebook.com/post');
+});
+
+test('facebook publisher retries without the link when facebook rejects the url', function (array $error) {
+    $this->post->update(['content' => 'Read https://example.com/post today']);
+
+    Http::fake([
+        '*/page_123/feed' => Http::sequence()
+            ->push(['error' => $error], 400)
+            ->push(['id' => 'page_123_post_456'], 200),
+    ]);
+
+    $result = $this->publisher->publish($this->postPlatform);
+
+    expect($result['id'])->toBe('page_123_post_456');
+
+    $feed = collect(Http::recorded())
+        ->map(fn (array $pair) => $pair[0])
+        ->filter(fn ($request) => str_contains($request->url(), '/page_123/feed'))
+        ->values();
+
+    expect($feed)->toHaveCount(2)
+        ->and($feed[0]['link'])->toBe('https://example.com/post')
+        ->and($feed[1]->data())->not->toHaveKey('link');
+})->with([
+    'invalid url' => [['message' => 'The url you supplied is invalid', 'code' => 1500]],
+    'facebook.com link' => [['message' => 'Permissions error', 'code' => 200, 'error_subcode' => 1609008]],
+]);
+
+test('facebook publisher does not drop the link on a permissions error without the facebook-url subcode', function () {
+    $this->post->update(['content' => 'Read https://example.com/post']);
+
+    Http::fake([
+        '*/page_123/feed' => Http::response([
+            'error' => ['message' => 'Permissions error', 'code' => 200],
+        ], 400),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->postPlatform))
+        ->toThrow(FacebookPublishException::class);
+
+    Http::assertSentCount(1);
+});
+
+test('facebook publisher fails the post when the retry without the link is rejected too', function () {
+    $this->post->update(['content' => 'Read https://example.com/post']);
+
+    Log::spy();
+
+    Http::fake([
+        '*/page_123/feed' => Http::sequence()
+            ->push(['error' => ['message' => 'There was a problem scraping the URL.', 'code' => 1609005]], 400)
+            ->push(['error' => ['message' => 'Duplicate post', 'code' => 506]], 400),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->postPlatform))
+        ->toThrow(FacebookPublishException::class, 'Duplicate post detected. Please modify content.');
+
+    Http::assertSentCount(2);
+    Log::shouldHaveReceived('warning')->once();
+    Log::shouldHaveReceived('error')->once();
+});
+
+test('facebook publisher does not retry a text post with a link when the token is dead', function () {
+    $this->post->update(['content' => 'Read https://example.com/post']);
+
+    Http::fake([
+        '*/page_123/feed' => Http::response([
+            'error' => ['message' => 'Invalid OAuth access token.', 'code' => 190],
+        ], 400),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->postPlatform))
+        ->toThrow(TokenExpiredException::class);
+
+    Http::assertSentCount(1);
+});
+
+test('facebook publisher does not attach a link card when the post has media', function () {
+    $this->post->update([
+        'content' => 'Read https://example.com/post',
+        'media' => [[
+            'id' => 'test-media-id',
+            'path' => 'media/2026-01/image.jpg',
+            'url' => 'https://example.com/media/2026-01/image.jpg',
+            'mime_type' => 'image/jpeg',
+            'original_filename' => 'image.jpg',
+        ]],
+    ]);
+
+    Http::fake([
+        '*/page_123/photos' => Http::response([
+            'id' => 'photo_123',
+            'post_id' => 'page_123_photo_post_456',
+        ], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/page_123/feed'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')
+        && ! array_key_exists('link', $request->data()));
 });

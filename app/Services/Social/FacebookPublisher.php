@@ -15,6 +15,7 @@ use App\Models\PostPlatform;
 use App\Services\Social\Concerns\CropsImageForAspectRatio;
 use App\Services\Social\Concerns\HasSocialHttpClient;
 use App\Services\Social\Meta\GraphError;
+use App\Support\FacebookLinkPreview;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -101,12 +102,58 @@ class FacebookPublisher
             );
         }
 
-        $response = $this->postToGraph("{$pageId}/feed", [
-            'message' => $content,
-            'access_token' => $accessToken,
-        ], 'text post');
+        $link = FacebookLinkPreview::url($content);
+
+        $response = $link === null
+            ? $this->postTextToFeed($pageId, $accessToken, $content, null)
+            : $this->postTextWithLink($pageId, $accessToken, $content, $link);
 
         return $this->feedPostResult(data_get($response->json(), 'id'));
+    }
+
+    /**
+     * Facebook can reject the link and not the post: 1609005 (scrape failed),
+     * 1500 (invalid URL) or 200/1609008 (facebook.com URL). The caption
+     * published as plain text before `link` existed, so on those codes the
+     * card is dropped and the text is posted once more. Any other error fails
+     * the post. The first attempt stays quiet in the log because only the
+     * outcome of the retry says whether the publish failed.
+     */
+    private function postTextWithLink(string $pageId, string $accessToken, string $content, string $link): Response
+    {
+        try {
+            return $this->postTextToFeed($pageId, $accessToken, $content, $link, reportFailure: false);
+        } catch (FacebookPublishException $exception) {
+            if (! $exception->rejectsLink()) {
+                Log::error('Facebook text post failed', [
+                    'platform_error_code' => $exception->platformErrorCode,
+                    'body' => $this->redactResponseBody($exception->rawResponse ?? ''),
+                ]);
+
+                throw $exception;
+            }
+
+            Log::warning('Facebook rejected the link preview; publishing the text without it', [
+                'platform_error_code' => $exception->platformErrorCode,
+                'platform_error_subcode' => $exception->platformErrorSubcode,
+            ]);
+        }
+
+        return $this->postTextToFeed($pageId, $accessToken, $content, null);
+    }
+
+    /**
+     * A text post carries `link` when the caption contains a URL. Facebook does
+     * not unfurl a URL left only in `message`; the Page Feed `link` field is
+     * what makes it scrape Open Graph and render the preview.
+     */
+    private function postTextToFeed(string $pageId, string $accessToken, string $content, ?string $link, bool $reportFailure = true): Response
+    {
+        return $this->postToGraph("{$pageId}/feed", [
+            'message' => $content,
+            'access_token' => $accessToken,
+            ...$this->optionalField('link', $link),
+        ], 'text post', $reportFailure);
     }
 
     /**
@@ -464,7 +511,7 @@ class FacebookPublisher
      *
      * @param  array<string, string>  $payload
      */
-    private function postToGraph(string $path, array $payload, string $label): Response
+    private function postToGraph(string $path, array $payload, string $label, bool $reportFailure = true): Response
     {
         $response = $this->reachOrRetry(
             fn (): Response => $this->facebookHttp()->post("{$this->baseUrl}/{$path}", $payload),
@@ -472,10 +519,13 @@ class FacebookPublisher
         );
 
         if ($response->failed()) {
-            Log::error("Facebook {$label} failed", [
-                'status' => $response->status(),
-                'body' => $this->redactResponseBody($response->body()),
-            ]);
+            if ($reportFailure) {
+                Log::error("Facebook {$label} failed", [
+                    'status' => $response->status(),
+                    'body' => $this->redactResponseBody($response->body()),
+                ]);
+            }
+
             $this->handleApiError($response);
         }
 

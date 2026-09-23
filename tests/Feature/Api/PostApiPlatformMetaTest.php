@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\GoogleBusiness\TopicType;
 use App\Enums\Post\Status as PostStatus;
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
@@ -530,4 +531,333 @@ it('rejects non-http Pinterest links', function () {
         ->assertJsonValidationErrors([
             'platforms.0.meta.link' => __('posts.form.pinterest.link_invalid'),
         ]);
+});
+
+it('persists Google Business topic_type and offer meta on store', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Big sale this week',
+            'platforms' => [[
+                'social_account_id' => $googleBusiness->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'topic_type' => 'OFFER',
+                    'offer' => ['coupon_code' => 'SAVE10'],
+                ],
+            ]],
+        ])
+        ->assertCreated();
+
+    $meta = PostPlatform::where('social_account_id', $googleBusiness->id)->sole()->meta;
+
+    expect(data_get($meta, 'topic_type'))->toBe('OFFER')
+        ->and(data_get($meta, 'offer.coupon_code'))->toBe('SAVE10');
+});
+
+it('persists Google Business call_to_action meta on store', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Book a table tonight',
+            'platforms' => [[
+                'social_account_id' => $googleBusiness->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'call_to_action' => ['action_type' => 'BOOK', 'url' => 'https://example.com'],
+                ],
+            ]],
+        ])
+        ->assertCreated();
+
+    $meta = PostPlatform::where('social_account_id', $googleBusiness->id)->sole()->meta;
+
+    expect(data_get($meta, 'call_to_action.action_type'))->toBe('BOOK')
+        ->and(data_get($meta, 'call_to_action.url'))->toBe('https://example.com');
+});
+
+it('persists Google Business event time meta on store', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Grand opening',
+            'platforms' => [[
+                'social_account_id' => $googleBusiness->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'topic_type' => 'EVENT',
+                    'event' => [
+                        'title' => 'Grand Opening',
+                        'start_date' => '2026-09-01',
+                        'end_date' => '2026-09-02',
+                        'start_time' => '09:00',
+                        'end_time' => '17:00',
+                    ],
+                ],
+            ]],
+        ])
+        ->assertCreated();
+
+    $meta = PostPlatform::where('social_account_id', $googleBusiness->id)->sole()->meta;
+
+    expect(data_get($meta, 'event.title'))->toBe('Grand Opening')
+        ->and(data_get($meta, 'event.start_date'))->toBe('2026-09-01')
+        ->and(data_get($meta, 'event.end_date'))->toBe('2026-09-02')
+        ->and(data_get($meta, 'event.start_time'))->toBe('09:00')
+        ->and(data_get($meta, 'event.end_time'))->toBe('17:00');
+});
+
+it('persists Google Business offer redeem url and terms meta on store', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Big sale this week',
+            'platforms' => [[
+                'social_account_id' => $googleBusiness->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'offer' => [
+                        'coupon_code' => 'SAVE10',
+                        'redeem_online_url' => 'https://example.com/redeem',
+                        'terms_conditions' => 'Some terms',
+                    ],
+                ],
+            ]],
+        ])
+        ->assertCreated();
+
+    $meta = PostPlatform::where('social_account_id', $googleBusiness->id)->sole()->meta;
+
+    expect(data_get($meta, 'offer.coupon_code'))->toBe('SAVE10')
+        ->and(data_get($meta, 'offer.redeem_online_url'))->toBe('https://example.com/redeem')
+        ->and(data_get($meta, 'offer.terms_conditions'))->toBe('Some terms');
+});
+
+it('rejects a Google Business event title over the api cap on update', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Draft->value,
+            'platforms' => [[
+                'id' => $platform->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'topic_type' => 'EVENT',
+                    'event' => [
+                        'title' => str_repeat('t', TopicType::TITLE_MAX_LENGTH + 1),
+                        'start_date' => '2026-09-01',
+                        'end_date' => '2026-09-02',
+                    ],
+                ],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([
+            'platforms.0.meta.event.title' => __('posts.form.google_business.title_max'),
+        ]);
+});
+
+it('rejects a Google Business event whose end date is before the start on update', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Draft->value,
+            'platforms' => [[
+                'id' => $platform->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'topic_type' => 'EVENT',
+                    'event' => ['title' => 'Sale', 'start_date' => '2026-09-10', 'end_date' => '2026-09-01'],
+                ],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([
+            'platforms.0.meta.event.end_date' => __('posts.form.google_business.event_end_date_before_start'),
+        ]);
+});
+
+it('rejects publishing a Google Business post with a GIF', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'media' => [[
+            'id' => 'gif-1', 'path' => 'medias/loop.gif', 'url' => 'https://example.com/loop.gif',
+            'type' => 'image', 'mime_type' => 'image/gif', 'original_filename' => 'loop.gif',
+        ]],
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true,
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Publishing->value,
+            'platforms' => [['id' => $platform->id, 'content_type' => ContentType::GoogleBusinessPost->value]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.content_type'])
+        ->assertJsonFragment(['This platform does not accept GIF. Remove the GIF or choose a different network.']);
+});
+
+it('rejects a Google Business event title over the api cap on store', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Grand opening',
+            'platforms' => [[
+                'social_account_id' => $googleBusiness->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'topic_type' => 'EVENT',
+                    'event' => [
+                        'title' => str_repeat('t', TopicType::TITLE_MAX_LENGTH + 1),
+                        'start_date' => '2026-09-01',
+                        'end_date' => '2026-09-02',
+                    ],
+                ],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([
+            'platforms.0.meta.event.title' => __('posts.form.google_business.title_max'),
+        ]);
+});
+
+it('rejects publishing a Google Business offer post without a title', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Publishing->value,
+            'platforms' => [[
+                'id' => $platform->id,
+                'meta' => ['topic_type' => 'OFFER', 'event' => ['start_date' => '2026-09-01', 'end_date' => '2026-09-02']],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([
+            'platforms.0.meta.event.title' => __('posts.form.google_business.offer_title_required'),
+        ]);
+});
+
+it('rejects publishing a Google Business event post without event fields', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Publishing->value,
+            'platforms' => [['id' => $platform->id, 'meta' => ['topic_type' => 'EVENT']]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.meta.event.title']);
+});
+
+it('rejects publishing a Google Business offer post without dates', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Publishing->value,
+            'platforms' => [[
+                'id' => $platform->id,
+                'meta' => ['topic_type' => 'OFFER', 'event' => ['title' => 'Summer Sale']],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.meta.event.start_date']);
+});
+
+it('rejects publishing a Google Business event with a same-day end time before start', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Publishing->value,
+            'platforms' => [[
+                'id' => $platform->id,
+                'meta' => [
+                    'topic_type' => 'EVENT',
+                    'event' => [
+                        'title' => 'Sale',
+                        'start_date' => '2026-09-01',
+                        'end_date' => '2026-09-01',
+                        'start_time' => '18:00',
+                        'end_time' => '09:00',
+                    ],
+                ],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.meta.event.end_time']);
+});
+
+it('rejects a Google Business GET_OFFER call to action', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Sale',
+            'platforms' => [[
+                'social_account_id' => $googleBusiness->id,
+                'content_type' => ContentType::GoogleBusinessPost->value,
+                'meta' => [
+                    'topic_type' => 'STANDARD',
+                    'call_to_action' => ['action_type' => 'GET_OFFER'],
+                ],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.meta.call_to_action.action_type']);
+});
+
+it('rejects publishing a Google Business post with a url-needing cta and no url', function () {
+    $googleBusiness = SocialAccount::factory()->googleBusiness()->create(['workspace_id' => $this->workspace->id]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id, 'social_account_id' => $googleBusiness->id, 'enabled' => true, 'meta' => [],
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Publishing->value,
+            'platforms' => [[
+                'id' => $platform->id,
+                'meta' => ['topic_type' => 'STANDARD', 'call_to_action' => ['action_type' => 'BOOK']],
+            ]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.meta.call_to_action.url']);
 });

@@ -186,6 +186,48 @@ return [
             'embed_image' => 'Image URL',
             'embed_color' => 'Color',
         ],
+        'google_business' => [
+            'settings' => 'Google Business Profile Settings',
+            'posting_to' => 'Posting to',
+            'topic_type_label' => 'Post type',
+            'topic_type' => [
+                'standard' => "What's New",
+                'event' => 'Event',
+                'offer' => 'Offer',
+            ],
+            'cta_label' => 'Button',
+            'cta_none' => 'None',
+            'cta' => [
+                'book' => 'Book',
+                'order' => 'Order online',
+                'shop' => 'Buy',
+                'learn_more' => 'Learn more',
+                'sign_up' => 'Sign up',
+                'call' => 'Call now',
+            ],
+            'cta_url' => 'Button link',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'Enter a link for this button, or choose "None".',
+            'event_title' => 'Event title',
+            'event_title_placeholder' => 'Your event title',
+            'event_title_required' => 'Enter an event title.',
+            'event_start_date' => 'Start',
+            'event_start_date_required' => 'Enter an event start date.',
+            'event_end_date' => 'End',
+            'event_end_date_required' => 'Enter an event end date.',
+            'event_end_date_before_start' => 'The end date must be on or after the start date.',
+            'event_end_time_before_start' => 'The end time must be after the start time.',
+            'title_max' => 'Title must be 58 characters or fewer.',
+            'event_start_time' => 'Start time',
+            'event_end_time' => 'End time',
+            'offer_title' => 'Offer title',
+            'offer_title_placeholder' => 'Enter a title for your offer',
+            'offer_title_required' => 'Enter an offer title.',
+            'offer_coupon_code' => 'Coupon code',
+            'offer_redeem_url' => 'Offer link',
+            'offer_terms' => 'Terms & conditions',
+            'event_times_use_location' => "Times follow the location's local time, not your browser.",
+        ],
         'warnings' => [
             'no_variant' => 'Pick a post type to continue.',
             'requires_media' => 'This post type requires at least one image or video.',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => 'Loading metrics…',
         'metrics_unavailable' => 'Metrics unavailable for this platform yet.',
         'metrics_empty' => 'No metrics returned.',
+        'pending_review' => 'Google is reviewing this post. We will update it when the review finishes.',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => 'Publishing...',
             'retrying' => 'Retrying...',
             'failed' => 'Failed',
+            'pending_review' => 'In review by Google',
+            'rejected' => 'Rejected',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => 'Message',
             'description' => 'Message to a Discord channel with optional media & embeds',
         ],
+        'google_business_post' => [
+            'label' => 'Post',
+            'description' => 'Appears on your Business Profile in Search and Maps',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => 'Social account is disconnected',
         'account_inactive' => 'Social account is deactivated',
+        'target_disabled' => 'This destination was switched off',
         'account_token_expired' => 'Social account session expired — please reconnect',
         'platform_unavailable' => 'The platform is temporarily unavailable. We\'ll retry shortly.',
         'platform_unavailable_exhausted' => 'The platform stayed unavailable after several retries. Please try again later.',
         'publishing_timed_out' => 'Publishing timed out. Please try again.',
+        'rejected_in_review' => 'Google rejected this post in review. Edit the content or image and try again.',
+        'review_unconfirmed' => 'Google never confirmed this post. Check your Business Profile and try again.',
+        'google_business' => [
+            'no_location' => 'This Google Business Profile account has no location configured. Please reconnect it.',
+            'permission_denied' => 'Permission denied. Please reconnect and confirm access to this business location.',
+            'not_found' => 'Business location not found. It may have been deleted — please reconnect.',
+            'invalid_content' => 'Invalid post content. Please check your post details.',
+            'rate_limited' => 'Rate limit exceeded. Please try again later.',
+            'server_error' => 'Google Business Profile server error. Please try again.',
+            'rejected' => 'Google Business Profile rejected this post. Please try again.',
+            'event_dates_required' => 'This post needs a start and end date. Please add them and try again.',
+            'token_expired' => 'Google Business Profile access token is invalid or expired',
+            'no_refresh_token' => 'No refresh token available for Google Business Profile account',
+        ],
     ],
 
     'delete' => [

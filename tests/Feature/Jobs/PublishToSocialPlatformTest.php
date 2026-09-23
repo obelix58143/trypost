@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Enums\GoogleBusiness\LocalPostState;
+use App\Enums\GoogleBusiness\TopicType;
 use App\Enums\Notification\Type;
 use App\Enums\Post\Status as PostStatus;
 use App\Enums\PostPlatform\ContentType;
@@ -29,6 +31,7 @@ use App\Services\Social\FacebookPublisher;
 use App\Services\Social\LinkedInPagePublisher;
 use App\Services\Social\LinkedInPublisher;
 use App\Services\Social\PinterestPublisher;
+use App\Support\Social\GoogleBusinessDerivativeCleaner;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Log\Events\MessageLogged;
@@ -1479,9 +1482,11 @@ test('in-app published notification falls back to the facebook page display name
     (new PublishToSocialPlatform($postPlatform))->handle();
 
     Queue::assertPushed(SendNotification::class, function (SendNotification $job) use ($post) {
+        $platforms = 'Facebook Page (@InboxPlacement.io)';
+
         return $job->type === Type::PostPublished
-            && $job->title === 'Post published successfully'
-            && $job->body === 'Facebook Page (@InboxPlacement.io)'
+            && $job->title === __('notifications.post_published.title')
+            && $job->body === __('notifications.post_published.body', ['platforms' => $platforms])
             && data_get($job->data, 'post_id') === $post->id;
     });
 });
@@ -1513,9 +1518,11 @@ test('in-app failed notification falls back to the facebook page display name', 
     (new PublishToSocialPlatform($postPlatform))->handle();
 
     Queue::assertPushed(SendNotification::class, function (SendNotification $job) use ($post) {
+        $platforms = 'Facebook Page (@InboxPlacement.io)';
+
         return $job->type === Type::PostFailed
-            && $job->title === 'Post failed to publish'
-            && $job->body === 'Failed on: Facebook Page (@InboxPlacement.io)'
+            && $job->title === __('notifications.post_failed.title')
+            && $job->body === __('notifications.post_failed.body', ['platforms' => $platforms])
             && data_get($job->data, 'post_id') === $post->id;
     });
 });
@@ -1713,4 +1720,416 @@ test('publish to social platform saves error context on token expired', function
     expect($this->postPlatform->error_context)->toBeArray();
     expect($this->postPlatform->error_context['category'])->toBe('token_expired');
     expect($this->postPlatform->error_context['platform_error_code'])->toBe('190');
+});
+
+test('dispatches google business posts to GoogleBusinessPublisher', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => LocalPostState::Live->value,
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::Published);
+});
+
+test('a google business post rejected in review is not reported as published', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => 'STANDARD'],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => 'REJECTED',
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    $this->assertDatabaseHas('post_platforms', [
+        'id' => $postPlatform->id,
+        'status' => 'rejected',
+    ]);
+    expect($postPlatform->fresh()->error_message)
+        ->toBe(__('posts.errors.rejected_in_review'))
+        ->and($postPlatform->fresh()->platform_post_id)->toBe('accounts/1/locations/2/localPosts/3')
+        ->and($postPlatform->fresh()->platform_url)->toBe('https://business.google.com/dashboard/l/u987654321');
+});
+
+test('a rejected google business target finalizes the post instead of leaving it publishing', function () {
+    Queue::fake([SendNotification::class]);
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    // Its own post: the shared one carries a LinkedIn target that never finishes.
+    $post = Post::factory()->scheduled()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => 'STANDARD'],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => 'REJECTED',
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($post->fresh()->status)->toBe(PostStatus::Failed);
+    Queue::assertPushed(SendNotification::class);
+});
+
+test('a google business post still in review is held, not reported as published', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => 'STANDARD'],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => 'PROCESSING',
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    $this->assertDatabaseHas('post_platforms', [
+        'id' => $postPlatform->id,
+        'status' => 'pending_review',
+    ]);
+    expect($postPlatform->fresh()->submitted_at)->not->toBeNull()
+        ->and($postPlatform->fresh()->published_at)->toBeNull();
+});
+
+test('a google business post Google scheduled is held in review', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => 'STANDARD'],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => 'SCHEDULED',
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($postPlatform->fresh()->platform_post_id)->toBe('accounts/1/locations/2/localPosts/3');
+});
+
+test('a google business post that Google reports as recurring is published', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => LocalPostState::Recurring->value,
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::Published);
+});
+
+test('an unspecified google business create state is held in review and keeps the jpeg', function () {
+    Storage::fake();
+    Storage::put('uploads/promo.png', base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    ));
+    $this->post->update(['media' => [[
+        'path' => 'uploads/promo.png',
+        'url' => Storage::url('uploads/promo.png'),
+        'mime_type' => 'image/png',
+        'type' => 'image',
+    ]]]);
+
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => LocalPostState::Unspecified->value,
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($postPlatform->fresh()->published_at)->toBeNull();
+    Storage::assertExists(GoogleBusinessDerivativeCleaner::pathFor($postPlatform->id));
+});
+
+test('a failed google business publish prunes the jpeg derivative', function () {
+    Storage::fake();
+    Storage::put('uploads/promo.png', base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    ));
+    $this->post->update(['media' => [[
+        'path' => 'uploads/promo.png',
+        'url' => Storage::url('uploads/promo.png'),
+        'mime_type' => 'image/png',
+        'type' => 'image',
+    ]]]);
+
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'error' => ['status' => 'INVALID_ARGUMENT', 'message' => 'summary too long'],
+        ], 400),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::Failed);
+    Storage::assertMissing(GoogleBusinessDerivativeCleaner::pathFor($postPlatform->id));
+});
+
+test('an unknown google business create state is held in review and keeps the jpeg', function () {
+    Storage::fake();
+    Storage::put('uploads/promo.png', base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    ));
+    $this->post->update(['media' => [[
+        'path' => 'uploads/promo.png',
+        'url' => Storage::url('uploads/promo.png'),
+        'mime_type' => 'image/png',
+        'type' => 'image',
+    ]]]);
+
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => 'NOT_A_REAL_STATE',
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($postPlatform->fresh()->published_at)->toBeNull();
+    Storage::assertExists(GoogleBusinessDerivativeCleaner::pathFor($postPlatform->id));
+});
+
+test('a publishing parent stays publishing while google business is in review', function () {
+    Queue::fake([SendNotification::class]);
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => LocalPostState::Processing->value,
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($post->fresh()->status)->toBe(PostStatus::Publishing);
+    Queue::assertNotPushed(SendNotification::class);
+});
+
+test('a google business target in review on its own post does not settle or notify', function () {
+    Queue::fake([SendNotification::class]);
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $post = Post::factory()->scheduled()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => LocalPostState::Processing->value,
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($post->fresh()->status)->toBe(PostStatus::Scheduled);
+    Queue::assertNotPushed(SendNotification::class);
+});
+
+test('a published sibling stays unpublished at the post while google business is in review', function () {
+    Queue::fake([SendNotification::class]);
+    $linkedin = SocialAccount::factory()->linkedin()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $gbp = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $post = Post::factory()->scheduled()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+    ]);
+    PostPlatform::factory()->linkedin()->published()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $linkedin->id,
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $gbp->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'name' => 'accounts/1/locations/2/localPosts/3',
+            'state' => LocalPostState::Processing->value,
+        ], 200),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($post->fresh()->status)->toBe(PostStatus::Scheduled)
+        ->and($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview);
+    Queue::assertNotPushed(SendNotification::class);
+});
+
+test('a google business create that is rate limited fails the target', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $post = Post::factory()->scheduled()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'meta' => ['topic_type' => TopicType::Standard->value],
+    ]);
+
+    Http::fake([
+        config('trypost.platforms.google_business.local_posts_api').'/*' => Http::response([
+            'error' => ['status' => 'RESOURCE_EXHAUSTED'],
+        ], 429),
+    ]);
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::Failed)
+        ->and($post->fresh()->status)->toBe(PostStatus::Failed);
+});
+
+test('a google business target already in review is not published a second time', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+        'token_expires_at' => now()->addHour(),
+    ]);
+    $postPlatform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $this->post->id,
+        'social_account_id' => $account->id,
+        'status' => PlatformStatus::PendingReview,
+        'platform_post_id' => 'accounts/1/locations/2/localPosts/3',
+        'meta' => ['topic_type' => 'STANDARD'],
+    ]);
+
+    Http::fake();
+
+    (new PublishToSocialPlatform($postPlatform))->handle();
+
+    Http::assertNothingSent();
+    expect($postPlatform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($postPlatform->fresh()->platform_post_id)->toBe('accounts/1/locations/2/localPosts/3');
 });

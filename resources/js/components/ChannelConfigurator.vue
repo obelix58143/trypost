@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { IconAlertCircle, IconCircleCheck, IconExternalLink } from '@tabler/icons-vue';
+import { IconAlertCircle, IconBan, IconCircleCheck, IconExternalLink, IconHourglass } from '@tabler/icons-vue';
 import { computed } from 'vue';
 
 import DiscordSettings from '@/components/posts/editor/DiscordSettings.vue';
 import FacebookSettings from '@/components/posts/editor/FacebookSettings.vue';
+import GoogleBusinessSettings from '@/components/posts/editor/GoogleBusinessSettings.vue';
 import InstagramSettings from '@/components/posts/editor/InstagramSettings.vue';
 import LinkedInSettings from '@/components/posts/editor/LinkedInSettings.vue';
 import PinterestSettings from '@/components/posts/editor/PinterestSettings.vue';
@@ -23,10 +24,12 @@ const props = withDefaults(defineProps<{
     media?: MediaItem[];
     videoDurationSec?: number | null;
     disabled?: boolean;
+    previewOnly?: boolean;
 }>(), {
     media: () => [],
     videoDurationSec: null,
     disabled: false,
+    previewOnly: false,
 });
 
 const emit = defineEmits<{
@@ -37,6 +40,9 @@ const emit = defineEmits<{
 
 const isSelected = (id: string): boolean => props.selectedIds.includes(id);
 
+// Order matches the `platforms` array the editor submits (both filter the same
+// post_platforms list by the same selection), so a settings panel's position
+// here is the `platforms.{index}.*` index its backend errors are keyed by.
 const selectedChannels = computed(() => props.channels.filter((channel) => isSelected(channel.id)));
 
 /** Props and listeners every per-platform settings panel takes. */
@@ -73,6 +79,12 @@ const settingsProps = (channel: Channel) => ({
                                 </span>
                                 <Badge v-if="channel.status === PostPlatformStatus.Published" variant="success" class="absolute -top-1 -right-1 h-4 w-4 p-0">
                                     <IconCircleCheck class="h-2.5 w-2.5" />
+                                </Badge>
+                                <Badge v-else-if="channel.status === PostPlatformStatus.PendingReview" variant="warning" class="absolute -top-1 -right-1 h-4 w-4 p-0">
+                                    <IconHourglass class="h-2.5 w-2.5" />
+                                </Badge>
+                                <Badge v-else-if="channel.status === PostPlatformStatus.Rejected" variant="destructive" class="absolute -top-1 -right-1 h-4 w-4 p-0">
+                                    <IconBan class="h-2.5 w-2.5" />
                                 </Badge>
                                 <Badge v-else-if="channel.status === PostPlatformStatus.Failed" variant="destructive" class="absolute -top-1 -right-1 h-4 w-4 p-0 text-[9px]">!</Badge>
                                 <Badge
@@ -120,7 +132,7 @@ const settingsProps = (channel: Channel) => ({
 
         <slot />
 
-        <template v-for="channel in selectedChannels" :key="channel.id">
+        <template v-for="(channel, index) in selectedChannels" :key="channel.id">
             <InstagramSettings
                 v-if="channel.platform === Platform.Instagram || channel.platform === Platform.InstagramFacebook"
                 v-bind="settingsProps(channel)"
@@ -159,6 +171,15 @@ const settingsProps = (channel: Channel) => ({
                 v-bind="settingsProps(channel)"
                 :platform="channel.platform"
                 :media="media"
+            />
+            <GoogleBusinessSettings
+                v-else-if="channel.platform === Platform.GoogleBusiness"
+                :social-account="channel.socialAccount"
+                :platform-index="index"
+                :meta="channel.meta"
+                :disabled="disabled"
+                :preview-only="previewOnly"
+                @update:meta="emit('update:meta', channel.id, $event)"
             />
             <DiscordSettings v-else-if="channel.platform === Platform.Discord" v-bind="settingsProps(channel)" />
         </template>

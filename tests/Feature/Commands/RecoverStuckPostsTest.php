@@ -6,17 +6,22 @@ use App\Enums\Post\Status as PostStatus;
 use App\Enums\PostPlatform\Status as PlatformStatus;
 use App\Enums\SocialAccount\Platform;
 use App\Jobs\PublishToSocialPlatform;
+use App\Jobs\ReconcileGoogleBusinessPost;
+use App\Jobs\SendNotification;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Social\LinkedInPublisher;
+use App\Support\Social\GoogleBusinessDerivativeCleaner;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
+    Queue::fake([SendNotification::class]);
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
     $this->socialAccount = SocialAccount::factory()->create([
@@ -336,6 +341,207 @@ test('it fails stale platforms but keeps the post publishing when another platfo
         ->and($stalePlatform->error_message)->toBe(__('posts.errors.publishing_timed_out'))
         ->and($activeRetry->status)->toBe(PlatformStatus::Retrying)
         ->and($post->status)->toBe(PostStatus::Publishing);
+});
+
+test('it fails a google business review that outlived the review ceiling', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(25),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'status' => PlatformStatus::PendingReview,
+        'enabled' => true,
+        'platform_post_id' => 'accounts/1/locations/2/localPosts/3',
+        'submitted_at' => now()->subHours(25),
+        'updated_at' => now()->subHours(25),
+    ]);
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+
+    expect($platform->fresh()->status)->toBe(PlatformStatus::Rejected)
+        ->and($platform->fresh()->error_message)->toBe(__('posts.errors.review_unconfirmed'))
+        ->and($post->fresh()->status)->toBe(PostStatus::Failed);
+
+    Queue::assertPushed(SendNotification::class);
+});
+
+test('it prunes the google business jpeg when a publish times out before review', function () {
+    Storage::fake();
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(2),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'status' => PlatformStatus::Publishing,
+        'enabled' => true,
+        'updated_at' => now()->subHours(2),
+    ]);
+    $path = GoogleBusinessDerivativeCleaner::pathFor($platform->id);
+    Storage::put($path, 'image');
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+
+    Storage::assertMissing($path);
+    expect($platform->fresh()->status)->toBe(PlatformStatus::Failed)
+        ->and($platform->fresh()->error_message)->toBe(__('posts.errors.publishing_timed_out'))
+        ->and($post->fresh()->status)->toBe(PostStatus::Failed);
+});
+
+test('it rejects a disabled google business review and fails the parent', function () {
+    Storage::fake();
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(2),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->pendingReview()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'enabled' => false,
+        'platform_post_id' => 'accounts/1/locations/2/localPosts/3',
+        'updated_at' => now()->subHours(2),
+    ]);
+    $path = GoogleBusinessDerivativeCleaner::pathFor($platform->id);
+    Storage::put($path, 'image');
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+
+    Storage::assertMissing($path);
+    expect($platform->fresh()->status)->toBe(PlatformStatus::Rejected)
+        ->and($platform->fresh()->enabled)->toBeFalse()
+        ->and($platform->fresh()->error_message)->toBe(__('posts.errors.target_disabled'))
+        ->and($post->fresh()->status)->toBe(PostStatus::Failed);
+    Queue::assertPushed(SendNotification::class);
+});
+
+test('recover then reconcile on an expired review notifies once and prunes the jpeg', function () {
+    Storage::fake();
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(25),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->pendingReview()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'enabled' => true,
+        'platform_post_id' => 'accounts/1/locations/2/localPosts/3',
+        'submitted_at' => now()->subHours(25),
+        'updated_at' => now()->subHours(25),
+    ]);
+    $path = GoogleBusinessDerivativeCleaner::pathFor($platform->id);
+    Storage::put($path, 'image');
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+    (new ReconcileGoogleBusinessPost($platform->fresh()))->handle();
+
+    Storage::assertMissing($path);
+    expect($platform->fresh()->status)->toBe(PlatformStatus::Rejected)
+        ->and($platform->fresh()->error_message)->toBe(__('posts.errors.review_unconfirmed'))
+        ->and($post->fresh()->status)->toBe(PostStatus::Failed);
+    Queue::assertPushed(SendNotification::class, 1);
+});
+
+test('it prunes the google business jpeg when a review outlives the ceiling', function () {
+    Storage::fake();
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(25),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'status' => PlatformStatus::PendingReview,
+        'enabled' => true,
+        'platform_post_id' => 'accounts/1/locations/2/localPosts/3',
+        'submitted_at' => now()->subHours(25),
+        'updated_at' => now()->subHours(25),
+    ]);
+    $path = GoogleBusinessDerivativeCleaner::pathFor($platform->id);
+    Storage::put($path, 'image');
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+
+    Storage::assertMissing($path);
+    expect($platform->fresh()->status)->toBe(PlatformStatus::Rejected);
+});
+
+test('it does not fail a google business post still sitting in review', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(2),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'status' => PlatformStatus::PendingReview,
+        'enabled' => true,
+        'updated_at' => now()->subHours(2),
+    ]);
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+
+    expect($platform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($post->fresh()->status)->toBe(PostStatus::Publishing);
+});
+
+test('it does not fail a google business review whose submitted_at is still missing', function () {
+    $account = SocialAccount::factory()->googleBusiness()->create([
+        'workspace_id' => $this->workspace->id,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Publishing,
+        'updated_at' => now()->subHours(25),
+    ]);
+    $platform = PostPlatform::factory()->googleBusiness()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'status' => PlatformStatus::PendingReview,
+        'enabled' => true,
+        'platform_post_id' => 'accounts/1/locations/2/localPosts/3',
+        'submitted_at' => null,
+        'created_at' => now()->subDays(3),
+        'updated_at' => now()->subHours(25),
+    ]);
+
+    $this->artisan('social:recover-stuck-posts')->assertSuccessful();
+
+    expect($platform->fresh()->status)->toBe(PlatformStatus::PendingReview)
+        ->and($post->fresh()->status)->toBe(PostStatus::Publishing);
 });
 
 test('delayed publish job no-ops after recover fails a stuck retrying platform', function () {

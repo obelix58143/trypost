@@ -14,6 +14,7 @@ use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Jobs\SendNotification;
 use App\Mail\AccountDisconnected;
 use App\Observers\SocialAccountObserver;
+use App\Support\GoogleBusinessResourceName;
 use Database\Factories\SocialAccountFactory;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -274,6 +275,11 @@ class SocialAccount extends Model
                         ? rtrim((string) data_get($this->meta, 'instance'), '/')."/@{$username}"
                         : null,
                     SocialPlatform::Telegram => $username ? "https://t.me/{$username}" : null,
+                    SocialPlatform::GoogleBusiness => filled(data_get($this->meta, 'maps_uri'))
+                        ? (string) data_get($this->meta, 'maps_uri')
+                        : (filled(data_get($this->meta, 'location_id'))
+                            ? GoogleBusinessResourceName::dashboardUrl((string) data_get($this->meta, 'location_id'))
+                            : null),
                     default => null,
                 };
             },
@@ -283,9 +289,10 @@ class SocialAccount extends Model
     /**
      * "@handle" for notification bodies — the more specific identifier
      * (username) wins over the friendlier display name when both are set.
-     * Every connector requests enough scope to always populate at least one
-     * of username/display_name (e.g. TikTok always requests user.info.profile);
-     * the platform label is a last-resort fallback, not an expected path.
+     * Connectors normally populate at least one of username/display_name
+     * (TikTok Login Kit still returns display_name via user.info.basic;
+     * username needs user.info.profile, which self-hosters may trim).
+     * The platform label is a last-resort fallback, not an expected path.
      */
     public function handle(): string
     {

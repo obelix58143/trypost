@@ -186,6 +186,48 @@ return [
             'embed_image' => 'URL зображення',
             'embed_color' => 'Колір',
         ],
+        'google_business' => [
+            'settings' => 'Налаштування Google Business Profile',
+            'posting_to' => 'Публікація в',
+            'topic_type_label' => 'Тип посту',
+            'topic_type' => [
+                'standard' => 'Що нового',
+                'event' => 'Подія',
+                'offer' => 'Пропозиція',
+            ],
+            'cta_label' => 'Кнопка',
+            'cta_none' => 'Немає',
+            'cta' => [
+                'book' => 'Забронювати',
+                'order' => 'Замовити онлайн',
+                'shop' => 'Купити',
+                'learn_more' => 'Дізнатись більше',
+                'sign_up' => 'Зареєструватися',
+                'call' => 'Позвонити зараз',
+            ],
+            'cta_url' => 'Посилання кнопки',
+            'cta_url_placeholder' => 'https://example.com',
+            'cta_url_required' => 'Введіть посилання для цієї кнопки або виберіть "Немає".',
+            'event_title' => 'Назва події',
+            'event_title_placeholder' => 'Назва вашої події',
+            'event_title_required' => 'Введіть назву події.',
+            'event_start_date' => 'Початок',
+            'event_start_date_required' => 'Введіть дату початку.',
+            'event_end_date' => 'Кінець',
+            'event_end_date_required' => 'Введіть дату завершення.',
+            'event_end_date_before_start' => 'Дата завершення має бути не раніше дати початку.',
+            'event_end_time_before_start' => 'Час завершення має бути пізніше за час початку.',
+            'title_max' => 'Заголовок має бути не довшим за 58 символів.',
+            'event_start_time' => 'Час початку',
+            'event_end_time' => 'Час завершення',
+            'offer_title' => 'Назва пропозиції',
+            'offer_title_placeholder' => 'Введіть назву вашої пропозиції',
+            'offer_title_required' => 'Введіть назву пропозиції.',
+            'offer_coupon_code' => 'Код купона',
+            'offer_redeem_url' => 'Посилання пропозиції',
+            'offer_terms' => 'Умови та положення',
+            'event_times_use_location' => 'Час указано за місцевим часом локації, а не браузера.',
+        ],
         'warnings' => [
             'no_variant' => 'Виберіть тип поста, щоб продовжити.',
             'requires_media' => 'Цей тип поста потребує принаймні одного зображення або відео.',
@@ -310,6 +352,7 @@ return [
         'metrics_loading' => 'Завантаження метрик…',
         'metrics_unavailable' => 'Метрики для цієї платформи поки недоступні.',
         'metrics_empty' => 'Метрики відсутні.',
+        'pending_review' => 'Google перевіряє цю публікацію. Оновимо її, коли перевірка завершиться.',
     ],
 
     'edit' => [
@@ -424,6 +467,8 @@ return [
             'publishing' => 'Публікується...',
             'retrying' => 'Повторна спроба...',
             'failed' => 'Помилка',
+            'pending_review' => 'На перевірці в Google',
+            'rejected' => 'Відхилено',
         ],
 
         'delete_modal' => [
@@ -553,6 +598,10 @@ return [
             'label' => 'Повідомлення',
             'description' => 'Повідомлення в канал Discord із необов’язковим медіа та вбудовуваннями',
         ],
+        'google_business_post' => [
+            'label' => 'Публікація',
+            'description' => 'Відображається у вашому Профілі компанії в Пошуку та Картах',
+        ],
     ],
 
     'platforms' => [
@@ -581,10 +630,25 @@ return [
     'errors' => [
         'account_disconnected' => 'Соціальний акаунт відключено',
         'account_inactive' => 'Соціальний акаунт деактивовано',
+        'target_disabled' => 'Цей канал публікації вимкнено',
         'account_token_expired' => 'Сесія соціального акаунта закінчилася — перепідключіть',
         'platform_unavailable' => 'Платформа тимчасово недоступна. Ми спробуємо знову незабаром.',
         'platform_unavailable_exhausted' => 'Платформа залишалася недоступною після кількох спроб. Спробуйте пізніше.',
         'publishing_timed_out' => 'Публікація перевищила час очікування. Спробуйте ще раз.',
+        'rejected_in_review' => 'Google відхилив цю публікацію під час перевірки. Змініть текст або зображення та спробуйте ще раз.',
+        'review_unconfirmed' => 'Google так і не підтвердив цю публікацію. Перевірте профіль компанії та спробуйте ще раз.',
+        'google_business' => [
+            'no_location' => 'У цього акаунта Google Business Profile немає налаштованої локації. Підключіть його знову.',
+            'permission_denied' => 'Доступ заборонено. Підключіть акаунт знову й підтвердьте доступ до цієї локації.',
+            'not_found' => 'Локацію не знайдено. Можливо, її видалили — підключіть акаунт знову.',
+            'invalid_content' => 'Неприпустимий вміст. Перевірте деталі публікації.',
+            'rate_limited' => 'Перевищено ліміт запитів. Спробуйте пізніше.',
+            'server_error' => 'Помилка сервера Google Business Profile. Спробуйте ще раз.',
+            'rejected' => 'Google Business Profile відхилив цю публікацію. Спробуйте ще раз.',
+            'event_dates_required' => 'Цій публікації потрібні дати початку і завершення. Додайте їх і спробуйте ще раз.',
+            'token_expired' => 'Токен доступу Google Business Profile недійсний або прострочений',
+            'no_refresh_token' => 'Немає refresh-токена для акаунта Google Business Profile',
+        ],
     ],
 
     'delete' => [

@@ -61,6 +61,14 @@ class PostPlatformFactory extends Factory
         ]);
     }
 
+    public function pendingReview(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => Status::PendingReview,
+            'submitted_at' => now(),
+        ]);
+    }
+
     public function linkedin(): static
     {
         return $this->state(fn (array $attributes) => [
@@ -129,6 +137,14 @@ class PostPlatformFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::Pinterest,
             'content_type' => ContentType::PinterestPin,
+        ]);
+    }
+
+    public function googleBusiness(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'platform' => Platform::GoogleBusiness,
+            'content_type' => ContentType::GoogleBusinessPost,
         ]);
     }
 

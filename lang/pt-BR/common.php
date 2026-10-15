@@ -7,6 +7,16 @@ return [
 
     'back' => 'Voltar',
 
+    'unsaved_changes' => [
+
+        'title' => 'Descartar alterações?',
+
+        'description' => 'Suas alterações neste post não foram salvas. Se sair agora, elas serão perdidas.',
+
+        'discard' => 'Descartar',
+
+    ],
+
     'confirm_modal' => [
         'type' => 'Digite',
         'to_confirm' => 'para confirmar.',
@@ -59,6 +69,7 @@ return [
     'clear' => 'Limpar',
     'close' => 'Fechar',
     'more' => 'Mais',
+    'learn_more' => 'Saiba mais',
     'play' => 'Reproduzir',
     'loading' => 'Carregando...',
     'loading_more' => 'Carregando mais...',

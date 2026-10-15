@@ -7,6 +7,16 @@ return [
 
     'back' => 'Zurück',
 
+    'unsaved_changes' => [
+
+        'title' => 'Änderungen verwerfen?',
+
+        'description' => 'Deine Änderungen an diesem Beitrag wurden nicht gespeichert. Wenn du jetzt gehst, gehen sie verloren.',
+
+        'discard' => 'Verwerfen',
+
+    ],
+
     'confirm_modal' => [
         'type' => 'Gib',
         'to_confirm' => 'zur Bestätigung ein.',
@@ -59,6 +69,7 @@ return [
     'clear' => 'Zurücksetzen',
     'close' => 'Schließen',
     'more' => 'Mehr',
+    'learn_more' => 'Mehr erfahren',
     'play' => 'Abspielen',
     'loading' => 'Wird geladen...',
     'loading_more' => 'Weitere werden geladen...',

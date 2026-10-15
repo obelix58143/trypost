@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import { trans, transChoice } from 'laravel-vue-i18n';
 import type { InjectionKey, Ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -6,6 +6,9 @@ import { toast } from 'vue-sonner';
 import { duplicate as duplicatePost } from '@/actions/App/Http/Controllers/App/PostController';
 import { update as updatePostLabels } from '@/actions/App/Http/Controllers/App/PostLabelController';
 import { update as updatePostSchedule } from '@/actions/App/Http/Controllers/App/PostScheduleController';
+import { openPostComposer } from '@/composables/useGlobalPostComposer';
+import { copyToClipboard } from '@/lib/utils';
+import type { SidebarChannel } from '@/types/channel';
 import type {
     PostCard,
     PostCardLabel,
@@ -73,6 +76,31 @@ export const schedulePostCard = (
 
 export const duplicatePostCard = (post: PostCard): void => {
     router.post(duplicatePost.url(post.id));
+};
+
+/** Opens the composer with the sent post's link and every channel of the workspace. */
+export const sharePostCardLink = (post: PostCard): void => {
+    if (!post.platform_url) return;
+
+    const channels = (usePage().props.channels as SidebarChannel[] | undefined) ?? [];
+
+    openPostComposer({
+        socialAccountIds: channels.map((channel) => channel.id),
+        draft: {
+            content: post.platform_url,
+            media: [],
+            scheduled_at: null,
+            label_ids: [],
+        },
+    });
+};
+
+export const copyPostCardLink = (post: PostCard): void => {
+    if (post.platform_url) {
+        void copyToClipboard(post.platform_url, undefined, {
+            showSuccessToast: false,
+        });
+    }
 };
 
 export const syncPostCardLabels = (

@@ -13,6 +13,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { useBelowBreakpoint } from '@/composables/useBreakpoint';
+import { filterBySearch } from '@/lib/search';
 
 interface FilterOption {
     id: string;
@@ -68,13 +69,11 @@ watch(open, (isOpen) => {
     }
 });
 
-const visibleOptions = computed(() => {
-    const query = search.value.trim().toLocaleLowerCase();
-
-    return props.options.filter((option) =>
-        (option.searchText ?? option.label).toLocaleLowerCase().includes(query),
-    );
-});
+const visibleOptions = computed(() =>
+    filterBySearch(props.options, search.value, (option) => [
+        option.searchText ?? option.label,
+    ]),
+);
 
 const toggle = (id: string): void => {
     selectedIds.value = selectedIds.value.includes(id)

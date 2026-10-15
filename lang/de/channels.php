@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => 'Verbinde diesen Kanal erneut, um weiter zu veröffentlichen.',
     'reconnect' => 'Erneut verbinden',
     'refresh_connection' => 'Verbindung aktualisieren',
+    'link_facebook_page' => 'Mit einer Facebook-Seite verknüpfen',
     'view_profile' => 'Profil ansehen',
     'disconnect' => 'Trennen',
     'actions' => 'Kanalaktionen',
 
     'reorder' => [
         'handle' => ':name per Drag-and-drop verschieben',
-        'move_up' => 'Nach oben',
-        'move_down' => 'Nach unten',
         'failed' => 'Deine Kanäle konnten nicht neu sortiert werden. Versuche es erneut.',
         'stale' => 'Deine Kanäle haben sich seit dem Laden der Seite geändert. Lade die Seite neu und versuche es erneut.',
     ],

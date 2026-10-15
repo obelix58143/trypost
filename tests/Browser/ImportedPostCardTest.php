@@ -137,7 +137,7 @@ test('an imported sent card looks like a sent post and offers only the allowed a
     $page->click("@post-card-menu-{$post->id}");
     waitForImportedCardTestId($page, "post-card-menu-content-{$post->id}");
 
-    expect(importedCardMenuItems($page, $post->id))->toBe(['post-duplicate', 'post-details-open']);
+    expect(importedCardMenuItems($page, $post->id))->toBe(['post-duplicate', 'post-details-open', 'post-share-link', 'post-copy-link']);
 
     $page->click("@post-details-open-{$post->id}");
     waitForImportedCardTestId($page, "post-details-{$post->id}");

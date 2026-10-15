@@ -3,11 +3,10 @@ import {
     IconLayoutGrid,
     IconBell,
     IconCoin,
+    IconCode,
     IconSignature,
-    IconKey,
-    IconLock,
-    IconPlugConnected,
-    IconSettings,
+    IconPlug,
+    IconBuilding,
     IconAdjustmentsHorizontal,
     IconTag,
     IconUser,
@@ -20,7 +19,6 @@ import { computed } from 'vue';
 import { useWorkspaceAbilities } from '@/composables/useWorkspaceAbilities';
 import { members } from '@/routes/app';
 import { index as apiKeys } from '@/routes/app/api-keys';
-import { edit as authenticationEdit } from '@/routes/app/authentication';
 import { index as billing } from '@/routes/app/billing';
 import { index as labels } from '@/routes/app/labels';
 import { index as mcp } from '@/routes/app/mcp';
@@ -90,12 +88,6 @@ export const useSettingsNavigation = () => {
                         true,
                     ),
                     ...item(
-                        'authentication',
-                        authenticationEdit.url(),
-                        IconLock,
-                        true,
-                    ),
-                    ...item(
                         'notifications',
                         notificationPreferences.url(),
                         IconBell,
@@ -110,7 +102,7 @@ export const useSettingsNavigation = () => {
                     ...item(
                         'general',
                         workspaceSettings.url(),
-                        IconSettings,
+                        IconBuilding,
                         workspace && canManageWorkspace.value,
                     ),
                     ...item(
@@ -126,11 +118,17 @@ export const useSettingsNavigation = () => {
                         IconUsers,
                         workspace && canManageWorkspace.value,
                     ),
+                    ...item(
+                        'billing',
+                        billing.url(),
+                        IconCoin,
+                        canManageBilling.value && !selfHosted.value,
+                    ),
                 ],
             },
             {
-                key: 'features',
-                label: trans('settings.sidebar.groups.features'),
+                key: 'content',
+                label: trans('settings.sidebar.groups.content'),
                 items: [
                     ...item(
                         'signatures',
@@ -144,36 +142,24 @@ export const useSettingsNavigation = () => {
                         IconTag,
                         workspace && canCreatePost.value,
                     ),
+                ],
+            },
+            {
+                key: 'integrations',
+                label: trans('settings.sidebar.groups.integrations'),
+                items: [
+                    ...item(
+                        'api_keys',
+                        apiKeys.url(),
+                        IconCode,
+                        workspace && canManageWorkspace.value,
+                    ),
+                    ...item('mcp', mcp.url(), IconPlug, workspace),
                     ...item(
                         'webhooks',
                         webhooks.url(),
                         IconWebhook,
                         workspace && canManageWebhooks.value,
-                    ),
-                ],
-            },
-            {
-                key: 'developers',
-                label: trans('settings.sidebar.groups.developers'),
-                items: [
-                    ...item(
-                        'api_keys',
-                        apiKeys.url(),
-                        IconKey,
-                        workspace && canManageWorkspace.value,
-                    ),
-                    ...item('mcp', mcp.url(), IconPlugConnected, workspace),
-                ],
-            },
-            {
-                key: 'account',
-                label: trans('settings.sidebar.groups.account'),
-                items: [
-                    ...item(
-                        'billing',
-                        billing.url(),
-                        IconCoin,
-                        canManageBilling.value && !selfHosted.value,
                     ),
                 ],
             },

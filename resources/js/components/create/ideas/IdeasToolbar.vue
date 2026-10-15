@@ -9,6 +9,7 @@ import { computed } from 'vue';
 import LabelFilter from '@/components/labels/LabelFilter.vue';
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue';
 import { Checkbox } from '@/components/ui/checkbox';
+import { matchesSearch } from '@/lib/search';
 import type { IdeaStage, IdeaLabel, IdeasView } from '@/types/idea';
 
 const props = defineProps<{
@@ -33,9 +34,6 @@ const changeView = (key: IdeasView): void => {
 const clearUnassigned = (): void => {
     unassigned.value = false;
 };
-
-const matches = (text: string, search: string): boolean =>
-    text.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase());
 
 const stageOptions = computed(() =>
     props.stages.map((stage) => ({ id: stage.id, label: stage.name })),
@@ -69,7 +67,7 @@ const views: { key: IdeasView; label: string; icon: typeof IconColumns3 }[] = [
             </template>
             <template #before-options="{ search }">
                 <label
-                    v-if="matches($t('create.ideas.unassigned'), search)"
+                    v-if="matchesSearch(search, [$t('create.ideas.unassigned')])"
                     class="flex min-h-8 cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-sm leading-5 transition-control hover:bg-accent"
                     :class="{ 'bg-accent': unassigned }"
                     data-testid="ideas-filter-stages-unassigned"

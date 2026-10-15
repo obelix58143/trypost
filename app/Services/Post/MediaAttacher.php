@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Post;
 
 use App\Actions\Post\AppendPostMedia;
+use App\Actions\Post\HostInlineMedia;
 use App\Dto\ImportedFile;
-use App\Dto\MediaItem;
 use App\Dto\RemoteFile;
 use App\Enums\Media\Type as MediaType;
 use App\Models\Media;
@@ -34,7 +34,7 @@ class MediaAttacher
     public function __construct(private readonly RemoteMediaImporter $importer) {}
 
     /**
-     * @param  array<int, array{url: string, alt?: ?string}>  $urls
+     * @param  array<int, array{url: string, alt?: ?string, meta?: ?array<string, mixed>}>  $urls
      * @return array{attached: array<int, array<string, mixed>>, failed: array<int, string>, failures: array<int, array{url: string, reason: string, message: string}>}
      */
     public function attachFromUrls(Post $post, array $urls, ?User $actor = null): array
@@ -55,14 +55,7 @@ class MediaAttacher
                 continue;
             }
 
-            $item = MediaItem::fromMedia($hosted)->toArray();
-
-            if (($alt = data_get($entry, 'alt')) !== null
-                && MediaType::classify(data_get($item, 'mime_type'), data_get($item, 'path')) === MediaType::Image) {
-                $item['meta'] = [...data_get($item, 'meta', []), 'alt_text' => $alt];
-            }
-
-            $attached[] = $item;
+            $attached[] = HostInlineMedia::item($hosted, $entry);
         }
 
         if ($attached !== []) {

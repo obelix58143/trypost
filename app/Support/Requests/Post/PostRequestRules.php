@@ -169,7 +169,7 @@ class PostRequestRules
         self::addMediaCompatibilityErrors($validator, $post, $input);
 
         if (array_key_exists('meta', $input)) {
-            PostPlatformMetaRules::addRequiredOnPublishErrors($validator, $post->socialAccount ?? $post->platform, self::effectiveMeta($post, $input));
+            PostPlatformMetaRules::addRequiredOnPublishErrors($validator, $post->socialAccount ?? $post->platform, self::effectiveMeta($post, $input), contentType: data_get($input, 'content_type') ?? $post->content_type);
         }
     }
 

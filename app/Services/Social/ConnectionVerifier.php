@@ -27,6 +27,7 @@ use App\Support\GoogleBusinessResourceName;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 class ConnectionVerifier
@@ -206,7 +207,8 @@ class ConnectionVerifier
             Platform::LinkedIn => $this->verifyLinkedIn($account),
             Platform::LinkedInPage => $this->verifyLinkedInPage($account),
             Platform::X => $this->verifyX($account),
-            Platform::Instagram, Platform::InstagramFacebook => $this->verifyInstagram($account),
+            Platform::Instagram => $this->verifyInstagram($account),
+            Platform::InstagramFacebook => $this->verifyInstagramFacebook($account),
             Platform::Facebook => $this->verifyFacebook($account),
             Platform::Threads => $this->verifyThreads($account),
             Platform::TikTok => $this->verifyTikTok($account),
@@ -575,14 +577,14 @@ class ConnectionVerifier
         $account->refresh();
     }
 
+    /**
+     * The OpenID Connect userinfo endpoint lives under `/v2`, not the versioned
+     * `/rest` API, so it takes no LinkedIn-Version header.
+     */
     private function verifyLinkedIn(SocialAccount $account): bool
     {
         $response = Http::withToken($account->access_token)
-            ->withHeaders([
-                'X-Restli-Protocol-Version' => '2.0.0',
-                'LinkedIn-Version' => '202601',
-            ])
-            ->get(config('trypost.platforms.linkedin.api').'/rest/userinfo');
+            ->get(config('trypost.platforms.linkedin.api').'/v2/userinfo');
 
         if (LinkedInPublishException::isConfirmedDeadToken($response)) {
             throw new TokenExpiredException('LinkedIn access token is invalid or expired');
@@ -644,15 +646,35 @@ class ConnectionVerifier
         );
     }
 
+    /**
+     * An Instagram Login token, checked on graph.instagram.com. Its `user_id`
+     * is the professional account id, kept for matching the same account
+     * connected through Facebook.
+     */
     private function verifyInstagram(SocialAccount $account): bool
     {
-        // Basic Instagram tokens hit graph.instagram.com; Instagram via
-        // Facebook Business uses a Facebook Page token, which only validates
-        // against graph.facebook.com — using the wrong endpoint produces a
-        // false-positive "token expired".
-        $baseUrl = $account->platform->instagramGraphBaseUrl();
+        $response = Http::get("{$account->platform->instagramGraphBaseUrl()}/me", [
+            'fields' => 'id,username,user_id',
+            'access_token' => $account->access_token,
+        ]);
 
-        $response = Http::get("{$baseUrl}/me", [
+        if ($response->successful()) {
+            $this->rememberInstagramAccountId($account, $response->json('user_id'));
+
+            return true;
+        }
+
+        throw GraphError::classifyVerifyFailure($response, 'Instagram');
+    }
+
+    /**
+     * An Instagram account connected through Facebook holds a Page token, which
+     * only validates on graph.facebook.com (graph.instagram.com reports it as
+     * expired). Its `/me` is the Page, which has no `user_id`.
+     */
+    private function verifyInstagramFacebook(SocialAccount $account): bool
+    {
+        $response = Http::get("{$account->platform->instagramGraphBaseUrl()}/me", [
             'fields' => 'id,username',
             'access_token' => $account->access_token,
         ]);
@@ -662,6 +684,31 @@ class ConnectionVerifier
         }
 
         throw GraphError::classifyVerifyFailure($response, 'Instagram');
+    }
+
+    /**
+     * Keeps the Instagram professional account id of an Instagram Login
+     * account (older accounts were connected before it was stored), so a
+     * reconnect through Facebook matches it without asking Instagram. The key
+     * is added to the meta read again under a row lock, so meta saved
+     * meanwhile (a reconnect) is kept, and `updated_at` does not move.
+     */
+    private function rememberInstagramAccountId(SocialAccount $account, mixed $instagramAccountId): void
+    {
+        $id = (string) $instagramAccountId;
+
+        if (blank($id) || data_get($account->meta, 'ig_user_id') === $id) {
+            return;
+        }
+
+        $account->meta = DB::transaction(function () use ($account, $id): array {
+            $stored = SocialAccount::query()->lockForUpdate()->findOrFail($account->getKey());
+            $stored->meta = [...$stored->meta ?? [], 'ig_user_id' => $id];
+            SocialAccount::withoutTimestamps(fn () => $stored->saveQuietly());
+
+            return $stored->meta;
+        });
+        $account->syncOriginalAttribute('meta');
     }
 
     private function verifyFacebook(SocialAccount $account): bool

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\User\Goal;
 use App\Enums\User\Locale;
 use App\Enums\User\Persona;
+use App\Enums\User\PreviousSoftware;
 use App\Enums\User\Theme;
 use App\Models\User;
 use App\Models\Workspace;
@@ -27,12 +28,37 @@ function waitForWelcomeTestId(mixed $page, string $testId): void
     JS);
 }
 
+function waitForWelcomeHeaderTextIn(mixed $page, string $testId, string $text): void
+{
+    $page->script(<<<JS
+        (async () => {
+            for (let i = 0; i < 100; i++) {
+                if (document.querySelector('[data-testid="{$testId}"]')?.textContent.includes('{$text}')) return;
+                await new Promise((r) => setTimeout(r, 50));
+            }
+        })();
+    JS);
+}
+
+function waitForWelcomeHeaderDarkTheme(mixed $page): void
+{
+    $page->script(<<<'JS'
+        (async () => {
+            for (let i = 0; i < 100; i++) {
+                if (document.documentElement.classList.contains('dark')) return;
+                await new Promise((r) => setTimeout(r, 50));
+            }
+        })();
+    JS);
+}
+
 function welcomeHeaderOwner(): User
 {
     $user = User::factory()->create();
     $user->update([
         'persona' => Persona::Agency->value,
         'goals' => [Goal::SaveTime->value],
+        'previous_software' => PreviousSoftware::Buffer->value,
     ]);
 
     $workspace = Workspace::factory()->create([
@@ -45,7 +71,23 @@ function welcomeHeaderOwner(): User
     return $user->fresh();
 }
 
-test('the plan step goes back to goals, the step right before it', function () {
+test('the software step goes back to goals, the step right before it', function () {
+    config(['trypost.self_hosted' => false]);
+
+    $this->actingAs(welcomeHeaderOwner());
+
+    $page = visit(route('app.welcome.software'));
+    waitForWelcomeTestId($page, 'welcome-back');
+
+    $page->assertVisible('@welcome-step-plan')
+        ->click('@welcome-back');
+    waitForWelcomeTestId($page, 'welcome-goals-continue');
+
+    $page->assertRoute('app.welcome.goals')
+        ->assertNoJavaScriptErrors();
+});
+
+test('the plan step goes back to software, the step right before it', function () {
     config(['trypost.self_hosted' => false]);
 
     $this->actingAs(welcomeHeaderOwner());
@@ -53,11 +95,10 @@ test('the plan step goes back to goals, the step right before it', function () {
     $page = visit(route('app.welcome.plan'));
     waitForWelcomeTestId($page, 'welcome-back');
 
-    $page->assertMissing('@welcome-step-connect')
-        ->click('@welcome-back');
-    waitForWelcomeTestId($page, 'welcome-goals-continue');
+    $page->click('@welcome-back');
+    waitForWelcomeTestId($page, 'welcome-software-continue');
 
-    $page->assertRoute('app.welcome.goals')
+    $page->assertRoute('app.welcome.software')
         ->assertNoJavaScriptErrors();
 });
 
@@ -69,36 +110,22 @@ test('the welcome header switches language through the shared language select an
 
     $this->actingAs($user->fresh());
 
-    $page = visit(route('app.welcome.plan'));
+    $page = visit(route('app.welcome.software'));
     waitForWelcomeTestId($page, 'welcome-language-trigger');
 
     $page->assertVisible('@welcome-back')
-        ->assertVisible('@welcome-step-plan')
+        ->assertVisible('@welcome-step-software')
         ->click('@welcome-language-trigger');
     waitForWelcomeTestId($page, 'welcome-language-search');
 
     $page->fill('@welcome-language-search', 'Português')
         ->click('@welcome-language-option-pt-BR');
-    $page->script(<<<'JS'
-        (async () => {
-            for (let i = 0; i < 100; i++) {
-                if (document.querySelector('[data-testid="welcome-language-value"]')?.textContent.includes('Portugu')) return;
-                await new Promise((r) => setTimeout(r, 50));
-            }
-        })();
-    JS);
+    waitForWelcomeHeaderTextIn($page, 'welcome-language-value', 'Portugu');
 
     expect($user->fresh()->locale)->toBe(Locale::PortugueseBrazil);
 
-    $page->click('@theme-toggle-dark');
-    $page->script(<<<'JS'
-        (async () => {
-            for (let i = 0; i < 100; i++) {
-                if (document.documentElement.classList.contains('dark')) return;
-                await new Promise((r) => setTimeout(r, 50));
-            }
-        })();
-    JS);
+    $page->click('@theme-toggle');
+    waitForWelcomeHeaderDarkTheme($page);
     $page->assertNoJavaScriptErrors();
 
     expect($user->fresh()->theme)->toBe(Theme::Dark);

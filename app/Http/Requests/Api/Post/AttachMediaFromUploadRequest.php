@@ -6,6 +6,7 @@ namespace App\Http\Requests\Api\Post;
 
 use App\Actions\Media\ResolveWorkspaceMedia;
 use App\Models\Media;
+use App\Support\PostMediaRules;
 use App\Support\Requests\Post\PostMediaRequestRules;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
@@ -26,7 +27,10 @@ class AttachMediaFromUploadRequest extends FormRequest
      */
     public function rules(): array
     {
-        return PostMediaRequestRules::attachFromUpload();
+        return [
+            ...PostMediaRequestRules::attachFromUpload(),
+            'meta' => PostMediaRules::metaRules(),
+        ];
     }
 
     public function withValidator(Validator $validator): void

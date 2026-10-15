@@ -16,6 +16,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { detectBrowserLanguage } from '@/lib/detectPreferences';
+import { matchesSearch } from '@/lib/search';
 import { cn } from '@/lib/utils';
 import type { Language } from '@/types';
 
@@ -35,14 +36,8 @@ const selected = computed(() =>
     props.languages.find((language) => language.code === model.value),
 );
 
-const matches = (language: Language): boolean => {
-    const term = search.value.trim().toLocaleLowerCase();
-
-    return (
-        term === '' ||
-        `${language.name} ${language.code}`.toLocaleLowerCase().includes(term)
-    );
-};
+const matches = (language: Language): boolean =>
+    matchesSearch(search.value, [language.name, language.code]);
 
 const browserLanguage = computed(() =>
     props.languages.find(

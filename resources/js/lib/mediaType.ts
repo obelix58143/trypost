@@ -144,3 +144,6 @@ export const uploadTypeOf = (
 
     return MEDIA_TYPES.find((type) => hasExtension(path, extensions[type])) ?? null;
 };
+
+/** What identifies a media item in a list: its upload token until it is hosted, then its id. */
+export const mediaKey = (item: { upload_token?: string | null; id: string }): string => item.upload_token ?? item.id;

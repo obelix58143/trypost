@@ -5,18 +5,21 @@ declare(strict_types=1);
 return [
     'title' => 'MCP',
     'subtitle' => 'Yapay zekâ asistanlarını bağlayın.',
-    'copy_step' => 'TryPost sunucu URL’ini kopyala',
-    'open_step' => 'AI asistanını aç',
-    'copy' => 'URL’yi kopyala',
+    'copy' => 'Kopyala',
     'connect' => ':client bağla',
-    'step_add' => 'Adı, URL’yi veya config’i aşağıdaki gibi uygulamanıza yapıştırın. İlk bağlantıda oturum açma tarayıcıda açılır.',
     'name_label' => 'Ad',
     'url_label' => 'Sunucu URL’si',
     'config_label' => 'Config',
-    'connected_title' => 'Bağlı uygulamalar',
+    'tabs' => [
+        'connected' => 'Bağlı uygulamalar',
+        'connect' => 'Uygulama bağla',
+    ],
+    'connect_other' => 'Bağla',
+    'other_hint' => 'MCP destekleyen her uygulama.',
+    'other_dialog_title' => 'TryPost\'u başka bir uygulamaya bağla',
     'connected_description' => 'Giriş yaptığınız asistanlar. Artık kullanmadıklarınızın bağlantısını kesebilirsiniz.',
     'connected_empty_title' => 'Bağlı uygulama yok',
-    'connected_empty' => 'Yukarıdan Claude, ChatGPT veya başka bir istemci kullanın.',
+    'connected_empty' => 'Burada görmek için Claude, ChatGPT veya başka bir uygulama bağla.',
     'disconnect' => 'Bağlantıyı kes',
     'disconnect_title' => 'Uygulama bağlantısını kes',
     'disconnect_confirm' => 'Bu, uygulamayı TryPost’tan çıkarır. MCP’yi yeniden kullanmak için tekrar bağlanması gerekir.',
@@ -24,9 +27,6 @@ return [
     'copied' => 'Kopyalandı',
     'last_used' => 'Son kullanım',
     'never' => 'Hiç',
-    'documentation_title' => 'Dokümantasyon',
-    'documentation_description' => 'İstemci kurulum rehberleri, kullanılabilir tools ve sorun giderme.',
-    'view_docs' => 'Dokümantasyonu görüntüle',
     'connector_name' => 'TryPost',
 
     'authorize' => [
@@ -53,18 +53,29 @@ return [
     ],
 
     'other_clients_title' => 'Diğer uygulamalar',
-    'other_clients_description' => 'Cursor, VS Code, Claude Code ve MCP konuşan diğer her şey.',
 
-    'clients' => [
-        'claude' => 'Settings → Connectors’ı aç, özel bir connector ekle ve yukarıdaki URL’yi yapıştır.',
-        'chatgpt' => 'Settings → Apps & Connectors’ı aç, özel bir connector oluştur ve yukarıdaki URL’yi yapıştır.',
-        'cursor' => 'Cursor’da TryPost’u uzak MCP sunucusu olarak ekleyin.',
-        'cursor_name' => 'Cursor',
-        'vscode' => 'Aşağıdaki yapılandırmayı VS Code\'un MCP ayarlarına yapıştırın.',
-        'vscode_name' => 'VS Code',
-        'claude_code' => 'Aşağıdaki yapılandırmayı Claude Code\'un MCP ayarlarına yapıştırın.',
-        'claude_code_name' => 'Claude Code',
-        'other' => 'mcpServers config okuyan her istemciyle çalışır.',
-        'other_name' => 'Diğer',
+    'dialog' => [
+        'title' => ':client ile TryPost’u bağla',
+        'description' => 'Yaklaşık bir dakika sürer. Bağlandığınız anda bu sayfa güncellenir.',
+        'open' => ':client uygulamasını aç',
+        'steps' => [
+            'claude' => [
+                'paste' => 'URL’yi bağlayıcının URL alanına yapıştır',
+                'add' => 'Ekle’ye, ardından Bağlan’a tıkla',
+                'login' => 'TryPost’a giriş yap ve workspace’i seç',
+            ],
+            'chatgpt' => [
+                'developer' => 'ChatGPT ayarlarında Geliştirici modunu aç',
+                'create' => 'TryPost adlı bir uygulama oluştur ve URL’yi yapıştır',
+                'login' => 'TryPost’a giriş yap ve workspace’i seç',
+            ],
+            'other' => [
+                'add' => 'Uygulamana özel bir MCP sunucusu ekle',
+                'paste' => 'Adı ve URL’yi ya da yapılandırmayı yapıştır',
+                'login' => 'TryPost’a giriş yap ve workspace’i seç',
+            ],
+        ],
+        'waiting' => 'Yapay zekânın bağlanması bekleniyor…',
     ],
+
 ];

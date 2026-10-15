@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Post\Queue\ListFreeQueueSlots;
 use App\Actions\Post\Queue\MoveChannelPostToQueueSlot;
 use App\Actions\Post\Queue\ReorderChannelQueue;
 use App\Http\Requests\Api\Channel\MoveChannelPostToQueueSlotRequest;
 use App\Http\Requests\Api\Channel\ReorderChannelQueueRequest;
+use App\Http\Resources\Api\ChannelFreeSlotsResource;
 use App\Http\Resources\Api\PostResource;
 use App\Models\Post;
 use App\Models\SocialAccount;
@@ -16,6 +18,13 @@ use Illuminate\Http\Response as EmptyResponse;
 
 class ChannelQueueController extends Controller
 {
+    public function slots(SocialAccount $account): ChannelFreeSlotsResource
+    {
+        $this->authorize('view', $account);
+
+        return new ChannelFreeSlotsResource(ListFreeQueueSlots::handle($account));
+    }
+
     public function reorder(ReorderChannelQueueRequest $request, SocialAccount $account): EmptyResponse
     {
         ReorderChannelQueue::handle($account, $request->validated('post_ids'));

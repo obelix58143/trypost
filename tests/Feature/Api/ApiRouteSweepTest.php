@@ -46,13 +46,16 @@ function apiSweepMethod(string $name): string
 }
 
 /**
- * The route's URI with each parameter replaced by the matching id.
+ * The route's URI with each parameter replaced by the matching id. An Instagram
+ * audio id is numeric by its route constraint, so it always gets a valid one.
  *
  * @param  array<string, string>  $ids
  */
 function apiSweepUri(string $name, array $ids, string $fallback = 'not-a-uuid'): string
 {
     $uri = Route::getRoutes()->getByName($name)->uri();
+
+    $ids = ['audioId' => '17841400000000001', ...$ids];
 
     return '/'.preg_replace_callback('/\{([^}?]+)\??\}/', fn (array $match): string => data_get($ids, $match[1], $fallback), $uri);
 }

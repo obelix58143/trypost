@@ -8,6 +8,7 @@ import LabelForm from '@/components/labels/LabelForm.vue';
 import MultiSelectFilter from '@/components/MultiSelectFilter.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { matchesSearch } from '@/lib/search';
 import {
     index as labelsIndex,
     store as labelsStore,
@@ -48,9 +49,6 @@ const labelsById = computed(
 );
 
 const labelFor = (id: string): Label => labelsById.value.get(id)!;
-
-const matches = (text: string, search: string): boolean =>
-    text.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase());
 
 const DEFAULT_COLOR = '#7c3aed';
 
@@ -172,7 +170,7 @@ const clear = (): void => {
         <template #before-options="{ search }">
             <div v-if="showUntagged && labels.length > 0" class="pt-2">
                 <label
-                    v-if="matches($t('posts.label_filter_untagged'), search)"
+                    v-if="matchesSearch(search, [$t('posts.label_filter_untagged')])"
                     class="flex min-h-8 cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-sm leading-5 transition-control hover:bg-accent"
                     :class="{ 'bg-accent': untagged }"
                     :data-testid="`${testId}-untagged`"

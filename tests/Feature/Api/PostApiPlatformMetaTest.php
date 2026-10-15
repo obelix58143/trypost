@@ -1273,3 +1273,130 @@ it('rejects more than 24 thread replies', function () {
         'meta' => ['thread_replies' => array_fill(0, 25, 'Reply')],
     ])->assertUnprocessable()->assertJsonValidationErrors(['meta.thread_replies']);
 });
+
+it('persists instagram collaborators, trial reel and music', function () {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::InstagramFacebook]);
+
+    $this->withHeaders($this->headers)->postJson(route('api.posts.store'), [
+        'content' => 'Reel',
+        'social_account_id' => $instagram->id,
+        'content_type' => ContentType::InstagramReel->value,
+        'meta' => [
+            'collaborators' => ['@alice', 'bob', 'Alice'],
+            'trial_graduation' => 'MANUAL',
+            'audio' => ['id' => '1234567890', 'title' => 'Song', 'artist' => 'Band'],
+        ],
+    ])->assertCreated();
+
+    expect(Post::where('social_account_id', $instagram->id)->sole()->meta)->toEqual([
+        'collaborators' => ['alice', 'bob'],
+        'trial_graduation' => 'MANUAL',
+        'audio' => ['id' => '1234567890', 'title' => 'Song', 'artist' => 'Band'],
+    ]);
+});
+
+it('rejects invalid instagram collaborators and trial reels', function (array $meta, string $error) {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+
+    $this->withHeaders($this->headers)->postJson(route('api.posts.store'), [
+        'content' => 'Reel',
+        'social_account_id' => $instagram->id,
+        'content_type' => ContentType::InstagramReel->value,
+        'meta' => $meta,
+    ])->assertUnprocessable()->assertJsonValidationErrors($error);
+})->with([
+    'more than three' => [['collaborators' => ['a', 'b', 'c', 'd']], 'meta.collaborators'],
+    'invalid username' => [['collaborators' => ['not a user']], 'meta.collaborators.0'],
+    'unknown strategy' => [['trial_graduation' => 'SOMETIMES'], 'meta.trial_graduation'],
+]);
+
+it('rejects publishing instagram music without Facebook and a trial reel with collaborators', function (Platform $platform, array $meta, string $error) {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => $platform]);
+    $post = Post::factory()->forAccount($instagram, ContentType::InstagramReel)->create([
+        'user_id' => $this->user->id,
+        'content' => 'Reel',
+        'status' => PostStatus::Draft,
+        'media' => [[
+            'id' => 'video-1', 'type' => 'video', 'path' => 'medias/video.mp4', 'url' => 'https://example.com/video.mp4',
+            'mime_type' => 'video/mp4', 'original_filename' => 'video.mp4',
+        ]],
+        'meta' => $meta,
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), ['status' => PostStatus::Publishing->value])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors($error);
+})->with([
+    'music on instagram login' => [Platform::Instagram, ['audio' => ['id' => '1234567890']], 'meta.audio'],
+    'music without id' => [Platform::InstagramFacebook, ['audio' => ['title' => 'Song']], 'meta.audio.id'],
+    'trial with collaborators' => [Platform::InstagramFacebook, ['collaborators' => ['alice'], 'trial_graduation' => 'MANUAL'], 'meta.trial_graduation'],
+]);
+
+it('ignores instagram reel-only meta on a feed post', function (Platform $platform, array $meta) {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => $platform]);
+    $post = Post::factory()->forAccount($instagram, ContentType::InstagramFeed)->create([
+        'user_id' => $this->user->id,
+        'content' => 'Feed post',
+        'status' => PostStatus::Draft,
+        'media' => [[
+            'id' => 'image-1', 'type' => 'image', 'path' => 'medias/photo.jpg', 'url' => 'https://example.com/photo.jpg',
+            'mime_type' => 'image/jpeg', 'original_filename' => 'photo.jpg',
+        ]],
+        'meta' => $meta,
+    ]);
+
+    $this->withHeaders($this->headers)
+        ->putJson(route('api.posts.update', $post), [
+            'status' => PostStatus::Scheduled->value,
+            'scheduled_at' => now()->addDay()->toIso8601String(),
+        ])
+        ->assertOk();
+
+    expect($post->fresh()->status)->toBe(PostStatus::Scheduled);
+})->with([
+    'music on instagram login' => [Platform::Instagram, ['audio' => ['id' => '1234567890']]],
+    'trial with collaborators' => [Platform::InstagramFacebook, ['collaborators' => ['alice'], 'trial_graduation' => 'MANUAL']],
+]);
+
+it('refuses scheduling a new instagram login reel with music, alone and in a batch', function (string $route, array $payload, string $error) {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+    $upload = Media::factory()->temporaryUpload($this->workspace)->stored()->video()->create();
+    $destination = [
+        'social_account_id' => $instagram->id,
+        'content_type' => ContentType::InstagramReel->value,
+        'meta' => ['audio' => ['id' => '1234567890']],
+    ];
+
+    $this->withHeaders($this->headers)
+        ->postJson(route($route), [
+            'content' => 'Reel',
+            'status' => PostStatus::Scheduled->value,
+            'scheduled_at' => now()->addDay()->toIso8601String(),
+            'media' => [['upload_token' => $upload->upload_token]],
+            ...($payload === [] ? $destination : ['destinations' => [$destination]]),
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$error => __('posts.form.instagram.music.requires_facebook')]);
+
+    expect(Post::query()->where('social_account_id', $instagram->id)->exists())->toBeFalse();
+})->with([
+    'single post' => ['api.posts.store', [], 'meta.audio'],
+    'batch' => ['api.posts.batch.store', ['batch' => true], 'destinations.0.meta.audio'],
+]);
+
+it('refuses music volumes outside 0 to 100, a cover that is not a link and a track id that is not numeric', function (array $audio, string $error) {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::InstagramFacebook]);
+
+    $this->withHeaders($this->headers)->postJson(route('api.posts.store'), [
+        'content' => 'Reel',
+        'social_account_id' => $instagram->id,
+        'content_type' => ContentType::InstagramReel->value,
+        'meta' => ['audio' => ['id' => '1234567890', ...$audio]],
+    ])->assertUnprocessable()->assertJsonValidationErrors($error);
+})->with([
+    'music volume above 100' => [['audio_volume' => 101], 'meta.audio.audio_volume'],
+    'video volume below 0' => [['video_volume' => -1], 'meta.audio.video_volume'],
+    'cover not a link' => [['cover_url' => 'not a link'], 'meta.audio.cover_url'],
+    'track id not numeric' => [['id' => 'abc'], 'meta.audio.id'],
+]);

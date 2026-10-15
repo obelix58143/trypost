@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Auth\ListConnectedAccounts;
 use App\Http\Controllers\Auth\OidcController;
 use App\Models\Account;
 use App\Models\User;
@@ -407,7 +408,7 @@ test('the settings page can start an oidc connect', function () {
     Socialite::shouldReceive('driver')->with('oidc')->andReturn($driver);
 
     $this->actingAs($user)
-        ->get(route('app.authentication.connect-provider', 'oidc'))
+        ->get(route('app.profile.connected-accounts.connect', 'oidc'))
         ->assertRedirect('https://idp.example.com/authorize');
 });
 
@@ -415,7 +416,7 @@ test('the settings page lists oidc among the providers', function () {
     $user = User::factory()->create();
 
     $props = $this->actingAs($user)
-        ->get(route('app.authentication.edit'))
+        ->get(route('app.profile.edit'))
         ->original->getData()['page']['props'];
 
     expect(collect($props['connectedAccounts'])->pluck('provider'))->toContain('oidc');
@@ -1526,4 +1527,24 @@ test('a token response carrying a forged ID token is refused', function () {
 
     expect(fn () => $ctx['provider']->getAccessTokenResponse('the-code'))
         ->toThrow(RuntimeException::class, 'The ID token could not be verified');
+});
+
+// ------------------------------------------------------- connected accounts ---
+
+test('the settings list shows the OIDC provider under its display name when enabled', function () {
+    config(['trypost.oidc_display_name' => 'Company SSO']);
+
+    $user = User::factory()->create(['oidc_id' => 'provider-subject-1']);
+
+    expect(collect(ListConnectedAccounts::execute($user))->firstWhere('provider', 'oidc'))
+        ->toMatchArray(['label' => 'Company SSO', 'connected' => true]);
+});
+
+test('the settings list leaves OIDC out on instances that do not use it', function () {
+    config(['trypost.oidc_auth_enabled' => false]);
+
+    $user = User::factory()->create();
+
+    expect(collect(ListConnectedAccounts::execute($user))->pluck('provider')->all())
+        ->toBe(['google', 'github']);
 });

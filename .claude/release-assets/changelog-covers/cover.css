@@ -1,0 +1,158 @@
+/*
+ * TryPost "What's New" covers: flat colors, a firm ink border and the content
+ * inside. One flat background from the app's light tints, white surfaces with
+ * the ink border and no shadow, Inter, Tabler icons, the app's violet switch.
+ * No headline and no props: the entry's title sits right under the cover. The
+ * background carries the home hero's dot grid, only in the bottom-left and
+ * top-right corners, fading out toward the middle.
+ */
+:root {
+    --ink: #292928;
+    --muted-foreground: #5a5a59;
+    --secondary: #eae8e5;
+    --accent: #f3f2f0;
+    --primary-strong: #6d28d9;
+
+    /* Backgrounds: the app's own light tints. */
+    --bg-violet: #d2c7fd;
+    --bg-blue: #def0ff;
+    --bg-green: #d9f1d1;
+    --bg-peach: #ffdbd6;
+    --bg-cream: #f4f1ec;
+    --bg-yellow: #fdefc3;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { width: 1200px; height: 675px; }
+
+body {
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+}
+
+.canvas {
+    position: relative;
+    width: 1200px;
+    height: 675px;
+    overflow: hidden;
+    isolation: isolate;
+}
+.canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(circle, rgb(10 10 10 / 0.22) 1.2px, transparent 1.8px) 0 0 / 24px 24px;
+    mask-image:
+        radial-gradient(circle at 100% 0%, #000, transparent 38%),
+        radial-gradient(circle at 0% 100%, #000, transparent 38%);
+}
+.bg-violet { background-color: var(--bg-violet); }
+.bg-blue { background-color: var(--bg-blue); }
+.bg-green { background-color: var(--bg-green); }
+.bg-peach { background-color: var(--bg-peach); }
+.bg-cream { background-color: var(--bg-cream); }
+.bg-yellow { background-color: var(--bg-yellow); }
+
+.at { position: absolute; }
+.icon { width: 1em; height: 1em; flex-shrink: 0; stroke-width: 1.7; }
+
+/* A white surface with the ink border, no shadow. */
+.surface { background: #fff; border: 2.5px solid var(--ink); border-radius: 24px; }
+
+/* A network's mark in its brand circle. */
+.badge {
+    display: grid;
+    place-items: center;
+    width: 100px;
+    height: 100px;
+    border: 2.5px solid var(--ink);
+    border-radius: 999px;
+    color: #fff;
+    font-size: 54px;
+}
+
+/* A settings panel, like the composer's section for a network. */
+.panel { position: relative; width: 610px; }
+/* The network's badge sits above the panel, centered, outside it. */
+.panel.has-badge > .badge { position: absolute; left: 50%; top: -52px; transform: translate(-50%, -100%); }
+.setting {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 24px 28px;
+    font-size: 29px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+.setting + .setting { border-top: 2.5px solid var(--ink); }
+.setting > .icon { font-size: 36px; }
+.setting .control { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+.handle {
+    display: inline-flex;
+    align-items: center;
+    height: 52px;
+    padding: 0 18px;
+    border-radius: 14px;
+    background: var(--secondary);
+    font-size: 25px;
+    font-weight: 600;
+}
+
+.track {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 62px;
+    padding: 0 20px 0 8px;
+    border: 2.5px solid var(--ink);
+    border-radius: 14px;
+    font-size: 23px;
+    font-weight: 600;
+}
+.track .art { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 9px; color: #fff; font-size: 22px; }
+.track .artist { margin-left: -6px; color: var(--muted-foreground); font-weight: 500; }
+
+/* A track playing: a sound wave in green, centered on its axis. */
+.eq { display: flex; align-items: center; gap: 4px; height: 28px; }
+.eq > i { display: block; width: 3px; border-radius: 999px; background: #16a34a; }
+
+/* The app's switch: primary-strong with the white knob. */
+.switch { position: relative; width: 84px; height: 46px; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--primary-strong); }
+.switch::after { content: ''; position: absolute; top: 50%; right: 4px; width: 34px; height: 34px; border: 2.5px solid var(--ink); border-radius: 999px; background: #fff; transform: translateY(-50%); }
+
+/* A chip the user picked: the ink border on white. */
+.handle.is-selected { background: #fff; box-shadow: inset 0 0 0 2.5px var(--ink); }
+
+/* Integration: two app icons joined by a plus. */
+.pair { display: flex; align-items: center; justify-content: center; gap: 48px; }
+.app-icon { display: grid; place-items: center; width: 200px; height: 200px; border: 2.5px solid var(--ink); border-radius: 48px; background: #fff; overflow: hidden; }
+.app-icon .icon { font-size: 112px; color: #fff; stroke-width: 1.5; }
+.app-icon .trypost-mark { width: 100%; height: 100%; }
+/* The TryPost mark on its own: no white square behind it, the canvas shows through. */
+.app-icon.is-mark { background: none; }
+.app-icon.is-mark .trypost-mark rect { fill: transparent; }
+/* A service's official logo on white. */
+.app-icon .logo { width: 136px; height: 136px; }
+.plus { font-size: 60px; }
+.plus .icon { stroke-width: 2.4; }
+
+/* Announcement: tinted tiles split by white lines, three emojis in the middle row. */
+.tiles {
+    display: grid;
+    grid-template-columns: 1fr 330px 330px 330px 1fr;
+    grid-template-rows: 1fr 330px 1fr;
+    gap: 6px;
+    background: #fff;
+}
+.tiles::before { display: none; }
+.tiles > i { background: var(--tile-soft); }
+.tiles > b { display: grid; place-items: center; background: var(--tile-strong); font-size: 104px; font-weight: 400; line-height: 1; }
+.tiles-violet { --tile-soft: #ede9fe; --tile-strong: #d2c7fd; }
+.tiles-green { --tile-soft: #e3f5dc; --tile-strong: #bfe8b0; }
+.tiles-blue { --tile-soft: #e6f3ff; --tile-strong: #c5e3ff; }
+.tiles-peach { --tile-soft: #ffe9e5; --tile-strong: #ffcdc5; }

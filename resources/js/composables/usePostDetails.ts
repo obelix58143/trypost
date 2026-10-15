@@ -4,7 +4,11 @@ import { ref } from 'vue';
 import { publication as showPublication } from '@/actions/App/Http/Controllers/App/InsightsController';
 import { edit as editPostRoute } from '@/actions/App/Http/Controllers/App/PostController';
 import { show as showPostGroup } from '@/actions/App/Http/Controllers/App/PostGroupController';
-import { duplicatePostCard } from '@/composables/usePostCardActions';
+import {
+    copyPostCardLink,
+    duplicatePostCard,
+    sharePostCardLink,
+} from '@/composables/usePostCardActions';
 import type { PublicationAnalyticsDetail } from '@/types/analytics';
 import type { PostCard, PostCardMenuAction } from '@/types/publish';
 
@@ -45,8 +49,16 @@ export const usePostDetails = () => {
     };
 
     const runPostAction = (action: PostCardMenuAction, post: PostCard): void => {
-        if (action === 'duplicate') {
-            duplicatePostCard(post);
+        switch (action) {
+            case 'duplicate':
+                duplicatePostCard(post);
+                break;
+            case 'share_link':
+                sharePostCardLink(post);
+                break;
+            case 'copy_link':
+                copyPostCardLink(post);
+                break;
         }
     };
 

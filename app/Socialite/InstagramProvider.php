@@ -41,7 +41,7 @@ class InstagramProvider extends AbstractProvider implements ProviderInterface
         $response = $this->getHttpClient()->get(config('trypost.platforms.instagram.graph_api').'/me', [
             RequestOptions::QUERY => [
                 'access_token' => $token,
-                'fields' => 'id,username,account_type,name,profile_picture_url',
+                'fields' => 'id,user_id,username,account_type,name,profile_picture_url',
             ],
         ]);
 

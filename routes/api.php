@@ -7,9 +7,12 @@ use App\Http\Controllers\Api\ApiKeyController;
 use App\Http\Controllers\Api\ChannelInsightsController;
 use App\Http\Controllers\Api\ChannelPostingScheduleController;
 use App\Http\Controllers\Api\ChannelQueueController;
+use App\Http\Controllers\Api\DiscordController;
 use App\Http\Controllers\Api\IdeaController;
 use App\Http\Controllers\Api\IdeaStageController;
+use App\Http\Controllers\Api\InstagramAudioController;
 use App\Http\Controllers\Api\LabelController;
+use App\Http\Controllers\Api\PinterestBoardController;
 use App\Http\Controllers\Api\PlatformController;
 use App\Http\Controllers\Api\PostApprovalController;
 use App\Http\Controllers\Api\PostController;
@@ -18,6 +21,7 @@ use App\Http\Controllers\Api\PostRecurrenceController;
 use App\Http\Controllers\Api\RepurposeController;
 use App\Http\Controllers\Api\SignatureController;
 use App\Http\Controllers\Api\SocialAccountController;
+use App\Http\Controllers\Api\TikTokCreatorInfoController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WorkspaceController;
@@ -86,16 +90,23 @@ Route::middleware(['auth:api', 'workspace.token', 'throttle:api'])->group(functi
     Route::delete('/labels/{label}', [LabelController::class, 'destroy'])->name('api.labels.destroy');
 
     Route::get('/social-accounts', [SocialAccountController::class, 'index'])->name('api.social-accounts.index');
-    Route::get('/social-accounts/{account}/boards', [SocialAccountController::class, 'boards'])
+    Route::get('/social-accounts/{account}/boards', [PinterestBoardController::class, 'index'])
         ->middleware('throttle:60,1')
         ->name('api.social-accounts.boards');
-    Route::post('/social-accounts/{account}/boards', [SocialAccountController::class, 'storeBoard'])
+    Route::post('/social-accounts/{account}/boards', [PinterestBoardController::class, 'store'])
         ->middleware('throttle:60,1')
         ->name('api.social-accounts.boards.store');
-    Route::get('/social-accounts/{account}/tiktok-creator-info', [SocialAccountController::class, 'tiktokCreatorInfo'])
+    Route::get('/social-accounts/{account}/tiktok-creator-info', [TikTokCreatorInfoController::class, 'show'])
         ->middleware('throttle:60,1')
         ->name('api.social-accounts.tiktok-creator-info');
-    Route::get('/social-accounts/{account}/channels', [SocialAccountController::class, 'channels'])
+    Route::get('/social-accounts/{account}/instagram-audio', [InstagramAudioController::class, 'index'])
+        ->middleware('throttle:60,1')
+        ->name('api.social-accounts.instagram-audio');
+    Route::get('/social-accounts/{account}/instagram-audio/{audioId}', [InstagramAudioController::class, 'show'])
+        ->whereNumber('audioId')
+        ->middleware('throttle:60,1')
+        ->name('api.social-accounts.instagram-audio.show');
+    Route::get('/social-accounts/{account}/channels', [DiscordController::class, 'channels'])
         ->middleware('throttle:60,1')
         ->name('api.social-accounts.channels');
 
@@ -105,7 +116,7 @@ Route::middleware(['auth:api', 'workspace.token', 'throttle:api'])->group(functi
     Route::get('/channels/{account}/insights/publications', [ChannelInsightsController::class, 'publications'])
         ->whereUuid('account')
         ->name('api.channels.insights.publications');
-    Route::get('/channels/{account}/posting-schedule', [SocialAccountController::class, 'postingSchedule'])
+    Route::get('/channels/{account}/posting-schedule', [ChannelPostingScheduleController::class, 'show'])
         ->whereUuid('account')
         ->name('api.channels.posting-schedule.show');
     Route::put('/channels/{account}/posting-schedule', [ChannelPostingScheduleController::class, 'update'])
@@ -117,7 +128,7 @@ Route::middleware(['auth:api', 'workspace.token', 'throttle:api'])->group(functi
     Route::post('/channels/{account}/posting-schedule/copy', [ChannelPostingScheduleController::class, 'copy'])
         ->whereUuid('account')
         ->name('api.channels.posting-schedule.copy');
-    Route::get('/channels/{account}/queue/slots', [SocialAccountController::class, 'freeSlots'])
+    Route::get('/channels/{account}/queue/slots', [ChannelQueueController::class, 'slots'])
         ->whereUuid('account')
         ->name('api.channels.queue.slots');
     Route::put('/channels/{account}/queue/order', [ChannelQueueController::class, 'reorder'])

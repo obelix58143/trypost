@@ -5,18 +5,21 @@ declare(strict_types=1);
 return [
     'title' => 'MCP',
     'subtitle' => 'AI アシスタントを接続します。',
-    'copy_step' => 'TryPostサーバーURLをコピー',
-    'open_step' => 'AIアシスタントを開く',
-    'copy' => 'URLをコピー',
+    'copy' => 'コピー',
     'connect' => ':clientを接続',
-    'step_add' => '下の名前・URL・設定をアプリに貼り付けてください。初回接続時はブラウザでログインが開きます。',
     'name_label' => '名前',
     'url_label' => 'サーバーURL',
     'config_label' => '設定',
-    'connected_title' => '接続済みアプリ',
+    'tabs' => [
+        'connected' => '接続済みアプリ',
+        'connect' => 'アプリを接続',
+    ],
+    'connect_other' => '接続',
+    'other_hint' => 'MCP対応のあらゆるアプリ。',
+    'other_dialog_title' => 'TryPostを他のアプリに接続',
     'connected_description' => 'サインインしたアシスタントです。不要な接続は切断できます。',
     'connected_empty_title' => '接続済みのアプリはありません',
-    'connected_empty' => '上の Claude、ChatGPT、または他のクライアントを使ってください。',
+    'connected_empty' => 'Claude、ChatGPTなどのアプリを接続すると、ここに表示されます。',
     'disconnect' => '切断',
     'disconnect_title' => 'アプリを切断',
     'disconnect_confirm' => 'TryPostからアプリを切断します。再度MCPを使うには再接続が必要です。',
@@ -24,9 +27,6 @@ return [
     'copied' => 'コピーしました',
     'last_used' => '最終使用',
     'never' => 'なし',
-    'documentation_title' => 'ドキュメント',
-    'documentation_description' => 'クライアント別のセットアップ、利用可能なツール、トラブルシューティング。',
-    'view_docs' => 'ドキュメントを見る',
     'connector_name' => 'TryPost',
 
     'authorize' => [
@@ -53,18 +53,29 @@ return [
     ],
 
     'other_clients_title' => 'その他のアプリ',
-    'other_clients_description' => 'Cursor、VS Code、Claude Code、その他MCP対応アプリ。',
 
-    'clients' => [
-        'claude' => 'Settings → Connectors を開き、カスタムコネクタを追加して上のURLを貼り付けます。',
-        'chatgpt' => 'Settings → Apps & Connectors を開き、カスタムコネクタを作成して上のURLを貼り付けます。',
-        'cursor' => 'CursorでTryPostをリモートMCPサーバーとして追加します。',
-        'cursor_name' => 'Cursor',
-        'vscode' => '下の設定をVS CodeのMCP設定に貼り付けます。',
-        'vscode_name' => 'VS Code',
-        'claude_code' => '下の設定をClaude CodeのMCP設定に貼り付けます。',
-        'claude_code_name' => 'Claude Code',
-        'other' => 'mcpServers設定を読むクライアントならどれでも使えます。',
-        'other_name' => 'その他',
+    'dialog' => [
+        'title' => 'TryPostを:clientに接続',
+        'description' => '1分ほどで完了します。接続するとこのページが自動で更新されます。',
+        'open' => ':clientを開く',
+        'steps' => [
+            'claude' => [
+                'paste' => 'コネクタのURL欄にURLを貼り付け',
+                'add' => '「追加」→「接続」をクリック',
+                'login' => 'TryPostにログインしてワークスペースを選択',
+            ],
+            'chatgpt' => [
+                'developer' => 'ChatGPTの設定で開発者モードをオン',
+                'create' => '「TryPost」という名前でアプリを作成し、URLを貼り付け',
+                'login' => 'TryPostにログインしてワークスペースを選択',
+            ],
+            'other' => [
+                'add' => 'アプリにカスタムMCPサーバーを追加',
+                'paste' => '名前とURL、または設定を貼り付け',
+                'login' => 'TryPostにログインしてワークスペースを選択',
+            ],
+        ],
+        'waiting' => 'AIの接続を待っています…',
     ],
+
 ];

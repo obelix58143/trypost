@@ -106,7 +106,7 @@ class UpdatePostRequest extends FormRequest
                 return;
             }
 
-            PostPlatformMetaRules::addRequiredOnPublishErrors($validator, $post->socialAccount ?? $post->platform, $this->effectiveMeta());
+            PostPlatformMetaRules::addRequiredOnPublishErrors($validator, $post->socialAccount ?? $post->platform, $this->effectiveMeta(), contentType: $this->input('content_type') ?? $post->content_type);
         });
     }
 

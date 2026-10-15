@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { IconCheck, IconSearch } from '@tabler/icons-vue';
+import { computed } from 'vue';
 
 import ChannelAvatar from '@/components/ChannelAvatar.vue';
+import { getPlatformLabel } from '@/composables/usePlatformLogo';
 import type { ComposerAccount } from '@/composables/usePostComposition';
+import { filterBySearch } from '@/lib/search';
 
 const props = defineProps<{
     accounts: ComposerAccount[];
@@ -16,10 +19,18 @@ const emit = defineEmits<{
     (event: 'toggle-all', accounts: ComposerAccount[]): void;
 }>();
 
+const visibleAccounts = computed(() =>
+    filterBySearch(props.accounts, search.value, (account) => [
+        account.display_name,
+        account.username,
+        getPlatformLabel(account.platform),
+    ]),
+);
+
 const isSelected = (account: ComposerAccount): boolean =>
     props.selectedIds.includes(account.id);
 
-const allSelected = (): boolean => props.accounts.every(isSelected);
+const allSelected = (): boolean => visibleAccounts.value.every(isSelected);
 </script>
 
 <template>
@@ -35,8 +46,8 @@ const allSelected = (): boolean => props.accounts.every(isSelected);
                 v-model="search"
                 type="search"
                 data-testid="composer-account-search"
-                :aria-label="$t('posts.form.discord.search_channel')"
-                :placeholder="$t('posts.form.discord.search_channel')"
+                :aria-label="$t('posts.channel_search_placeholder')"
+                :placeholder="$t('posts.channel_search_placeholder')"
                 class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-subtle-foreground"
             />
         </div>
@@ -46,11 +57,11 @@ const allSelected = (): boolean => props.accounts.every(isSelected);
             >
                 <span>{{ $t('posts.edit.tabs.channels') }}</span>
                 <button
-                    v-if="accounts.length"
+                    v-if="visibleAccounts.length"
                     type="button"
                     class="rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-ring"
                     data-testid="composer-select-all"
-                    @click="emit('toggle-all', accounts)"
+                    @click="emit('toggle-all', visibleAccounts)"
                 >
                     {{
                         allSelected()
@@ -61,7 +72,7 @@ const allSelected = (): boolean => props.accounts.every(isSelected);
             </div>
             <div class="max-h-72 space-y-1 overflow-y-auto">
                 <button
-                    v-for="account in accounts"
+                    v-for="account in visibleAccounts"
                     :key="account.id"
                     type="button"
                     :data-testid="`composer-account-option-${account.id}`"
@@ -97,10 +108,10 @@ const allSelected = (): boolean => props.accounts.every(isSelected);
                     </span>
                 </button>
                 <p
-                    v-if="!accounts.length"
+                    v-if="!visibleAccounts.length"
                     class="px-2 py-4 text-center text-sm text-muted-foreground"
                 >
-                    {{ $t('posts.form.discord.no_channels') }}
+                    {{ $t('posts.no_channels') }}
                 </p>
             </div>
         </div>

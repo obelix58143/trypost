@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\App\Settings;
 
+use App\Actions\Auth\ListActiveSessions;
+use App\Actions\Auth\ListConnectedAccounts;
 use App\Actions\User\DeleteUser;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\App\Settings\ProfileDeleteRequest;
@@ -12,6 +14,7 @@ use App\Http\Requests\App\Settings\UpdateLanguageRequest;
 use App\Http\Requests\App\Settings\UploadPhotoRequest;
 use App\Jobs\PostHog\SyncUser;
 use App\Services\PostHogService;
+use App\Support\Auth\PasswordRequirements;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,9 +25,14 @@ class ProfileController extends Controller
 {
     public function edit(Request $request): Response
     {
+        $user = $request->user();
+
         return Inertia::render('settings/profile/Profile', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => $request->session()->get('status'),
+            'mustVerifyEmail' => $user instanceof MustVerifyEmail,
+            'hasPassword' => (bool) $user->password,
+            'passwordRequirements' => PasswordRequirements::checklist(),
+            'connectedAccounts' => ListConnectedAccounts::execute($user),
+            'sessions' => ListActiveSessions::execute($user, $request->session()->getId()),
         ]);
     }
 

@@ -88,7 +88,7 @@ class PostMediaRules
     /**
      * @return array<int, mixed>
      */
-    private static function metaRules(): array
+    public static function metaRules(): array
     {
         return ['sometimes', 'nullable', 'array', static function (string $attribute, mixed $value, Closure $fail): void {
             self::validateAltText(data_get($value, 'alt_text'), $fail);

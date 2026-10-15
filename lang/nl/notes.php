@@ -3,14 +3,15 @@
 return [
     'placeholder' => 'Schrijf een notitie...',
     'title' => 'Notities',
+    'show' => 'Notities tonen',
+    'hide' => 'Notities verbergen',
     'edit' => 'Bewerken',
     'delete' => 'Verwijderen',
     'edited' => 'bewerkt',
     'save' => 'Opslaan',
     'cancel' => 'Annuleren',
     'send' => 'Verzenden',
-    'empty_title' => 'Nog geen notities',
-    'empty_description' => 'Begin het gesprek.',
+    'empty' => 'Nog geen notities. Alleen je team ziet ze.',
     'actions' => 'Notitieacties',
     'load_more' => 'Oudere notities laden',
 ];

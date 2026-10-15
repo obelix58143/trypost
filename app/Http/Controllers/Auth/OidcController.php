@@ -118,16 +118,16 @@ class OidcController extends Controller
             ->first();
 
         if ($existing) {
-            return redirect()->route('app.authentication.edit')
-                ->with('flash.error', __('settings.authentication.providers.flash_already_linked', ['provider' => SocialAuthProvider::Oidc->label()]));
+            return redirect()->route('app.profile.edit')
+                ->with('flash.error', __('settings.profile.providers.flash_already_linked', ['provider' => SocialAuthProvider::Oidc->label()]));
         }
 
         if ($user->oidc_id !== $oidcId) {
             $user->update(['oidc_id' => $oidcId]);
         }
 
-        return redirect()->route('app.authentication.edit')
-            ->with('flash.success', __('settings.authentication.providers.flash_connected', ['provider' => SocialAuthProvider::Oidc->label()]));
+        return redirect()->route('app.profile.edit')
+            ->with('flash.success', __('settings.profile.providers.flash_connected', ['provider' => SocialAuthProvider::Oidc->label()]));
     }
 
     /**

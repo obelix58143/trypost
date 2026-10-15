@@ -21,6 +21,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { usePinterestBoards } from '@/composables/usePinterestBoards';
+import { filterBySearch } from '@/lib/search';
 import type { PinterestBoard, PinterestBoardsPayload } from '@/types';
 
 const props = withDefaults(
@@ -56,15 +57,9 @@ const selectedBoard = computed<PinterestBoard | undefined>(() =>
     boards.value.find((board) => board.id === boardId.value),
 );
 
-const filteredBoards = computed(() => {
-    const query = search.value.trim().toLocaleLowerCase();
-
-    return query
-        ? boards.value.filter((board) =>
-              board.name.toLocaleLowerCase().includes(query),
-          )
-        : boards.value;
-});
+const filteredBoards = computed(() =>
+    filterBySearch(boards.value, search.value, (board) => [board.name]),
+);
 
 const refreshHttp = useHttp<Record<string, never>, PinterestBoardsPayload>(
     {},

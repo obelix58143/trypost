@@ -107,3 +107,28 @@ test('the label filter offers to create a label when the workspace has none', fu
 
     $page->assertNoJavaScriptErrors();
 });
+
+test('the label filter search ignores accents and hides untagged when it does not match', function () {
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->create(['account_id' => $user->account_id, 'user_id' => $user->id]);
+    $workspace->members()->attach($user->id, membershipPivot('admin'));
+    $user->update(['current_workspace_id' => $workspace->id]);
+    subscribeAccount($user->account);
+    $promo = WorkspaceLabel::factory()->create(['workspace_id' => $workspace->id, 'name' => 'Promoção']);
+    $launch = WorkspaceLabel::factory()->create(['workspace_id' => $workspace->id, 'name' => 'Launch']);
+    $this->actingAs($user);
+
+    $page = visit(route('app.posts.index', ['tab' => 'drafts']));
+    waitForLabelPopoverTestId($page, 'posts-label-filter');
+    $page->click('@posts-label-filter');
+    waitForLabelPopoverTestId($page, 'posts-label-untagged');
+
+    $page->fill('@posts-label-search', 'promocao')
+        ->assertVisible("@posts-label-option-{$promo->id}")
+        ->assertMissing("@posts-label-option-{$launch->id}")
+        ->assertMissing('@posts-label-untagged')
+        ->fill('@posts-label-search', '')
+        ->assertVisible('@posts-label-untagged')
+        ->assertVisible("@posts-label-option-{$launch->id}")
+        ->assertNoJavaScriptErrors();
+});

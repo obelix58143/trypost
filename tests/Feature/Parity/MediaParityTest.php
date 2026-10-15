@@ -106,6 +106,77 @@ test('attaching an upload gives the same media through api and mcp', function ()
         ->and($mcpPost->ownedMedia()->count())->toBe(1);
 });
 
+test('attaching an upload prefers the meta alt text over the alt shorthand and ignores an empty alt through api and mcp', function (array $input, ?string $stored) {
+    $apiPost = mediaParityPost($this);
+    $mcpPost = mediaParityPost($this);
+
+    $this->withHeaders(parityApi($this->token))
+        ->postJson(route('api.posts.attach-media-from-upload', $apiPost), ['upload_token' => mediaParityUpload($this)->upload_token, ...$input])
+        ->assertSuccessful();
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUploadTool::class, ['post_id' => $mcpPost->id, 'upload_token' => mediaParityUpload($this)->upload_token, ...$input])
+        ->assertOk();
+
+    expect(data_get($apiPost->fresh()->media, '0.meta.alt_text'))->toBe($stored)
+        ->and(data_get($mcpPost->fresh()->media, '0.meta.alt_text'))->toBe($stored);
+})->with([
+    'both given' => [['alt' => 'A', 'meta' => ['alt_text' => 'B']], 'B'],
+    'empty alt' => [['alt' => ''], null],
+]);
+
+test('people tagged while attaching an upload or a url are stored the same through api and mcp', function () {
+    Http::fake(['example.com/*' => fn () => Http::response(file_get_contents(base_path('tests/fixtures/1x1.png')), 200, ['Content-Type' => 'image/png'])]);
+    $tags = [['username' => 'alice', 'x' => 0.25, 'y' => 0.5], ['username' => 'bob', 'x' => 0.75, 'y' => 0.5]];
+    $posts = collect(['api upload', 'mcp upload', 'api url', 'mcp url'])->mapWithKeys(fn (string $leg): array => [$leg => mediaParityPost($this)]);
+
+    $this->withHeaders(parityApi($this->token))
+        ->postJson(route('api.posts.attach-media-from-upload', $posts['api upload']), ['upload_token' => mediaParityUpload($this)->upload_token, 'meta' => ['user_tags' => $tags]])
+        ->assertSuccessful();
+    $this->withHeaders(parityApi($this->token))
+        ->postJson(route('api.posts.attach-media-from-url', $posts['api url']), ['urls' => [['url' => 'https://example.com/a.png', 'meta' => ['user_tags' => $tags]]]])
+        ->assertSuccessful();
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUploadTool::class, ['post_id' => $posts['mcp upload']->id, 'upload_token' => mediaParityUpload($this)->upload_token, 'meta' => ['user_tags' => $tags]])
+        ->assertOk();
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUrlTool::class, ['post_id' => $posts['mcp url']->id, 'urls' => [['url' => 'https://example.com/a.png', 'meta' => ['user_tags' => $tags]]]])
+        ->assertOk();
+
+    expect($posts->map(fn (Post $post): mixed => data_get($post->fresh()->media, '0.meta.user_tags'))->all())
+        ->toEqual(['api upload' => $tags, 'mcp upload' => $tags, 'api url' => $tags, 'mcp url' => $tags]);
+});
+
+test('a video cover frame set while attaching an upload is stored the same through api and mcp', function () {
+    $apiPost = mediaParityPost($this);
+    $mcpPost = mediaParityPost($this);
+
+    $this->withHeaders(parityApi($this->token))
+        ->postJson(route('api.posts.attach-media-from-upload', $apiPost), ['upload_token' => mediaParityUpload($this, 'video')->upload_token, 'meta' => ['cover_offset_ms' => 1500]])
+        ->assertSuccessful();
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUploadTool::class, ['post_id' => $mcpPost->id, 'upload_token' => mediaParityUpload($this, 'video')->upload_token, 'meta' => ['cover_offset_ms' => 1500]])
+        ->assertOk();
+
+    expect(data_get($apiPost->fresh()->media, '0.meta.cover_offset_ms'))->toBe(1500)
+        ->and(data_get($mcpPost->fresh()->media, '0.meta.cover_offset_ms'))->toBe(1500);
+});
+
+test('more than twenty people tagged while attaching are refused through api and mcp', function () {
+    $tags = collect(range(1, 21))->map(fn (int $index): array => ['username' => "person{$index}", 'x' => 0.5, 'y' => 0.5])->all();
+    $apiPost = mediaParityPost($this);
+    $mcpPost = mediaParityPost($this);
+
+    $this->withHeaders(parityApi($this->token))
+        ->postJson(route('api.posts.attach-media-from-upload', $apiPost), ['upload_token' => mediaParityUpload($this)->upload_token, 'meta' => ['user_tags' => $tags]])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('meta');
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUploadTool::class, ['post_id' => $mcpPost->id, 'upload_token' => mediaParityUpload($this)->upload_token, 'meta' => ['user_tags' => $tags]])
+        ->assertHasErrors();
+
+    expect($apiPost->fresh()->media)->toBeEmpty()->and($mcpPost->fresh()->media)->toBeEmpty();
+});
+
 test('an expired or unknown upload token is refused by both surfaces', function () {
     $apiPost = mediaParityPost($this);
     $mcpPost = mediaParityPost($this);
@@ -264,6 +335,38 @@ test('user tags and a video cover frame set through the api update and the mcp u
 
     expect($editable($apiPost))->toEqual($editable($mcpPost))
         ->toEqual([['cover_offset_ms' => 1500, 'user_tags' => null], ['cover_offset_ms' => null, 'user_tags' => $tags]]);
+});
+
+test('several people tagged on one photo are kept up to twenty and refused beyond it on the api and mcp', function () {
+    $tags = fn (int $count): array => collect(range(1, $count))
+        ->map(fn (int $index): array => ['username' => "person{$index}", 'x' => 0.5, 'y' => 0.5])
+        ->all();
+
+    foreach ([20 => true, 21 => false] as $count => $accepted) {
+        $apiPost = mediaParityPost($this);
+        $mcpPost = mediaParityPost($this);
+        auth()->forgetGuards();
+        $api = $this->withHeaders(parityApi($this->token))
+            ->putJson(route('api.posts.update', $apiPost), ['status' => 'draft', 'media' => [
+                ['upload_token' => mediaParityUpload($this)->upload_token, 'meta' => ['user_tags' => $tags($count)]],
+            ]]);
+        $mcp = TryPostServer::actingAs($this->user)
+            ->tool(UpdatePostTool::class, ['post_id' => $mcpPost->id, 'media' => [
+                ['upload_token' => mediaParityUpload($this)->upload_token, 'meta' => ['user_tags' => $tags($count)]],
+            ]]);
+
+        if ($accepted) {
+            $api->assertSuccessful();
+            $mcp->assertOk();
+            expect(data_get($apiPost->fresh()->media, '0.meta.user_tags'))->toHaveCount(20)
+                ->and(data_get($mcpPost->fresh()->media, '0.meta.user_tags'))->toHaveCount(20);
+        } else {
+            $api->assertUnprocessable()->assertJsonValidationErrors('media.0.meta');
+            $mcp->assertHasErrors();
+            expect($apiPost->fresh()->media)->toBeEmpty()
+                ->and($mcpPost->fresh()->media)->toBeEmpty();
+        }
+    }
 });
 
 test('a media type the network does not accept gets the same translated message on both surfaces', function () {

@@ -13,10 +13,12 @@ import {
     goals as goalsRoute,
     persona as personaRoute,
     plan as planRoute,
+    software as softwareRoute,
 } from '@/routes/app/welcome';
 import type { Language, SharedData, WelcomeStep } from '@/types';
 
 const maxWidthClass = {
+    sm: 'max-w-sm',
     lg: 'max-w-lg',
     '3xl': 'max-w-3xl',
     '4xl': 'max-w-4xl',
@@ -31,12 +33,14 @@ const props = withDefaults(
         description?: string;
         step?: WelcomeStep;
         size?: MaxWidthSize;
+        actionsSize?: MaxWidthSize;
     }>(),
     {
         title: undefined,
         description: undefined,
         step: undefined,
         size: '3xl',
+        actionsSize: 'sm',
     },
 );
 
@@ -57,6 +61,7 @@ const changeLanguage = (locale: string): void => {
 const steps = [
     { key: 'persona', route: personaRoute() },
     { key: 'goals', route: goalsRoute() },
+    { key: 'software', route: softwareRoute() },
     { key: 'plan', route: planRoute() },
 ] as const;
 
@@ -140,13 +145,13 @@ const previousStep = computed(() =>
                     trigger-class="bg-card max-sm:px-2 max-sm:[&>span]:sr-only"
                     @update:model-value="changeLanguage"
                 />
-                <ThemeToggle compact-on-mobile />
+                <ThemeToggle />
             </div>
         </header>
 
         <main
             :class="[
-                'flex flex-1 flex-col px-4 py-12 sm:px-8 lg:px-12',
+                'flex flex-1 flex-col px-4 pt-6 pb-12 sm:px-8 sm:pt-12 lg:px-12',
                 $slots.actions &&
                     'max-sm:pb-[calc(7rem+env(safe-area-inset-bottom))]',
             ]"
@@ -168,7 +173,8 @@ const previousStep = computed(() =>
                     />
                     <h1
                         v-if="title"
-                        class="motion-auth-reveal mx-auto max-w-xl font-heading text-[28px] leading-9 font-medium text-balance text-foreground sm:text-[32px] sm:leading-10"
+                        class="motion-auth-reveal mx-auto max-w-xl font-heading text-[22px] leading-7 font-medium text-balance text-foreground sm:text-[32px] sm:leading-10"
+                        data-testid="welcome-title"
                     >
                         {{ title }}
                     </h1>
@@ -186,7 +192,10 @@ const previousStep = computed(() =>
 
                 <div
                     v-if="$slots.actions"
-                    class="flex w-full max-w-sm flex-col items-center gap-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-10 max-sm:max-w-none max-sm:border-t max-sm:border-border max-sm:bg-card max-sm:px-4 max-sm:pt-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                    :class="[
+                        'flex w-full flex-col items-center gap-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-10 max-sm:max-w-none max-sm:border-t max-sm:border-border max-sm:bg-card max-sm:px-4 max-sm:pt-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]',
+                        maxWidthClass[actionsSize],
+                    ]"
                     data-testid="welcome-actions"
                 >
                     <slot name="actions" />

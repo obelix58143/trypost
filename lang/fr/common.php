@@ -7,6 +7,16 @@ return [
 
     'back' => 'Retour',
 
+    'unsaved_changes' => [
+
+        'title' => 'Abandonner les modifications ?',
+
+        'description' => 'Les modifications de cette publication n\'ont pas été enregistrées. Si vous quittez maintenant, elles seront perdues.',
+
+        'discard' => 'Abandonner',
+
+    ],
+
     'confirm_modal' => [
         'type' => 'Saisissez',
         'to_confirm' => 'pour confirmer.',
@@ -59,6 +69,7 @@ return [
     'clear' => 'Effacer',
     'close' => 'Fermer',
     'more' => 'Plus',
+    'learn_more' => 'En savoir plus',
     'play' => 'Lire',
     'loading' => 'Chargement...',
     'loading_more' => 'Chargement...',

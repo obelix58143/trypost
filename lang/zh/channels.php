@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => '请重新连接此频道以继续发布。',
     'reconnect' => '重新连接',
     'refresh_connection' => '刷新连接',
+    'link_facebook_page' => '关联 Facebook 主页',
     'view_profile' => '查看主页',
     'disconnect' => '断开连接',
     'actions' => '频道操作',
 
     'reorder' => [
         'handle' => '拖动以重新排序 :name',
-        'move_up' => '上移',
-        'move_down' => '下移',
         'failed' => '无法重新排序你的频道。请重试。',
         'stale' => '加载页面后你的频道已发生变化。请刷新后重试。',
     ],

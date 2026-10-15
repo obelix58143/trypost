@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IconX } from '@tabler/icons-vue';
+import { IconCrosshair, IconX } from '@tabler/icons-vue';
 import { computed, ref, watch } from 'vue';
 
 import { show as showMediaFile } from '@/actions/App/Http/Controllers/App/MediaFileController';
@@ -97,6 +97,7 @@ const onSectionChange = (value: string | number): void => {
 
 const pendingPoint = ref<{ x: number; y: number } | null>(null);
 const tagging = ref(false);
+const movingIndex = ref<number | null>(null);
 const applying = ref(false);
 const failed = ref(false);
 const imageErrors = ref<Record<number, boolean>>({});
@@ -198,19 +199,27 @@ const selectItem = (index: number): void => {
     activeIndex.value = index;
     pendingPoint.value = null;
     tagging.value = false;
+    movingIndex.value = null;
     tab.value = tabFor(tab.value);
 };
 
 const onStagePress = (point: { x: number; y: number }): void => {
-    if (
-        tab.value !== 'tags' ||
-        !tagging.value ||
-        edit.value.userTags.length >= USER_TAGS_MAX
-    )
-        return;
+    if (tab.value !== 'tags' || !edit.value) return;
     const round = (value: number): number =>
         Math.round(Math.min(1, Math.max(0, value)) * 10000) / 10000;
-    pendingPoint.value = { x: round(point.x), y: round(point.y) };
+    const placed = { x: round(point.x), y: round(point.y) };
+    const moving = movingIndex.value;
+
+    if (moving !== null) {
+        edit.value.userTags = edit.value.userTags.map((tag, index) =>
+            index === moving ? { ...tag, ...placed } : tag,
+        );
+        movingIndex.value = null;
+        return;
+    }
+
+    if (!tagging.value || edit.value.userTags.length >= USER_TAGS_MAX) return;
+    pendingPoint.value = placed;
 };
 
 const resetCrop = (): void => resetGeometry(basePreset.value);
@@ -301,6 +310,7 @@ watch(
         section.value = 'crop';
         pendingPoint.value = null;
         tagging.value = false;
+        movingIndex.value = null;
         failed.value = false;
     },
 );
@@ -310,6 +320,7 @@ watch(() => edit.value?.coverOffsetMs, seekStageVideo);
 watch([tab, section], () => {
     pendingPoint.value = null;
     tagging.value = false;
+    movingIndex.value = null;
 });
 
 watch(tagging, (isTagging) => {
@@ -380,7 +391,8 @@ watch(tagging, (isTagging) => {
                             :resize-any-ratio="isPhoto"
                             test-id-prefix="media-editor"
                             :box-class="
-                                tab === 'tags' && tagging
+                                tab === 'tags' &&
+                                (tagging || movingIndex !== null)
                                     ? 'cursor-crosshair'
                                     : ''
                             "
@@ -392,13 +404,31 @@ watch(tagging, (isTagging) => {
                                 <span
                                     v-for="(tag, tagIndex) in edit.userTags"
                                     :key="`${tag.username}-${tagIndex}`"
-                                    class="pointer-events-none absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-xs font-medium text-background shadow"
+                                    class="pointer-events-none absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-xs font-medium tabular-nums shadow ring-2 ring-white transition-transform"
+                                    :class="
+                                        movingIndex === tagIndex
+                                            ? 'scale-125 bg-primary-strong text-primary-strong-foreground ring-primary-strong/30'
+                                            : 'bg-foreground text-background'
+                                    "
+                                    :data-testid="`media-editor-tag-marker-${tagIndex}`"
                                     :style="{
                                         left: `${tag.x * 100}%`,
                                         top: `${tag.y * 100}%`,
                                     }"
                                     >{{ tagIndex + 1 }}</span
                                 >
+                                <span
+                                    v-if="movingIndex !== null"
+                                    class="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-foreground/85 px-3 py-1 text-xs whitespace-nowrap text-background shadow"
+                                    data-testid="media-editor-tag-move-pill"
+                                >
+                                    <IconCrosshair class="size-3.5" />
+                                    {{
+                                        $t(
+                                            'posts.composer.media_editor.tags_move_pill',
+                                        )
+                                    }}
+                                </span>
                                 <span
                                     v-if="pendingPoint"
                                     data-testid="media-editor-tag-point"
@@ -462,7 +492,7 @@ watch(tagging, (isTagging) => {
                 </div>
 
                 <aside
-                    class="flex w-full shrink-0 flex-col gap-4 lg:w-70 lg:overflow-y-auto"
+                    class="flex w-full shrink-0 flex-col gap-4 lg:w-80 lg:overflow-y-auto"
                 >
                     <div
                         v-if="tabs.length > 1 || tabs[0] === 'thumbnail'"
@@ -545,6 +575,7 @@ watch(tagging, (isTagging) => {
                         v-model:edit="edit"
                         v-model:pending-point="pendingPoint"
                         v-model:tagging="tagging"
+                        v-model:moving-index="movingIndex"
                     />
                 </aside>
             </div>

@@ -1,7 +1,11 @@
-import { getCurrentScope, onScopeDispose, ref } from 'vue';
+import { computed, getCurrentScope, onScopeDispose, ref } from 'vue';
 import type { ComputedRef, Ref } from 'vue';
 
-import type { DestinationOverride } from '@/composables/usePostComposition';
+import { mediaUploadLimits } from '@/composables/useMediaUpload';
+import type {
+    ComposerAccount,
+    DestinationOverride,
+} from '@/composables/usePostComposition';
 import dayjs from '@/dayjs';
 import { classify, MediaType } from '@/lib/mediaType';
 import type { MediaItem, MediaSource, SourceMetaValue } from '@/types/media';
@@ -181,3 +185,38 @@ export const useComposerAutosave = (
 
     return { saved, save, flush, clear };
 };
+
+/**
+ * What the "resume your unfinished post" dialog shows of an autosaved post:
+ * its channels that still exist, its media still within the upload
+ * retention, and its first line of text.
+ */
+export const useAutosavePreview = (
+    saved: Ref<AutosaveSnapshot | null>,
+    accounts: () => ComposerAccount[],
+) => ({
+    accounts: computed(() =>
+        (saved.value?.accountIds ?? []).flatMap((id) => {
+            const account = accounts().find((candidate) => candidate.id === id);
+
+            return account ? [account] : [];
+        }),
+    ),
+    mediaCount: computed(
+        () =>
+            (saved.value?.media ?? []).filter(
+                (item) =>
+                    !isExpiredUpload(
+                        item,
+                        mediaUploadLimits().upload_retention_hours,
+                    ),
+            ).length,
+    ),
+    preview: computed(
+        () =>
+            (saved.value?.content ?? '')
+                .split('\n')
+                .map((line) => line.trim())
+                .find(Boolean) ?? '',
+    ),
+});

@@ -5,18 +5,21 @@ declare(strict_types=1);
 return [
     'title' => 'MCP',
     'subtitle' => 'Подключите ИИ-ассистентов к пространству.',
-    'copy_step' => 'Скопируйте URL сервера TryPost',
-    'open_step' => 'Откройте ИИ-ассистента',
-    'copy' => 'Копировать URL',
+    'copy' => 'Копировать',
     'connect' => 'Подключить :client',
-    'step_add' => 'Вставьте имя, URL или config ниже в своё приложение. Вход откроется в браузере при первом подключении.',
     'name_label' => 'Имя',
     'url_label' => 'URL сервера',
     'config_label' => 'Config',
-    'connected_title' => 'Подключённые приложения',
+    'tabs' => [
+        'connected' => 'Подключённые приложения',
+        'connect' => 'Подключить приложение',
+    ],
+    'connect_other' => 'Подключить',
+    'other_hint' => 'Любое приложение с поддержкой MCP.',
+    'other_dialog_title' => 'Подключите TryPost к другому приложению',
     'connected_description' => 'Ассистенты, в которые вы вошли. Отключите те, которыми больше не пользуетесь.',
     'connected_empty_title' => 'Нет подключённых приложений',
-    'connected_empty' => 'Используйте Claude, ChatGPT или другого клиента выше.',
+    'connected_empty' => 'Подключите Claude, ChatGPT или другое приложение, чтобы увидеть его здесь.',
     'disconnect' => 'Отключить',
     'disconnect_title' => 'Отключить приложение',
     'disconnect_confirm' => 'Это выйдет из аккаунта TryPost в приложении. Нужно будет подключиться снова, чтобы снова использовать MCP.',
@@ -24,9 +27,6 @@ return [
     'copied' => 'Скопировано',
     'last_used' => 'Последнее использование',
     'never' => 'Никогда',
-    'documentation_title' => 'Документация',
-    'documentation_description' => 'Гайды по клиентам, доступные tools и решение проблем.',
-    'view_docs' => 'Открыть документацию',
     'connector_name' => 'TryPost',
 
     'authorize' => [
@@ -53,18 +53,29 @@ return [
     ],
 
     'other_clients_title' => 'Другие приложения',
-    'other_clients_description' => 'Cursor, VS Code, Claude Code и всё, что говорит на MCP.',
 
-    'clients' => [
-        'claude' => 'Откройте Settings → Connectors, добавьте свой connector и вставьте URL выше.',
-        'chatgpt' => 'Откройте Settings → Apps & Connectors, создайте свой connector и вставьте URL выше.',
-        'cursor' => 'Добавьте TryPost как удалённый MCP-сервер в Cursor.',
-        'cursor_name' => 'Cursor',
-        'vscode' => 'Вставьте конфиг ниже в настройки MCP VS Code.',
-        'vscode_name' => 'VS Code',
-        'claude_code' => 'Вставьте конфиг ниже в настройки MCP Claude Code.',
-        'claude_code_name' => 'Claude Code',
-        'other' => 'Работает с любым клиентом, который читает config mcpServers.',
-        'other_name' => 'Другие',
+    'dialog' => [
+        'title' => 'Подключите TryPost к :client',
+        'description' => 'Это займёт около минуты. Страница обновится, как только вы подключитесь.',
+        'open' => 'Открыть :client',
+        'steps' => [
+            'claude' => [
+                'paste' => 'Вставьте URL в поле URL коннектора',
+                'add' => 'Нажмите «Добавить», затем «Подключить»',
+                'login' => 'Войдите в TryPost и выберите workspace',
+            ],
+            'chatgpt' => [
+                'developer' => 'Включите режим разработчика в настройках ChatGPT',
+                'create' => 'Создайте приложение TryPost и вставьте URL',
+                'login' => 'Войдите в TryPost и выберите workspace',
+            ],
+            'other' => [
+                'add' => 'Добавьте свой MCP-сервер в приложении',
+                'paste' => 'Вставьте имя и URL или конфигурацию',
+                'login' => 'Войдите в TryPost и выберите workspace',
+            ],
+        ],
+        'waiting' => 'Ждём подключения вашего ИИ…',
     ],
+
 ];

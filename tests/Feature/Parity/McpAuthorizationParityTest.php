@@ -70,6 +70,7 @@ use App\Mcp\Tools\Signature\UpdateSignatureTool;
 use App\Mcp\Tools\SocialAccount\CopyPostingScheduleTool;
 use App\Mcp\Tools\SocialAccount\CreatePinterestBoardTool;
 use App\Mcp\Tools\SocialAccount\GeneratePostingScheduleTool;
+use App\Mcp\Tools\SocialAccount\GetInstagramAudioTool;
 use App\Mcp\Tools\SocialAccount\GetPostingScheduleTool;
 use App\Mcp\Tools\SocialAccount\GetTikTokCreatorInfoTool;
 use App\Mcp\Tools\SocialAccount\ListDiscordChannelsTool;
@@ -78,6 +79,7 @@ use App\Mcp\Tools\SocialAccount\ListPinterestBoardsTool;
 use App\Mcp\Tools\SocialAccount\ListSocialAccountsTool;
 use App\Mcp\Tools\SocialAccount\MovePostToSlotTool;
 use App\Mcp\Tools\SocialAccount\ReorderQueueTool;
+use App\Mcp\Tools\SocialAccount\SearchInstagramAudioTool;
 use App\Mcp\Tools\SocialAccount\UpdatePostingScheduleTool;
 use App\Mcp\Tools\Webhook\CreateWebhookTool;
 use App\Mcp\Tools\Webhook\DeleteWebhookTool;
@@ -205,6 +207,7 @@ function mcpAuthParityFixture(Workspace $workspace, User $owner, ?User $actor = 
         'signature' => WorkspaceSignature::factory()->create(['workspace_id' => $workspace->id]),
         'discord' => SocialAccount::factory()->discord()->create(['workspace_id' => $workspace->id, 'platform_user_id' => (string) Str::uuid()]),
         'pinterest' => SocialAccount::factory()->pinterest()->create(['workspace_id' => $workspace->id, 'platform_user_id' => (string) Str::uuid()]),
+        'instagramFacebook' => SocialAccount::factory()->instagram()->create(['workspace_id' => $workspace->id, 'platform' => Platform::InstagramFacebook, 'platform_user_id' => (string) Str::uuid()]),
         'uploadToken' => $uploadToken,
         'publicationId' => (string) Str::uuid(),
         'missingId' => (string) Str::uuid(),
@@ -293,6 +296,8 @@ function mcpAuthParityTools(): array
         'update-signature-tool' => [UpdateSignatureTool::class, $everyMember, fn (TestCase $t, array $f) => $t->put(route('app.signatures.update', $f['signature']), $signature), fn (array $f) => ['signature_id' => $f['signature']->id, ...$signature]],
         'list-discord-channels-tool' => [ListDiscordChannelsTool::class, $everyMember, fn (TestCase $t, array $f) => $t->getJson(route('app.discord.channels', $f['discord'])), fn (array $f) => ['account_id' => $f['discord']->id]],
         'create-pinterest-board-tool' => [CreatePinterestBoardTool::class, $everyMember, fn (TestCase $t, array $f) => $t->postJson(route('app.pinterest.boards.store', $f['pinterest']), ['name' => 'Ideas']), fn (array $f) => ['account_id' => $f['pinterest']->id, 'name' => 'Ideas']],
+        'search-instagram-audio-tool' => [SearchInstagramAudioTool::class, $everyMember, fn (TestCase $t, array $f) => $t->getJson(route('app.instagram.audio.index', $f['instagramFacebook'])), fn (array $f) => ['account_id' => $f['instagramFacebook']->id]],
+        'get-instagram-audio-tool' => [GetInstagramAudioTool::class, $everyMember, fn (TestCase $t, array $f) => $t->getJson(route('app.instagram.audio.show', [$f['instagramFacebook'], '846373660299207'])), fn (array $f) => ['account_id' => $f['instagramFacebook']->id, 'audio_id' => '846373660299207']],
         'list-pinterest-boards-tool' => [ListPinterestBoardsTool::class, $everyMember, fn (TestCase $t, array $f) => $t->getJson(route('app.pinterest.boards.index', $f['pinterest'])), fn (array $f) => ['account_id' => $f['pinterest']->id]],
         'get-posting-schedule-tool' => [GetPostingScheduleTool::class, $everyMember, fn (TestCase $t, array $f) => $t->getJson(route('app.posts.composer.live')), fn (array $f) => ['account_id' => $f['linkedin']->id]],
         'update-posting-schedule-tool' => [UpdatePostingScheduleTool::class, $admins, fn (TestCase $t, array $f) => $t->putJson(route('app.channels.posting-schedule.update', $f['linkedin']), ['timezone' => 'UTC', 'posting_goal' => 2, 'posting_schedule' => null]), fn (array $f) => ['account_id' => $f['linkedin']->id, 'timezone' => 'UTC', 'posting_goal' => 2, 'posting_schedule' => null]],

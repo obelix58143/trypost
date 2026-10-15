@@ -18,6 +18,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Changelog ("What's New")
+    |--------------------------------------------------------------------------
+    |
+    | Shows the sidebar card and the "What's New" modal fed by the entries
+    | under resources/changelog/, synced with `php artisan changelog:sync`
+    | on every deploy. On by default, self-hosted included.
+    |
+    */
+
+    'changelog' => [
+        'enabled' => (bool) env('CHANGELOG_ENABLED', true),
+        'path' => resource_path('changelog'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Legal pages
     |--------------------------------------------------------------------------
     |
@@ -30,6 +46,22 @@ return [
     'legal' => [
         'terms_url' => env('LEGAL_TERMS_URL', 'https://trypost.it/terms'),
         'privacy_url' => env('LEGAL_PRIVACY_URL', 'https://trypost.it/privacy'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Well-known files
+    |--------------------------------------------------------------------------
+    |
+    | Files served at /.well-known/{name} as plain text, keyed by name. The
+    | content always comes from the environment so no install serves another
+    | install's tokens; an empty value answers 404. Add a provider with one
+    | line here and one env variable.
+    |
+    */
+
+    'well_known' => [
+        'openai-apps-challenge' => env('OPENAI_APPS_CHALLENGE'),
     ],
 
     /*

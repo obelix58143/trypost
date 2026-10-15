@@ -70,6 +70,7 @@ const onOpenChange = (open: boolean): void => {
 const submitComposition = (
     composition: PostComposition,
     createAnother: boolean,
+    onSaved?: () => void,
 ): void => {
     submitting.value = true;
     const payload: Record<string, any> = { ...composition };
@@ -90,6 +91,7 @@ const submitComposition = (
                 );
             }
             if (createAnother) openPostComposer();
+            onSaved?.();
         },
         onFinish: () => {
             submitting.value = false;

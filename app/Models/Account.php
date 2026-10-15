@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Traits\BillsOwnerAsStripeCustomer;
 use App\Models\Traits\HasUsage;
 use Carbon\CarbonInterface;
 use Database\Factories\AccountFactory;
@@ -12,12 +13,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Laravel\Cashier\Billable;
 
 class Account extends Model
 {
     /** @use HasFactory<AccountFactory> */
-    use Billable, HasFactory, HasUsage, HasUuids;
+    use BillsOwnerAsStripeCustomer, HasFactory, HasUsage, HasUuids;
 
     public const SUBSCRIPTION_NAME = 'default';
 
@@ -180,15 +180,5 @@ class Account extends Model
             'exp_month' => $card->exp_month,
             'exp_year' => $card->exp_year,
         ];
-    }
-
-    public function stripeEmail(): string
-    {
-        return $this->owner?->email ?? '';
-    }
-
-    public function stripeName(): string
-    {
-        return $this->name;
     }
 }

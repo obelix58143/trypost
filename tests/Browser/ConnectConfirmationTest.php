@@ -453,3 +453,40 @@ test('the fragment a network appends to the callback is gone once the confirmati
     expect($page->script('window.history.state?.page?.url ?? ""'))->not->toContain('#');
     $page->assertNoJavaScriptErrors();
 })->with(['#_=_']);
+
+test('finish shows its loading state and stays disabled while the connection is saved', function () {
+    $user = connectConfirmAdmin();
+    $this->actingAs($user);
+    connectConfirmFacebookPages();
+
+    $page = visit(route('app.social.facebook.connect', ['return_to' => connectConfirmPath('app.workspace.channels')]))->resize(1280, 900);
+    waitForConnectConfirmTestId($page, 'connect-identities');
+    $page->script(<<<'JS'
+        (() => {
+            const open = XMLHttpRequest.prototype.open;
+            const send = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+                this.__method = String(method).toUpperCase();
+                return open.call(this, method, url, ...rest);
+            };
+            XMLHttpRequest.prototype.send = function (body) {
+                if (this.__method === 'POST') {
+                    setTimeout(() => send.call(this, body), 1500);
+                    return;
+                }
+                return send.call(this, body);
+            };
+        })()
+    JS);
+
+    $page->click('[data-testid="connect-identity-facebook:page-1"]')
+        ->click('@connect-finish');
+
+    expect($page->script(<<<'JS'
+        (() => {
+            const button = document.querySelector('[data-testid="connect-finish"]');
+            return { disabled: button.disabled, loading: !!button.querySelector('.animate-spin') };
+        })()
+    JS))->toBe(['disabled' => true, 'loading' => true]);
+    $page->assertNoJavaScriptErrors();
+});

@@ -15,6 +15,13 @@ use App\Models\SocialAccount;
 
 class ChannelPostingScheduleController extends Controller
 {
+    public function show(SocialAccount $account): ChannelPostingScheduleResource
+    {
+        $this->authorize('view', $account);
+
+        return new ChannelPostingScheduleResource($account);
+    }
+
     public function update(UpdatePostingScheduleRequest $request, SocialAccount $account, UpdatePostingSchedule $update): ChannelPostingScheduleResource
     {
         $update->handle($account, $request->validated());

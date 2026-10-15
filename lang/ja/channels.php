@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => '投稿を続けるには、このチャンネルを再接続してください。',
     'reconnect' => '再接続',
     'refresh_connection' => '接続を更新',
+    'link_facebook_page' => 'Facebookページにリンク',
     'view_profile' => 'プロフィールを表示',
     'disconnect' => '接続解除',
     'actions' => 'チャンネルの操作',
 
     'reorder' => [
         'handle' => 'ドラッグして:nameを並べ替え',
-        'move_up' => '上へ移動',
-        'move_down' => '下へ移動',
         'failed' => 'チャンネルを並べ替えられませんでした。もう一度お試しください。',
         'stale' => 'ページを読み込んだ後にチャンネルが変更されました。更新してもう一度お試しください。',
     ],

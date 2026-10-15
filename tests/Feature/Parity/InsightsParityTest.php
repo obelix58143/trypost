@@ -357,7 +357,12 @@ function seedChannelInsightsParity(Workspace $workspace, User $user): array
         $post = null;
 
         if ($type !== null) {
-            $post = Post::factory()->forAccount($account, $type)->published()->create(['user_id' => $user->id]);
+            $post = Post::factory()->forAccount($account, $type)->published()->create([
+                'user_id' => $user->id,
+                'media' => $type === ContentType::InstagramReel
+                    ? [['id' => 'reel', 'path' => 'medias/reel.mp4', 'url' => 'https://cdn.trypost.test/medias/reel.mp4', 'type' => 'video', 'mime_type' => 'video/mp4']]
+                    : [],
+            ]);
 
             if ($labelled) {
                 $post->labels()->attach($label->id);

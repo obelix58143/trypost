@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => '계속 게시하려면 이 채널을 다시 연결하세요.',
     'reconnect' => '재연결',
     'refresh_connection' => '연결 새로고침',
+    'link_facebook_page' => 'Facebook 페이지에 연결',
     'view_profile' => '프로필 보기',
     'disconnect' => '연결 해제',
     'actions' => '채널 작업',
 
     'reorder' => [
         'handle' => '드래그하여 :name 순서 변경',
-        'move_up' => '위로 이동',
-        'move_down' => '아래로 이동',
         'failed' => '채널 순서를 변경하지 못했습니다. 다시 시도하세요.',
         'stale' => '페이지를 불러온 후 채널이 변경되었습니다. 새로고침한 후 다시 시도하세요.',
     ],

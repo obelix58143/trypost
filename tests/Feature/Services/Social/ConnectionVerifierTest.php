@@ -9,7 +9,9 @@ use App\Jobs\Analytics\BootstrapAccountAnalytics;
 use App\Jobs\Analytics\CollectAccountDailySnapshot;
 use App\Models\SocialAccount;
 use App\Services\Social\ConnectionVerifier;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -20,7 +22,7 @@ beforeEach(function () {
 
 test('verifies account without refresh when token is not expired', function () {
     Http::fake([
-        config('trypost.platforms.linkedin.api').'/*' => Http::response(['sub' => '123'], 200),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['sub' => '123'], 200),
     ]);
 
     $account = SocialAccount::factory()->linkedin()->create([
@@ -33,7 +35,7 @@ test('verifies account without refresh when token is not expired', function () {
     expect($result)->toBeTrue();
 
     Http::assertSentCount(1);
-    Http::assertSent(fn ($request) => str_contains($request->url(), config('trypost.platforms.linkedin.api').'/rest/userinfo'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), config('trypost.platforms.linkedin.api').'/v2/userinfo'));
 });
 
 test('refreshes linkedin token before verifying when expired', function () {
@@ -43,7 +45,7 @@ test('refreshes linkedin token before verifying when expired', function () {
             'refresh_token' => 'new_refresh_token',
             'expires_in' => 5184000,
         ], 200),
-        config('trypost.platforms.linkedin.api').'/*' => Http::response(['sub' => '123'], 200),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['sub' => '123'], 200),
     ]);
 
     $account = SocialAccount::factory()->linkedin()->create([
@@ -517,7 +519,7 @@ test('instagram refresh records a 60-day expiry when the response omits expires_
 
 test('does NOT refresh proactively when token still works (lazy refresh)', function () {
     Http::fake([
-        config('trypost.platforms.linkedin.api').'/*' => Http::response(['sub' => '123'], 200),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['sub' => '123'], 200),
     ]);
 
     // Token is "expiring soon" but access_token still works.
@@ -532,13 +534,13 @@ test('does NOT refresh proactively when token still works (lazy refresh)', funct
 
     // Refresh endpoint must NOT have been called — verify worked without it.
     Http::assertNotSent(fn ($request) => str_contains($request->url(), 'oauth/v2/accessToken'));
-    Http::assertSent(fn ($request) => str_contains($request->url(), config('trypost.platforms.linkedin.api').'/rest/userinfo'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), config('trypost.platforms.linkedin.api').'/v2/userinfo'));
 });
 
 test('refreshes lazily on 401 then retries verify', function () {
     Http::fake([
         // First verify call returns 401, second (after refresh) returns 200.
-        config('trypost.platforms.linkedin.api').'/*' => Http::sequence()
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::sequence()
             ->push(['error' => 'unauthorized'], 401)
             ->push(['sub' => '123'], 200),
         config('trypost.platforms.linkedin.oauth_api').'/oauth/v2/accessToken' => Http::response([
@@ -562,7 +564,7 @@ test('refreshes lazily on 401 then retries verify', function () {
 
 test('throws when verify returns 401 AND refresh also fails', function () {
     Http::fake([
-        config('trypost.platforms.linkedin.api').'/*' => Http::response(['error' => 'unauthorized'], 401),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['error' => 'unauthorized'], 401),
         config('trypost.platforms.linkedin.oauth_api').'/oauth/v2/accessToken' => Http::response(['error' => 'invalid_grant'], 400),
     ]);
 
@@ -583,7 +585,7 @@ test('forces refresh when token is hard-expired', function () {
             'refresh_token' => 'new_refresh_token',
             'expires_in' => 5184000,
         ], 200),
-        config('trypost.platforms.linkedin.api').'/*' => Http::response(['sub' => '123'], 200),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['sub' => '123'], 200),
     ]);
 
     $account = SocialAccount::factory()->linkedin()->create([
@@ -1143,7 +1145,7 @@ test('throws PlatformUnavailableException when the discord guild lookup fails tr
 
 test('linkedin verify treats a 5xx as platform unavailable, not a disconnect', function () {
     Http::fake([
-        config('trypost.platforms.linkedin.api').'/rest/userinfo' => Http::response(['message' => 'Internal Server Error'], 500),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['message' => 'Internal Server Error'], 500),
     ]);
 
     $account = SocialAccount::factory()->linkedin()->create();
@@ -1155,7 +1157,7 @@ test('linkedin verify treats a 5xx as platform unavailable, not a disconnect', f
 test('linkedin verify throws TokenExpiredException on a bare 401', function () {
     Http::fake([
         config('trypost.platforms.linkedin.oauth_api').'/oauth/v2/accessToken' => Http::response(['error' => 'invalid_grant'], 400),
-        config('trypost.platforms.linkedin.api').'/rest/userinfo' => Http::response(['message' => 'Unauthorized'], 401),
+        config('trypost.platforms.linkedin.api').'/v2/userinfo' => Http::response(['message' => 'Unauthorized'], 401),
     ]);
 
     $account = SocialAccount::factory()->linkedin()->create();
@@ -1530,4 +1532,96 @@ test('a refresh that loses the race reuses the token the winner stored instead o
         ->and($loser->access_token)->toBe('winner-access')
         ->and($loser->refresh_token)->toBe('winner-refresh');
     Http::assertNothingSent();
+});
+
+test('instagram login verify remembers the professional account id of an account connected before it was stored', function () {
+    Http::fake([
+        config('trypost.platforms.instagram.graph_api').'/me*' => Http::response(['id' => 'app-scoped-1', 'username' => 'trypost', 'user_id' => '17841400000000001']),
+    ]);
+
+    $account = SocialAccount::factory()->instagram()->create([
+        'token_expires_at' => now()->addDays(30),
+        'meta' => ['username' => 'trypost'],
+    ]);
+
+    expect((new ConnectionVerifier)->verify($account))->toBeTrue()
+        ->and($account->fresh()->meta)->toEqual(['username' => 'trypost', 'ig_user_id' => '17841400000000001']);
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'fields=id%2Cusername%2Cuser_id'));
+});
+
+test('instagram via facebook verify asks for no user_id, which a page token does not have', function () {
+    Http::fake([
+        config('trypost.platforms.instagram-facebook.graph_api').'/me*' => Http::response(['id' => 'page-1', 'username' => 'trypost']),
+    ]);
+
+    $account = SocialAccount::factory()->instagram()->create([
+        'platform' => 'instagram-facebook',
+        'token_expires_at' => now()->addDays(30),
+        'meta' => [],
+    ]);
+
+    expect((new ConnectionVerifier)->verify($account))->toBeTrue()
+        ->and(data_get($account->fresh()->meta, 'ig_user_id'))->toBeNull();
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'fields=id%2Cusername&'));
+});
+
+test('remembering the instagram account id keeps meta saved meanwhile by a reconnect', function () {
+    Http::fake([
+        config('trypost.platforms.instagram.graph_api').'/me*' => Http::response(['id' => 'app-scoped-1', 'username' => 'trypost', 'user_id' => '17841400000000001']),
+    ]);
+    $account = SocialAccount::factory()->instagram()->create([
+        'token_expires_at' => now()->addDays(30),
+        'meta' => ['username' => 'trypost'],
+    ]);
+    SocialAccount::query()->whereKey($account->id)->update(['meta->account_type' => 'BUSINESS']);
+
+    (new ConnectionVerifier)->verify($account);
+
+    expect($account->fresh()->meta)->toEqual(['username' => 'trypost', 'account_type' => 'BUSINESS', 'ig_user_id' => '17841400000000001']);
+});
+
+test('remembering the instagram account id works on an account with empty meta', function (?array $meta) {
+    Http::fake([
+        config('trypost.platforms.instagram.graph_api').'/me*' => Http::response(['id' => 'app-scoped-1', 'username' => 'trypost', 'user_id' => '17841400000000001']),
+    ]);
+    $account = SocialAccount::factory()->instagram()->create([
+        'token_expires_at' => now()->addDays(30),
+        'meta' => $meta,
+    ]);
+
+    expect((new ConnectionVerifier)->verify($account))->toBeTrue()
+        ->and($account->fresh()->meta)->toEqual(['ig_user_id' => '17841400000000001']);
+})->with(['no meta' => [null], 'empty meta' => [[]]]);
+
+test('instagram login verify leaves meta alone when the profile has no professional account id', function () {
+    Http::fake([
+        config('trypost.platforms.instagram.graph_api').'/me*' => Http::response(['id' => 'app-scoped-1', 'username' => 'trypost']),
+    ]);
+    $account = SocialAccount::factory()->instagram()->create([
+        'token_expires_at' => now()->addDays(30),
+        'meta' => ['username' => 'trypost'],
+    ]);
+
+    expect((new ConnectionVerifier)->verify($account))->toBeTrue()
+        ->and($account->fresh()->meta)->toEqual(['username' => 'trypost']);
+});
+
+test('instagram login verify writes nothing when the professional account id is already stored', function () {
+    Http::fake([
+        config('trypost.platforms.instagram.graph_api').'/me*' => Http::response(['id' => 'app-scoped-1', 'username' => 'trypost', 'user_id' => 17841400000000001]),
+    ]);
+    $account = SocialAccount::factory()->instagram()->create([
+        'token_expires_at' => now()->addDays(30),
+        'meta' => ['username' => 'trypost', 'ig_user_id' => '17841400000000001'],
+    ]);
+    $metaWrites = [];
+    DB::listen(function (QueryExecuted $query) use (&$metaWrites): void {
+        if (str_starts_with(strtolower($query->sql), 'update') && str_contains($query->sql.json_encode($query->bindings), 'ig_user_id')) {
+            $metaWrites[] = $query->sql;
+        }
+    });
+
+    expect((new ConnectionVerifier)->verify($account))->toBeTrue()
+        ->and($metaWrites)->toBe([])
+        ->and($account->fresh()->meta)->toEqual(['username' => 'trypost', 'ig_user_id' => '17841400000000001']);
 });

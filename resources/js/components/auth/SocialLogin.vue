@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { IconKey } from '@tabler/icons-vue';
 import { usePage } from '@inertiajs/vue3';
+import { IconKey } from '@tabler/icons-vue';
 import { computed } from 'vue';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,9 @@ const googleEnabled = computed(() => Boolean(page.props.googleAuthEnabled));
 const githubEnabled = computed(() => Boolean(page.props.githubAuthEnabled));
 const oidcEnabled = computed(() => Boolean(page.props.oidcAuthEnabled));
 const oidcLabel = computed(() => String(page.props.oidcDisplayName || 'SSO'));
-const hasSocial = computed(() => googleEnabled.value || githubEnabled.value || oidcEnabled.value);
+const hasSocial = computed(
+    () => googleEnabled.value || githubEnabled.value || oidcEnabled.value,
+);
 
 const detected = detectPreferences();
 
@@ -85,9 +87,19 @@ const oidcUrl = computed(() => oidcRedirect.url({ query: query.value }));
                 }}
             </Button>
 
-            <Button v-if="oidcEnabled" variant="outline" class="w-full" as="a" :href="oidcUrl">
+            <Button
+                v-if="oidcEnabled"
+                variant="outline"
+                class="w-full"
+                as="a"
+                :href="oidcUrl"
+            >
                 <IconKey class="size-4" />
-                {{ mode === 'login' ? $t('auth.oidc_login', { provider: oidcLabel }) : $t('auth.oidc_signup', { provider: oidcLabel }) }}
+                {{
+                    mode === 'login'
+                        ? $t('auth.oidc_login', { provider: oidcLabel })
+                        : $t('auth.oidc_signup', { provider: oidcLabel })
+                }}
             </Button>
         </div>
 

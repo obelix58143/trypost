@@ -1,3 +1,4 @@
+import { usePage } from '@inertiajs/vue3';
 import {
     computed,
     getCurrentScope,
@@ -9,7 +10,7 @@ import type { ComputedRef, MaybeRefOrGetter, Ref } from 'vue';
 
 import { isHeic, uploadTypeOf } from '@/lib/mediaType';
 import { storeChunked } from '@/routes/app/media';
-import type { MediaUploadLimits } from '@/types';
+import type { MediaUploadLimits, SharedData } from '@/types';
 import type { MediaItem } from '@/types/media';
 import { ChunkedUploadError, uploadChunked } from '@/utils/chunkedUpload';
 
@@ -63,6 +64,48 @@ export interface MediaUploader {
         reason?: string,
     ) => void;
 }
+
+/** The upload limits the server shares, or none at all before they arrive. */
+export const mediaUploadLimits = (): MediaUploadLimits =>
+    usePage<SharedData>().props.mediaUploadLimits ?? {
+        max_bytes: { image: 0, video: 0, document: 0 },
+        extensions: { image: [], video: [], document: [] },
+        upload_retention_hours: 0,
+        heic: false,
+    };
+
+/**
+ * One uploader that shows both lists: the shared one (uploads started in the
+ * shared editor) and its own. Each upload is retried, cancelled or removed
+ * by the uploader that started it.
+ */
+export const withSharedUploads = (
+    own: MediaUploader,
+    shared: MediaUploader,
+): MediaUploader => {
+    const owner = (key: string): MediaUploader =>
+        shared.entries.value.some((entry) => entry.key === key) ||
+        shared.imports.value.some((pending) => pending.key === key)
+            ? shared
+            : own;
+
+    return {
+        ...own,
+        entries: computed(() => [
+            ...shared.entries.value,
+            ...own.entries.value,
+        ]),
+        imports: computed(() => [
+            ...shared.imports.value,
+            ...own.imports.value,
+        ]),
+        busy: computed(() => shared.busy.value || own.busy.value),
+        failed: computed(() => shared.failed.value || own.failed.value),
+        retry: (key) => owner(key).retry(key),
+        cancel: (key) => owner(key).cancel(key),
+        remove: (key) => owner(key).remove(key),
+    };
+};
 
 export const MAX_CONCURRENT_UPLOADS = 3;
 

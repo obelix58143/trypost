@@ -2,8 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import {
     IconAlertCircle,
-    IconArrowDown,
-    IconArrowUp,
+    IconBrandFacebook,
     IconDotsVertical,
     IconExternalLink,
     IconRefresh,
@@ -33,16 +32,18 @@ const props = withDefaults(
     defineProps<{
         channel: ConnectedAccount;
         showSettings?: boolean;
-        canMoveUp?: boolean;
-        canMoveDown?: boolean;
+        canLinkFacebook?: boolean;
     }>(),
-    { showSettings: true, canMoveUp: false, canMoveDown: false },
+    {
+        showSettings: true,
+        canLinkFacebook: false,
+    },
 );
 
 const emit = defineEmits<{
     reconnect: [channel: ConnectedAccount];
+    linkFacebook: [channel: ConnectedAccount];
     disconnect: [channel: ConnectedAccount];
-    move: [channel: ConnectedAccount, offset: -1 | 1];
 }>();
 
 const lost = computed(() => isConnectionLost(props.channel));
@@ -55,8 +56,6 @@ const typeKey = computed(() => accountTypeKey(props.channel));
         class="flex items-center gap-3 rounded-xl border border-border bg-card p-4"
         :data-testid="`channel-row-${channel.id}`"
     >
-        <slot name="handle" />
-
         <ChannelAvatar
             :status="channel.status"
             :account-id="channel.id"
@@ -144,31 +143,20 @@ const typeKey = computed(() => accountTypeKey(props.channel));
                         </a>
                     </DropdownMenuItem>
                     <DropdownMenuItem
+                        v-if="canLinkFacebook"
+                        :data-testid="`channel-menu-link-facebook-${channel.id}`"
+                        @click="emit('linkFacebook', channel)"
+                    >
+                        <IconBrandFacebook class="size-4" />
+                        {{ $t('channels.link_facebook_page') }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                         :data-testid="`channel-menu-reconnect-${channel.id}`"
                         @click="emit('reconnect', channel)"
                     >
                         <IconRefresh class="size-4" />
                         {{ $t('channels.refresh_connection') }}
                     </DropdownMenuItem>
-                    <template v-if="canMoveUp || canMoveDown">
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            :disabled="!canMoveUp"
-                            :data-testid="`channel-menu-move-up-${channel.id}`"
-                            @click="emit('move', channel, -1)"
-                        >
-                            <IconArrowUp class="size-4" />
-                            {{ $t('channels.reorder.move_up') }}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                            :disabled="!canMoveDown"
-                            :data-testid="`channel-menu-move-down-${channel.id}`"
-                            @click="emit('move', channel, 1)"
-                        >
-                            <IconArrowDown class="size-4" />
-                            {{ $t('channels.reorder.move_down') }}
-                        </DropdownMenuItem>
-                    </template>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                         variant="destructive"

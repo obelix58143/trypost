@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { IconArrowUp, IconLoader2, IconMessage } from '@tabler/icons-vue';
+import { usePage } from '@inertiajs/vue3';
+import { IconArrowUp, IconLoader2 } from '@tabler/icons-vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import PostNoteItem from '@/components/posts/editor/PostNoteItem.vue';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupTextarea,
+} from '@/components/ui/input-group';
 import { usePostEcho } from '@/composables/echo/usePostEcho';
 import {
     destroy as destroyNote,
@@ -18,6 +26,7 @@ interface PaginatedResponse {
     meta: {
         current_page: number;
         last_page: number;
+        total: number;
     };
 }
 
@@ -28,14 +37,18 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    countChange: [delta: number];
+    count: [total: number];
 }>();
+
+const page = usePage();
+const currentUser = computed(() => page.props.auth.user);
 
 const csrfToken =
     document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
         ?.content ?? '';
 
 const notes = ref<PostNote[]>([]);
+const total = ref(0);
 const currentPage = ref(1);
 const lastPage = ref(1);
 const loading = ref(false);
@@ -45,7 +58,9 @@ const newBody = ref('');
 const highlightedId = ref<string | null>(null);
 
 const scrollContainer = ref<HTMLDivElement | null>(null);
-const composerInput = ref<HTMLTextAreaElement | null>(null);
+const composerInput = ref<{ $el: HTMLTextAreaElement } | null>(null);
+
+watch(total, (count) => emit('count', count));
 
 const hasOlderNotes = computed(() => currentPage.value < lastPage.value);
 const canSend = computed(() => newBody.value.trim() !== '' && !sending.value);
@@ -84,6 +99,7 @@ const loadNotes = async (page = 1) => {
         const chronological = [...data.data].reverse();
         currentPage.value = data.meta.current_page;
         lastPage.value = data.meta.last_page;
+        total.value = data.meta.total;
 
         if (page === 1) {
             notes.value = chronological;
@@ -108,7 +124,7 @@ const loadOlderNotes = () => {
 };
 
 const focusComposer = () => {
-    composerInput.value?.focus();
+    composerInput.value?.$el.focus();
 };
 
 const sendNote = async () => {
@@ -132,7 +148,7 @@ const sendNote = async () => {
         const created: PostNote = await response.json();
         notes.value.push(created);
 
-        emit('countChange', 1);
+        total.value++;
         newBody.value = '';
         await nextTick();
         scrollToBottom();
@@ -169,7 +185,7 @@ const deleteNote = async (note: PostNote) => {
     }
 
     notes.value = notes.value.filter((item) => item.id !== note.id);
-    emit('countChange', -1);
+    total.value = Math.max(0, total.value - 1);
 };
 
 const handleComposerKeydown = (event: KeyboardEvent) => {
@@ -237,18 +253,18 @@ watch(
 </script>
 
 <template>
-    <div class="flex min-h-0 flex-col">
+    <section class="flex min-h-0 flex-col gap-3">
         <div
             ref="scrollContainer"
-            class="max-h-80 min-h-0 overflow-y-auto overscroll-contain"
+            class="-mx-2 max-h-80 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain px-2"
             data-testid="notes-list"
         >
-            <div v-if="hasOlderNotes" class="flex justify-center pt-2">
+            <div v-if="hasOlderNotes" class="flex justify-start pb-2">
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    class="text-muted-foreground"
+                    class="-ms-2 text-muted-foreground"
                     :disabled="loading"
                     @click="loadOlderNotes"
                 >
@@ -262,33 +278,27 @@ watch(
 
             <div
                 v-if="loading && notes.length === 0"
-                class="flex items-center justify-center py-10"
+                class="flex items-center gap-3 py-1"
             >
                 <IconLoader2
-                    class="size-5 animate-spin text-muted-foreground"
+                    class="size-4 animate-spin text-muted-foreground"
                 />
             </div>
 
-            <div
+            <p
                 v-else-if="notes.length === 0"
-                class="flex flex-col items-center px-6 py-8 text-center"
+                class="py-1 text-sm text-muted-foreground"
                 data-testid="notes-empty"
             >
-                <div
-                    class="mb-3 flex size-9 items-center justify-center rounded-full bg-accent text-muted-foreground"
-                >
-                    <IconMessage class="size-4.5" stroke-width="1.75" />
-                </div>
-                <p class="text-sm font-emphasis text-foreground">
-                    {{ $t('notes.empty_title') }}
-                </p>
-                <p class="mt-0.5 text-xs text-muted-foreground">
-                    {{ $t('notes.empty_description') }}
-                </p>
-            </div>
+                {{ $t('notes.empty') }}
+            </p>
 
-            <ul v-else class="flex flex-col gap-0.5 p-2">
-                <li v-for="note in notes" :key="note.id">
+            <ol v-else class="flex flex-col">
+                <li
+                    v-for="note in notes"
+                    :key="note.id"
+                    class="relative pb-3 last:pb-0 [&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:start-[13.5px] [&:not(:last-child)]:before:top-9 [&:not(:last-child)]:before:bottom-1 [&:not(:last-child)]:before:w-px [&:not(:last-child)]:before:bg-border-strong"
+                >
                     <PostNoteItem
                         :note="note"
                         :current-user-id="currentUserId"
@@ -297,34 +307,49 @@ watch(
                         @delete="deleteNote(note)"
                     />
                 </li>
-            </ul>
+            </ol>
         </div>
 
-        <div class="shrink-0 border-t border-border p-3">
-            <div class="flex items-end gap-2">
-                <textarea
+        <div class="flex shrink-0 items-end gap-3">
+            <Avatar
+                v-if="currentUser"
+                :src="currentUser.photo_url"
+                :name="currentUser.name"
+                class="mb-[5px] size-7 shrink-0 text-xs"
+                fallback-class="bg-sidebar-accent text-sidebar-accent-foreground"
+            />
+            <InputGroup
+                class="min-w-0 flex-1 items-end rounded-[18px] border-transparent bg-muted shadow-none transition-colors hover:border-border-strong has-[[data-slot=input-group-control]:focus-visible]:bg-card"
+                data-testid="note-composer"
+            >
+                <InputGroupTextarea
                     ref="composerInput"
                     v-model="newBody"
                     rows="1"
-                    class="flex field-sizing-content max-h-28 min-h-8 w-full min-w-0 resize-none rounded-md border border-input bg-card px-2 py-[5px] text-sm leading-5 text-foreground transition-[color,box-shadow] outline-none placeholder:text-subtle-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring dark:bg-input/30"
                     :placeholder="$t('notes.placeholder')"
                     :aria-label="$t('notes.placeholder')"
+                    class="max-h-28 min-h-0 py-[7px] ps-4 leading-5"
                     data-testid="note-input"
                     @keydown="handleComposerKeydown"
                 />
-                <Button
-                    type="button"
-                    size="icon"
-                    class="shrink-0"
-                    :disabled="!canSend"
-                    :aria-label="$t('notes.send')"
-                    data-testid="note-send"
-                    @click="sendNote"
-                >
-                    <IconLoader2 v-if="sending" class="size-4 animate-spin" />
-                    <IconArrowUp v-else class="size-4" />
-                </Button>
-            </div>
+                <InputGroupAddon align="inline-end" class="pb-1.5">
+                    <InputGroupButton
+                        variant="default"
+                        size="icon-xs"
+                        class="me-0.5 rounded-full disabled:bg-transparent disabled:text-muted-foreground disabled:opacity-100"
+                        :disabled="!canSend"
+                        :aria-label="$t('notes.send')"
+                        data-testid="note-send"
+                        @click="sendNote"
+                    >
+                        <IconLoader2
+                            v-if="sending"
+                            class="size-3.5 animate-spin"
+                        />
+                        <IconArrowUp v-else class="size-3.5" />
+                    </InputGroupButton>
+                </InputGroupAddon>
+            </InputGroup>
         </div>
-    </div>
+    </section>
 </template>

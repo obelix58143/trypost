@@ -5,18 +5,21 @@ declare(strict_types=1);
 return [
     'title' => 'MCP',
     'subtitle' => 'Conecte assistentes de IA ao seu workspace.',
-    'copy_step' => 'Copie a URL do servidor TryPost',
-    'open_step' => 'Abra seu assistente de IA',
-    'copy' => 'Copiar URL',
+    'copy' => 'Copiar',
     'connect' => 'Conectar :client',
-    'step_add' => 'Cole o nome, a URL ou o config abaixo no seu app. O login abre no navegador na primeira conexão.',
     'name_label' => 'Nome',
     'url_label' => 'URL do servidor',
     'config_label' => 'Config',
-    'connected_title' => 'Apps conectados',
+    'tabs' => [
+        'connected' => 'Apps conectados',
+        'connect' => 'Conectar app',
+    ],
+    'connect_other' => 'Conectar',
+    'other_hint' => 'Qualquer app compatível com MCP.',
+    'other_dialog_title' => 'Conecte o TryPost a outro app',
     'connected_description' => 'Assistentes que você conectou. Desconecte os que não quiser mais usar.',
     'connected_empty_title' => 'Nenhum app conectado',
-    'connected_empty' => 'Use Claude, ChatGPT ou outro cliente acima.',
+    'connected_empty' => 'Conecte o Claude, o ChatGPT ou outro app para vê-lo aqui.',
     'disconnect' => 'Desconectar',
     'disconnect_title' => 'Desconectar app',
     'disconnect_confirm' => 'Isso desconecta o app do TryPost. Ele precisa reconectar pra usar o MCP de novo.',
@@ -24,9 +27,6 @@ return [
     'copied' => 'Copiado',
     'last_used' => 'Último uso',
     'never' => 'Nunca',
-    'documentation_title' => 'Documentação',
-    'documentation_description' => 'Guias por cliente, tools disponíveis e solução de problemas.',
-    'view_docs' => 'Ver documentação',
     'connector_name' => 'TryPost',
 
     'authorize' => [
@@ -53,18 +53,29 @@ return [
     ],
 
     'other_clients_title' => 'Outros apps',
-    'other_clients_description' => 'Cursor, VS Code, Claude Code e qualquer app que fale MCP.',
 
-    'clients' => [
-        'claude' => 'Abra Settings → Connectors, adicione um connector customizado e cole a URL acima.',
-        'chatgpt' => 'Abra Settings → Apps & Connectors, crie um connector customizado e cole a URL acima.',
-        'cursor' => 'Adicione o TryPost como servidor MCP remoto no Cursor.',
-        'cursor_name' => 'Cursor',
-        'vscode' => 'Cole o config abaixo nas configurações MCP do VS Code.',
-        'vscode_name' => 'VS Code',
-        'claude_code' => 'Cole o config abaixo nas configurações MCP do Claude Code.',
-        'claude_code_name' => 'Claude Code',
-        'other' => 'Funciona com qualquer cliente que leia um config mcpServers.',
-        'other_name' => 'Outros',
+    'dialog' => [
+        'title' => 'Conecte o TryPost ao :client',
+        'description' => 'Leva cerca de um minuto. Esta página atualiza assim que você conectar.',
+        'open' => 'Abrir o :client',
+        'steps' => [
+            'claude' => [
+                'paste' => 'Cole a URL no campo de URL do conector',
+                'add' => 'Clique em Adicionar e depois em Conectar',
+                'login' => 'Faça login no TryPost e escolha o workspace',
+            ],
+            'chatgpt' => [
+                'developer' => 'Ative o Modo desenvolvedor nas configurações do ChatGPT',
+                'create' => 'Crie um app com o nome TryPost e cole a URL',
+                'login' => 'Faça login no TryPost e escolha o workspace',
+            ],
+            'other' => [
+                'add' => 'Adicione um servidor MCP personalizado no seu app',
+                'paste' => 'Cole o nome e a URL, ou a configuração',
+                'login' => 'Faça login no TryPost e escolha o workspace',
+            ],
+        ],
+        'waiting' => 'Aguardando sua IA conectar…',
     ],
+
 ];

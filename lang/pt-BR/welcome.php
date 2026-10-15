@@ -15,6 +15,7 @@ return [
     'steps' => [
         'persona' => 'Sobre você',
         'goals' => 'Seus objetivos',
+        'software' => 'Ferramenta atual',
         'plan' => 'Plano',
     ],
     'personas' => [
@@ -39,6 +40,51 @@ return [
         'manage_clients' => 'Gerenciar marcas ou clientes',
         'other' => 'Outra coisa',
     ],
-    'plan_title' => 'Escolha seu plano',
-    'plan_description' => 'Os dois planos têm os mesmos recursos. O que muda é o número de workspaces, e você pode trocar de plano quando quiser.',
+    'software_title' => 'Qual ferramenta você usa hoje?',
+    'software' => [
+        'none' => 'Ainda não uso nenhuma',
+        'other' => 'Outra',
+    ],
+    'plan_title' => 'Ative sua conta',
+    'plan_description' => 'Conecte suas redes e agende seu primeiro post hoje.',
+    'plan_first_month' => 'no primeiro mês',
+    'plan_terms' => 'Depois, :price/mês. Cancele quando quiser.',
+    'plan_per_month' => 'por mês',
+    'plan_cancel_anytime' => 'Cancele quando quiser.',
+    'mcp' => [
+        'title' => 'Gerencie suas redes pelo chat',
+        'description' => 'Crie, agende e analise posts no TryPost usando a sua IA favorita.',
+        'connect_with' => 'Conectar com :client',
+        'connect_ai' => 'Conectar sua IA',
+        'pick_ai' => 'Onde você quer usar o TryPost?',
+        'connect_other' => 'Conectar outro app',
+        'connected' => ':client está conectado',
+        'benefits' => [
+            'schedule' => [
+                'title' => 'Crie e agende pelo chat',
+                'hint' => 'Carrosséis, threads e vídeos',
+                'ask' => 'Pegue a próxima ideia do meu quadro, transforme num carrossel e agende para terça às :time no Instagram e no LinkedIn.',
+                'reply' => 'Pronto. O carrossel está agendado no Instagram e no LinkedIn.',
+            ],
+            'analytics' => [
+                'title' => 'Acompanhe seu crescimento',
+                'hint' => 'Todas as contas em um relatório',
+                'ask' => 'Como foi meu mês? Ganhei seguidores?',
+                'reply' => 'Você ganhou 1,2 mil seguidores no mês. O LinkedIn foi o que mais cresceu.',
+            ],
+            'queue' => [
+                'title' => 'Encha a fila',
+                'hint' => 'Nos seus melhores horários',
+                'ask' => 'Pegue meus rascunhos prontos e coloque na fila, nos meus próximos horários livres.',
+                'reply' => 'Feito. Coloquei seus 3 rascunhos na fila, nos próximos horários livres de amanhã.',
+            ],
+            'ideas' => [
+                'title' => 'Organize suas ideias',
+                'hint' => 'Do brainstorm para a pauta',
+                'ask' => 'Me dê 8 ideias de posts para a próxima semana e salve no meu quadro.',
+                'reply' => 'Salvei 8 ideias no seu quadro, prontas para virar post.',
+            ],
+        ],
+        'skip' => 'Pular por agora',
+    ],
 ];

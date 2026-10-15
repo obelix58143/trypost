@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { getPlatformLabel } from '@/composables/usePlatformLogo';
 import { useXLinkDefuser } from '@/composables/useXLinkDefuser';
+import { type ThreadReply, threadRepliesOf } from '@/lib/threadReplies';
 import type { MediaItem } from '@/types/media';
+import { THREAD_PLATFORMS } from '@/types/network-options';
 
 import BlueskyPreview from './BlueskyPreview.vue';
 import DiscordPreview from './DiscordPreview.vue';
@@ -16,28 +18,21 @@ import PinterestPreview from './PinterestPreview.vue';
 import TelegramPreview from './TelegramPreview.vue';
 import ThreadsPreview from './ThreadsPreview.vue';
 import TikTokPreview from './TikTokPreview.vue';
+import type { PreviewAccount } from './types';
 import XPreview from './XPreview.vue';
 import YouTubePreview from './YouTubePreview.vue';
 
-interface SocialAccount {
-    id: string;
-    platform: string;
-    display_name: string;
-    username: string;
-    display_label: string;
-    handle_label: string;
-    avatar_url: string | null;
-}
-
 interface Props {
     platform: string;
-    socialAccount: SocialAccount | null | undefined;
+    socialAccount: PreviewAccount | null | undefined;
     content: string;
     media: MediaItem[];
     contentType?: string;
     meta?: Record<string, any>;
     /** Local scheduled datetime (datetime-local); falls back to now in previews. */
     postedAt?: string | null;
+    /** The thread post being edited: -1 is the first post, otherwise the reply index. */
+    activePost?: number;
 }
 
 const props = defineProps<Props>();
@@ -51,7 +46,44 @@ const { contentFor } = useXLinkDefuser();
  */
 const previewContent = computed((): string => contentFor(props.content, props.platform));
 
-const resolvedSocialAccount = computed((): SocialAccount => props.socialAccount ?? {
+const shownReplies = computed((): { reply: ThreadReply; index: number }[] =>
+    THREAD_PLATFORMS.includes(props.platform)
+        ? threadRepliesOf(props.meta)
+              .map((reply, index) => ({ reply, index }))
+              .filter(
+                  ({ reply }) =>
+                      reply.text.trim() !== '' || reply.media.length > 0,
+              )
+        : [],
+);
+const threadReplies = computed((): ThreadReply[] =>
+    shownReplies.value.map(({ reply }) => reply),
+);
+
+const thread = ref<HTMLElement | null>(null);
+
+/** Keeps the post being edited in view: an empty reply has no preview, so the closest one above it stands in. */
+watch(
+    () => props.activePost,
+    async (active) => {
+        if (active === undefined || !threadReplies.value.length) {
+            return;
+        }
+
+        await nextTick();
+        const position = shownReplies.value.filter(
+            ({ index }) => index <= active,
+        ).length;
+        thread.value
+            ?.querySelectorAll(':scope > [data-thread-post]')
+            [position]?.scrollIntoView({
+            block: 'nearest',
+            behavior: 'smooth',
+        });
+    },
+);
+
+const resolvedSocialAccount = computed((): PreviewAccount => props.socialAccount ?? {
     id: '',
     platform: props.platform,
     display_name: '',
@@ -98,13 +130,44 @@ const previewComponent = computed(() => {
 </script>
 
 <template>
-    <component
-        :is="previewComponent"
-        :social-account="resolvedSocialAccount"
-        :content="previewContent"
-        :media="media"
-        :content-type="contentType"
-        :meta="meta"
-        :posted-at="postedAt"
-    />
+    <div
+        class="overflow-hidden rounded-lg border bg-card text-card-foreground"
+    >
+        <div
+            ref="thread"
+            :data-testid="threadReplies.length ? 'preview-thread' : undefined"
+        >
+            <div data-thread-post>
+            <component
+                :is="previewComponent"
+                :social-account="resolvedSocialAccount"
+                :content="previewContent"
+                :media="media"
+                :content-type="contentType"
+                :meta="meta"
+                :posted-at="postedAt"
+                :thread-position="threadReplies.length ? 'first' : undefined"
+            />
+            </div>
+            <div
+                v-for="(reply, index) in threadReplies"
+                :key="reply.key"
+                data-thread-post
+                :data-testid="`preview-thread-reply-${index}`"
+            >
+                <component
+                    :is="previewComponent"
+                    :social-account="resolvedSocialAccount"
+                    :content="contentFor(reply.text, platform)"
+                    :media="reply.media"
+                    :content-type="contentType"
+                    :meta="{ spoiler_text: meta?.spoiler_text }"
+                    :posted-at="postedAt"
+                    :thread-position="
+                        index === threadReplies.length - 1 ? 'last' : 'middle'
+                    "
+                />
+            </div>
+        </div>
+    </div>
 </template>

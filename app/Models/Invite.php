@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\UserWorkspace\Role as WorkspaceRole;
 use Database\Factories\InviteFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,7 +22,8 @@ class Invite extends Model
         'account_id',
         'invited_by',
         'email',
-        'role',
+        'is_admin',
+        'requires_approval',
         'workspaces',
         'accepted_at',
     ];
@@ -29,10 +31,28 @@ class Invite extends Model
     protected function casts(): array
     {
         return [
-            'role' => WorkspaceRole::class,
+            'is_admin' => 'boolean',
+            'requires_approval' => 'boolean',
             'workspaces' => 'array',
             'accepted_at' => 'datetime',
         ];
+    }
+
+    protected function email(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value === null ? null : Str::lower($value),
+        );
+    }
+
+    public function scopeForEmail(Builder $query, string $email): void
+    {
+        $query->where('email', Str::lower($email));
+    }
+
+    public function isFor(?string $email): bool
+    {
+        return $email !== null && Str::lower($this->email) === Str::lower($email);
     }
 
     public function account(): BelongsTo

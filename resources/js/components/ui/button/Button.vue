@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<Props>(), {
 </script>
 
 <template>
-  <Primitive data-slot="button" :as="as" :as-child="asChild"
+  <Primitive data-slot="button" :data-variant="variant ?? 'default'" :as="as" :as-child="asChild"
     :class="cn(buttonVariants({ variant, size }), props.class, { 'opacity-25 cursor-not-allowed': loading })"
     :disabled="loading">
     <IconLoader v-if="loading" class="size-5 mx-4 animate-spin" />

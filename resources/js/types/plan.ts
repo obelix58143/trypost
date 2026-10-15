@@ -11,6 +11,13 @@ export interface PlanOption {
     workspace_limit: number | null;
 }
 
+export const PRICED_PLAN_SLUGS = ['socials', 'workspaces'] as const;
+
+export type PricedPlanSlug = (typeof PRICED_PLAN_SLUGS)[number];
+
+export const isPricedPlanSlug = (slug: string): slug is PricedPlanSlug =>
+    (PRICED_PLAN_SLUGS as readonly string[]).includes(slug);
+
 export const deniedPlanIdsFor = (
     plans: PlanOption[],
     workspaceCount: number,

@@ -19,7 +19,6 @@ return [
     ],
 
     'plans' => [
-        'title' => 'Planes',
         'description' => 'Mejora o cambia de plan cuando quieras.',
         'monthly' => 'Mensual',
         'yearly' => 'Anual',
@@ -46,8 +45,8 @@ return [
             'networks_all_tooltip' => 'Puedes publicar en todas estas redes.',
             'accounts_unlimited' => 'Cuentas sociales ilimitadas',
             'accounts_unlimited_tooltip' => 'Conecta todas las cuentas que quieras, incluso varias de la misma red. Tres Instagrams, por ejemplo.',
-            'calendar' => 'Calendario mensual, semanal y diario',
-            'calendar_tooltip' => 'Ve todo tu mes de un vistazo: lo planificado, lo programado y lo ya publicado. Cambia a semana o día cuando necesites el detalle.',
+            'calendar' => 'Calendario mensual y semanal',
+            'calendar_tooltip' => 'Ve todo tu mes de un vistazo: lo planificado, lo programado y lo ya publicado. Cambia a semana cuando necesites el detalle.',
             'ai' => 'TryPost Copilot',
             'ai_tooltip' => 'Tu asistente de IA para escribir y revisar posts.',
             'mcp' => 'MCP: publica desde Claude, ChatGPT o Grok',
@@ -61,10 +60,14 @@ return [
         ],
     ],
 
-    'plan' => [
-        'trial' => 'Prueba',
-        'cancelling' => 'Cancelando',
-        'trial_ends' => 'La prueba termina en',
+    'current_plan' => [
+        'change' => 'Cambiar plan',
+        'price_monthly' => ':price/mes',
+        'price_yearly' => ':price/año',
+        'trial_until' => 'Prueba hasta el :date',
+        'renews' => 'Se renueva automáticamente',
+        'cancelled' => 'Cancelado, termina el :date',
+        'workspaces_usage' => 'Workspaces: :count de :limit',
     ],
 
     'subscription' => [
@@ -79,6 +82,7 @@ return [
         'title' => 'Facturas',
         'description' => 'Descarga tus facturas anteriores.',
         'paid' => 'Pagado',
+        'download' => 'Descargar factura',
     ],
 
     'flash' => [

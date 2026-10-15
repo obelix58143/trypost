@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
-use App\Enums\UserWorkspace\Role;
 use App\Mcp\Servers\TryPostServer;
 use App\Mcp\Tools\Post\AttachMediaFromUrlTool;
 use App\Models\Media;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
@@ -19,7 +17,7 @@ use Illuminate\Support\Facades\Storage;
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
 
     $this->post = Post::factory()->create([
@@ -47,7 +45,7 @@ test('attaches an image from url and creates a media row', function () {
 
     $response->assertOk();
 
-    expect(Media::where('mediable_id', $this->workspace->id)->count())->toBe(1);
+    expect($this->post->ownedMedia()->count())->toBe(1);
     expect($this->post->fresh()->media)->toHaveCount(1);
 });
 
@@ -110,7 +108,7 @@ test('reports failures and successes separately', function () {
     $response->assertOk()
         ->assertSee(['example.com/missing.png']);
 
-    expect(Media::where('mediable_id', $this->workspace->id)->count())->toBe(1);
+    expect($this->post->ownedMedia()->count())->toBe(1);
     expect($this->post->fresh()->media)->toHaveCount(1);
 });
 
@@ -124,10 +122,11 @@ test('attaches a pdf document from a url to a LinkedIn post', function () {
     ]);
 
     $linkedin = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::LinkedIn]);
-    PostPlatform::factory()->create([
-        'post_id' => $this->post->id, 'social_account_id' => $linkedin->id,
-        'platform' => Platform::LinkedIn, 'content_type' => ContentType::LinkedInPost, 'enabled' => true,
-    ]);
+    $this->post->forceFill([
+        'social_account_id' => $linkedin->id,
+        'platform' => Platform::LinkedIn,
+        'content_type' => ContentType::LinkedInPost,
+    ])->save();
 
     $response = TryPostServer::actingAs($this->user)
         ->tool(AttachMediaFromUrlTool::class, [
@@ -152,10 +151,11 @@ test('rejects a pdf url for a post with no PDF-capable platform', function () {
     ]);
 
     $tiktok = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::TikTok]);
-    PostPlatform::factory()->create([
-        'post_id' => $this->post->id, 'social_account_id' => $tiktok->id,
-        'platform' => Platform::TikTok, 'content_type' => ContentType::TikTokVideo, 'enabled' => true,
-    ]);
+    $this->post->forceFill([
+        'social_account_id' => $tiktok->id,
+        'platform' => Platform::TikTok,
+        'content_type' => ContentType::TikTokVideo,
+    ])->save();
 
     $response = TryPostServer::actingAs($this->user)
         ->tool(AttachMediaFromUrlTool::class, [
@@ -233,4 +233,43 @@ test('rejects more than 10 urls per call', function () {
         ]);
 
     $response->assertHasErrors();
+});
+
+test('requests the url uncompressed so a compressed bomb cannot expand on disk', function () {
+    Http::fake(['example.com/photo.jpg' => Http::response(gzencode(str_repeat('0', 4096)), 200, ['Content-Type' => 'image/jpeg', 'Content-Encoding' => 'gzip'])]);
+
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUrlTool::class, [
+            'post_id' => $this->post->id,
+            'urls' => [['url' => 'https://example.com/photo.jpg']],
+        ]);
+
+    Http::assertSent(fn ($request) => $request->hasHeader('Accept-Encoding', 'identity'));
+    expect(Media::where('mediable_id', $this->workspace->id)->count())->toBe(0);
+});
+
+test('attaches an image from url to a tiktok photo post', function () {
+    Http::fake([
+        'example.com/photo.jpg' => Http::response(
+            file_get_contents(__DIR__.'/../../fixtures/1x1.png'),
+            200,
+            ['Content-Type' => 'image/png'],
+        ),
+    ]);
+
+    $tiktok = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::TikTok]);
+    $this->post->forceFill([
+        'social_account_id' => $tiktok->id,
+        'platform' => Platform::TikTok,
+        'content_type' => ContentType::TikTokPhoto,
+    ])->save();
+
+    TryPostServer::actingAs($this->user)
+        ->tool(AttachMediaFromUrlTool::class, [
+            'post_id' => $this->post->id,
+            'urls' => [['url' => 'https://example.com/photo.jpg']],
+        ])
+        ->assertOk();
+
+    expect($this->post->fresh()->media)->toHaveCount(1);
 });

@@ -6,7 +6,6 @@ paths:
   - app/Console/Commands/ReconcileGoogleBusinessPosts.php
   - app/Services/Social/GoogleBusinessPublisher.php
   - app/Support/PostPlatformMetaRules.php
-  - app/Services/Social/GoogleBusinessAnalytics.php
 ---
 
 # Google Business
@@ -23,8 +22,11 @@ LocalPost event.title is capped at TopicType::TITLE_MAX_LENGTH (58) — Google r
 ## GBP reconcile refreshes on 401
 ReconcileGoogleBusinessPost must call ConnectionVerifier::verify() after a TokenExpiredException from fetchLocalPost and retry the GET once. If refresh also fails, mark the SocialAccount token-expired, then deferOrGiveUp. Do not park a 401 in pending_review for 24h while a refresh would settle it. RecoverStuckPosts times the 24h ceiling from submitted_at only — never created_at.
 
-## GBP analytics must not cache a failed fetch
-GoogleBusinessAnalytics caches only a successful array. An HTTP failure or a missing location returns false and is not written to cache — a 500 must not blank the dashboard for an hour. Publish/verify/analytics require both location_id (v4) and location_name (v1) via GoogleBusinessResourceName::connectedLocation().
+## GBP calls need both location ids
+Publish and verify require both location_id (v4) and location_name (v1) via GoogleBusinessResourceName::connectedLocation().
 
 ## Local Posts 401 after a live BI verify does not expire the account
-retryAfterExpiredToken calls ConnectionVerifier::verify() then retries fetchRemote. markAsTokenExpired only when verify() itself throws TokenExpiredException. If BI verify succeeds and Local Posts still 401s, deferOrGiveUp without disconnecting — the token still works for the house verify. ReconcileGoogleBusinessPosts only dispatches enabled() pending_review rows. ReconcileGoogleBusinessPost::handle() giveUps immediately when socialAccount is null — disconnect nulls the FK and fetchRemote would TypeError until the 24h ceiling.
+retryAfterExpiredToken calls ConnectionVerifier::verify() then retries fetchRemote. markAsTokenExpired only when verify() itself throws TokenExpiredException. If BI verify succeeds and Local Posts still 401s, deferOrGiveUp without disconnecting — the token still works for the house verify. ReconcileGoogleBusinessPosts only dispatches Google Business posts in pending_review with a platform_post_id. ReconcileGoogleBusinessPost::handle() giveUps immediately when socialAccount is null — disconnect nulls the FK and fetchRemote would TypeError until the 24h ceiling.
+
+## Pre-2.0 scheduled targets skip the publish-time media recheck
+posts.scheduled_before_media_checks (copied from post_platforms when posts and their destinations were merged) is set only by migration 2026_10_06_112101 on targets that were pending/publishing/retrying on a scheduled, pending approval or publishing post at deploy. failForInvalidMedia() returns early for them so they publish what main published (main had no publish-time media check; publishers truncate to first/take(n) and networks accept wider video ratios). Never set it from app code; new posts, drafts and failed targets always get the 2.0 recheck. Remove the column once no marked unpublished target is left.

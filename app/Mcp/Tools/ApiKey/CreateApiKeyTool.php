@@ -8,6 +8,7 @@ use App\Actions\ApiKey\CreateApiKey;
 use App\Http\Resources\Api\ApiKeyResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Models\Workspace;
+use App\Support\Requests\ApiKey\ApiKeyRequestRules;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -15,34 +16,27 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Create a new Personal Access Token (API key) for the current workspace. The plain token value is returned ONCE — store it immediately, it cannot be retrieved later.')]
+#[Description('Create a new Personal Access Token (API key) for the current workspace. Returns `{token, plain_token}` like POST /api-keys: `token` is the key metadata and `plain_token` the secret, returned ONCE — store it immediately, it cannot be retrieved later.')]
 class CreateApiKeyTool extends Tool
 {
     use AuthorizesMcpTool;
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'manageTeam',
-            'Not authorized to manage API keys.',
-        );
+        $workspace = $this->authorizeCurrentWorkspace($request, 'manageTeam');
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'expires_at' => CreateApiKey::expiresAtRules(),
-        ]);
+        $validated = $request->validate(ApiKeyRequestRules::store());
 
         $created = CreateApiKey::execute($request->user(), $workspace, $validated);
 
-        return Response::structured(array_merge(
-            (new ApiKeyResource($created['token']))->resolve(),
-            ['token' => $created['plain_token']],
-        ));
+        return Response::structured([
+            'token' => (new ApiKeyResource($created['token']))->resolve(),
+            'plain_token' => $created['plain_token'],
+        ]);
     }
 
     public function schema(JsonSchema $schema): array

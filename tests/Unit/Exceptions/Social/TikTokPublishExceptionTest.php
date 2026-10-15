@@ -132,3 +132,62 @@ test('platform returns tiktok', function () {
 
     expect($exception->platform())->toBe('tiktok');
 });
+
+test('documented init refusals map to their category', function (string $code, int $status, ErrorCategory $category) {
+    $fakeResponse = Http::fake(['*' => Http::response([
+        'error' => ['code' => $code, 'message' => 'Refused.', 'log_id' => 'init123'],
+    ], $status)])->post(config('trypost.platforms.tiktok.api').'/test');
+
+    $exception = TikTokPublishException::fromApiResponse($fakeResponse);
+
+    expect($exception->category)->toBe($category)
+        ->and($exception->platformErrorCode)->toBe($code)
+        ->and($exception->isLimit())->toBe($category === ErrorCategory::RateLimit);
+})->with([
+    'daily post cap' => ['spam_risk_too_many_posts', 403, ErrorCategory::RateLimit],
+    'pending share cap' => ['spam_risk_too_many_pending_share', 403, ErrorCategory::RateLimit],
+    'active user quota' => ['reached_active_user_cap', 403, ErrorCategory::RateLimit],
+    'rate limit' => ['rate_limit_exceeded', 429, ErrorCategory::RateLimit],
+    'banned from posting' => ['spam_risk_user_banned_from_posting', 403, ErrorCategory::ContentPolicy],
+    'invalid param' => ['invalid_param', 400, ErrorCategory::MediaFormat],
+    'unaudited client' => ['unaudited_client_can_only_post_to_private_accounts', 403, ErrorCategory::Permission],
+    'url ownership' => ['url_ownership_unverified', 403, ErrorCategory::Permission],
+    'privacy mismatch' => ['privacy_level_option_mismatch', 403, ErrorCategory::Permission],
+    'app version' => ['app_version_check_failed', 400, ErrorCategory::Permission],
+    'unknown publish id' => ['invalid_publish_id', 400, ErrorCategory::Unknown],
+    'publish id of another token' => ['token_not_authorized_for_specified_publish_id', 400, ErrorCategory::Unknown],
+]);
+
+test('only an error code TikTok documents as caused by the creator is marked as a network rejection', function (string $code, int $status, bool $marked) {
+    $fakeResponse = Http::fake(['*' => Http::response([
+        'error' => ['code' => $code, 'message' => 'Rejected'],
+    ], $status)])->post(config('trypost.platforms.tiktok.api').'/post/publish/video/init/');
+
+    expect(TikTokPublishException::fromApiResponse($fakeResponse)->isNetworkRejection())->toBe($marked);
+})->with([
+    'missing video.publish grant' => ['scope_not_authorized', 401, true],
+    'grant revoked by the creator' => ['scope_permission_missed', 401, true],
+    'per user token rate limit' => ['rate_limit_exceeded', 429, true],
+    'file outside the specs' => ['invalid_file_upload', 400, true],
+    'creator daily post cap' => ['spam_risk_too_many_posts', 403, true],
+    'creator banned' => ['spam_risk_user_banned_from_posting', 403, true],
+    'our domain not verified' => ['url_ownership_unverified', 403, false],
+    'our app not audited' => ['unaudited_client_can_only_post_to_private_accounts', 403, false],
+    'our invalid params' => ['invalid_param', 400, false],
+    'MEDIA_UPLOAD app version, a mode we never send' => ['app_version_check_failed', 400, false],
+    'our client active user cap' => ['reached_active_user_cap', 403, false],
+    'privacy options we must honor' => ['privacy_level_option_mismatch', 403, false],
+]);
+
+test('only a fail reason caused by the creator is marked as a network rejection', function (string $failReason, bool $marked) {
+    expect(TikTokPublishException::fromFailReason($failReason)->isNetworkRejection())->toBe($marked);
+})->with([
+    'unsupported media format' => ['file_format_check_failed', true],
+    'video duration outside the limits' => ['duration_check_failed', true],
+    'unsupported frame rate' => ['frame_rate_check_failed', true],
+    'picture size outside the limits' => ['picture_size_check_failed', true],
+    'spammy description' => ['spam_risk_text', true],
+    'access removed by the creator' => ['auth_removed', true],
+    'a developer cancel' => ['publish_cancelled', false],
+    'a request flagged without a cause' => ['spam_risk', false],
+]);

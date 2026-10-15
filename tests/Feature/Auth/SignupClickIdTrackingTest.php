@@ -27,7 +27,7 @@ test('email registration saves ad click ids from the register page query string'
     $this->post(route('register.store'), [
         'name' => 'Click User',
         'email' => 'click@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ])
         ->assertRedirect(route('app.welcome', absolute: false));
@@ -42,7 +42,7 @@ test('email registration without click ids saves null columns', function () {
     $this->post(route('register.store'), [
         'name' => 'No Click User',
         'email' => 'no-click@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -65,7 +65,7 @@ test('click id values longer than 255 characters are stored in full, unlike utm 
     $this->post(route('register.store'), [
         'name' => 'Long Click User',
         'email' => 'long-click@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -192,7 +192,7 @@ test('an empty query string value is treated the same as an absent one, not stor
     $this->post(route('register.store'), [
         'name' => 'Empty Param User',
         'email' => 'empty-param@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -212,7 +212,7 @@ test('click ids and utm parameters are both saved when present together', functi
     $this->post(route('register.store'), [
         'name' => 'Mixed User',
         'email' => 'mixed@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 

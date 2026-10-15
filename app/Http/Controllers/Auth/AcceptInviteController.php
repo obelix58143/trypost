@@ -22,8 +22,6 @@ class AcceptInviteController extends Controller
      */
     public function show(Invite $invite): Response
     {
-        $invite->load('account');
-
         $workspaces = ResolveInviteWorkspaces::execute($invite);
         $expired = $workspaces->isEmpty();
 
@@ -37,24 +35,19 @@ class AcceptInviteController extends Controller
         }
 
         $workspace = $workspaces->first();
-        $role = $invite->role;
 
         return Inertia::render('auth/AcceptInvite', [
             'expired' => false,
             'invite' => [
                 'id' => $invite->id,
                 'email' => $invite->email,
-                'account' => [
-                    'id' => $invite->account->id,
-                    'name' => $invite->account->name,
-                ],
                 'workspace' => [
                     'id' => $workspace->id,
                     'name' => $workspace->name,
                 ],
-                'role' => [
-                    'value' => $role->value,
-                    'label' => $role->label(),
+                'access' => [
+                    'is_admin' => $invite->is_admin,
+                    'requires_approval' => $invite->requires_approval,
                 ],
             ],
         ]);

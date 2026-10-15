@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Social;
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\TokenExpiredException;
 use Illuminate\Http\Client\Response;
 
@@ -45,8 +46,8 @@ class MastodonPublishException extends SocialPublishException
 
         if ($status === 422) {
             return new static(
-                userMessage: 'Media validation failed.',
-                category: ErrorCategory::MediaFormat,
+                userMessage: self::providerMessage($response, 'error') ?? __('posts.errors.unrecognized_error', ['platform' => Platform::Mastodon->label()]),
+                category: ErrorCategory::Unknown,
                 platformErrorCode: (string) $status,
                 rawResponse: $rawResponse,
             );
@@ -62,12 +63,12 @@ class MastodonPublishException extends SocialPublishException
         }
 
         if ($status === 429) {
-            return new static(
+            return (new static(
                 userMessage: 'Rate limit exceeded. Please try again later.',
                 category: ErrorCategory::RateLimit,
                 platformErrorCode: (string) $status,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response);
         }
 
         if ($status === 503) {

@@ -5,24 +5,28 @@ declare(strict_types=1);
 use App\Mail\WorkspaceInvite;
 use App\Models\Account;
 use App\Models\Invite;
+use App\Models\Workspace;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
-test('workspace invite mail has correct subject', function () {
-    $account = Account::factory()->create(['name' => 'Test Account']);
-    $invite = Invite::factory()->create([
+function workspaceInviteFor(string $workspaceName): Invite
+{
+    $account = Account::factory()->create(['name' => "Ada's Account"]);
+    $workspace = Workspace::factory()->create(['account_id' => $account->id, 'name' => $workspaceName]);
+
+    return Invite::factory()->create([
         'account_id' => $account->id,
+        'workspaces' => [$workspace->id],
     ]);
+}
 
-    $mail = new WorkspaceInvite($invite);
+test('workspace invite mail subject names the workspace, not the account', function () {
+    $mail = new WorkspaceInvite(workspaceInviteFor('Marketing'));
 
-    expect($mail->envelope()->subject)->toBe("You've been invited to join Test Account");
+    expect($mail->envelope()->subject)->toBe("You've been invited to join Marketing");
 });
 
 test('workspace invite mail has correct content', function () {
-    $account = Account::factory()->create(['name' => 'My Team']);
-    $invite = Invite::factory()->create([
-        'account_id' => $account->id,
-    ]);
+    $invite = workspaceInviteFor('My Team');
 
     $mail = new WorkspaceInvite($invite);
     $content = $mail->content();
@@ -30,8 +34,10 @@ test('workspace invite mail has correct content', function () {
     expect($content->view)->toBe('mail.workspace-invite');
     expect($content->with['title'])->toBe("You've been invited to join My Team");
     expect($content->with['previewText'])->toBe("You've been invited to join My Team");
-    expect($content->with['accountName'])->toBe('My Team');
-    expect($content->with['roleLabel'])->toBeString();
+    expect($content->with['workspaceName'])->toBe('My Team');
+    expect($content->with)->not->toHaveKey('accountName');
+    expect($content->with['isAdmin'])->toBeFalse();
+    expect($content->with['requiresApproval'])->toBeFalse();
     expect($content->with['url'])->toBe(route('app.invites.show', $invite->id));
 });
 

@@ -10,6 +10,7 @@ import {
   DialogPortal,
   useForwardPropsEmits,
 } from "reka-ui"
+import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 defineOptions({
@@ -27,12 +28,13 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 <template>
   <DialogPortal>
     <DialogOverlay
-      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+      class="motion-dialog-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/50 dark:bg-black/60"
     >
       <DialogContent
+        data-slot="dialog-content"
         :class="
           cn(
-            'relative z-50 grid w-full max-w-[calc(100%-2rem)] my-8 gap-4 border border-border bg-background p-6 shadow-lg duration-200 sm:max-w-lg sm:rounded-lg md:w-full',
+            'motion-dialog relative z-50 grid w-full max-w-[calc(100%-2rem)] my-8 gap-4 rounded-2xl bg-background px-6 pt-6 pb-4 shadow-lg duration-200 sm:max-w-lg md:w-full dark:border max-sm:my-0 max-sm:flex max-sm:h-dvh max-sm:max-w-none max-sm:flex-col max-sm:overflow-y-auto max-sm:rounded-none max-sm:shadow-none max-sm:[&>:has([data-slot$=dialog-footer])]:flex max-sm:[&>:has([data-slot$=dialog-footer])]:grow max-sm:[&>:has([data-slot$=dialog-footer])]:flex-col max-sm:[&>[data-slot$=dialog-header]]:sticky max-sm:[&>[data-slot$=dialog-header]]:top-0 max-sm:[&>[data-slot$=dialog-header]]:z-10 max-sm:[&>[data-slot$=dialog-header]]:bg-background max-sm:[&>[data-slot$=dialog-header]]:shadow-[0_-1.5rem_0_1.5rem_var(--background)]',
             props.class,
           )
         "
@@ -48,10 +50,12 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
         <slot />
 
         <DialogClose
-          class="absolute top-4 right-4 p-0.5 transition-colors rounded-md hover:bg-secondary"
+          data-slot="dialog-close"
+          data-testid="dialog-close"
+          :class="cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'absolute top-4 end-4 max-sm:fixed max-sm:top-[calc(1rem+env(safe-area-inset-top))] max-sm:end-[calc(1rem+env(safe-area-inset-right))] max-sm:z-20')"
         >
-          <IconX class="w-4 h-4" />
-          <span class="sr-only">Close</span>
+          <IconX class="size-4" />
+          <span class="sr-only">{{ $t('common.close') }}</span>
         </DialogClose>
       </DialogContent>
     </DialogOverlay>

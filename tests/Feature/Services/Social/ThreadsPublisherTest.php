@@ -8,7 +8,6 @@ use App\Exceptions\Social\ThreadsMediaContainerNotFoundException;
 use App\Exceptions\Social\ThreadsPublishException;
 use App\Exceptions\TokenExpiredException;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
@@ -16,6 +15,7 @@ use App\Services\Social\ThreadsPublisher;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     Sleep::fake();
@@ -30,18 +30,12 @@ beforeEach(function () {
         'token_expires_at' => now()->addDays(60),
     ]);
 
-    $this->post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $this->post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'content' => 'Hello from Threads!',
-    ]);
-
-    $this->postPlatform = PostPlatform::factory()->create([
-        'post_id' => $this->post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'platform' => Platform::Threads,
         'content_type' => ContentType::ThreadsPost,
     ]);
+    $this->post->setRelation('socialAccount', $this->socialAccount);
 
     $this->publisher = new ThreadsPublisher;
 });
@@ -51,6 +45,9 @@ test('threads publisher can publish text-only post', function () {
         'https://graph.threads.net/v1.0/123456789/threads' => Http::response([
             'id' => 'container-123',
         ], 200),
+        'https://graph.threads.net/v1.0/container-123*' => Http::response([
+            'status' => 'FINISHED',
+        ], 200),
         'https://graph.threads.net/v1.0/123456789/threads_publish' => Http::response([
             'id' => 'post-123456789',
         ], 200),
@@ -59,7 +56,7 @@ test('threads publisher can publish text-only post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result)->toHaveKey('id');
     expect($result)->toHaveKey('url');
@@ -71,6 +68,29 @@ test('threads publisher can publish text-only post', function () {
             && str_contains($request->url(), '123456789');
     });
 });
+
+test('threads publisher keeps the published id when the permalink lookup fails', function (string $failure) {
+    $base = config('trypost.platforms.threads.graph_api');
+
+    Http::fake([
+        "{$base}/123456789/threads" => Http::response(['id' => 'container-123']),
+        "{$base}/container-123*" => Http::response(['status' => 'FINISHED']),
+        "{$base}/123456789/threads_publish" => Http::response(['id' => 'post-123']),
+        "{$base}/post-123*" => match ($failure) {
+            'connection' => Http::failedConnection(),
+            'http' => Http::response(['error' => ['message' => 'Unavailable']], 500),
+            'missing link' => Http::response([]),
+        },
+    ]);
+
+    expect($this->publisher->publish($this->post))->toBe([
+        'id' => 'post-123',
+        'url' => null,
+    ]);
+
+    expect(Http::recorded(fn ($request): bool => $request->method() === 'POST'
+        && Str::endsWith($request->url(), '/threads_publish')))->toHaveCount(1);
+})->with(['connection', 'http', 'missing link']);
 
 test('threads publisher can publish image post', function () {
     $this->post->update([
@@ -100,7 +120,7 @@ test('threads publisher can publish image post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('post-123456789');
 
@@ -157,7 +177,7 @@ test('threads publisher recreates a missing image container before retrying publ
         ], 200);
     });
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('post-after-retry')
         ->and($containerCreations)->toBe(2)
@@ -197,7 +217,7 @@ test('threads publisher does not retry a missing media response from container c
         ], 400);
     });
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(ThreadsPublishException::class);
 
     expect($containerCreations)->toBe(1);
@@ -244,7 +264,7 @@ test('threads publisher stops after three missing media containers', function ()
     });
 
     try {
-        $this->publisher->publish($this->postPlatform);
+        $this->publisher->publish($this->post);
         $this->fail('Expected ThreadsPublishException was not thrown.');
     } catch (ThreadsPublishException $exception) {
         expect($exception)->toBeInstanceOf(ThreadsMediaContainerNotFoundException::class);
@@ -293,7 +313,7 @@ test('threads publisher does not retry unrelated client errors', function () {
         return Http::response([], 500);
     });
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(ThreadsPublishException::class, 'Invalid parameter');
 
     expect($containerCreations)->toBe(1)
@@ -328,7 +348,7 @@ test('threads publisher can publish video post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('post-123456789');
 
@@ -366,7 +386,7 @@ test('threads publisher can publish carousel', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('post-123456789');
 
@@ -430,7 +450,7 @@ test('threads publisher waits for the final carousel container before publishing
         return Http::response(['permalink' => 'https://www.threads.net/carousel'], 200);
     });
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     expect($requestOrder)
         ->toContain('status:carousel-final')
@@ -504,7 +524,7 @@ test('threads publisher recreates the complete carousel after a missing final co
         return Http::response(['permalink' => 'https://www.threads.net/carousel'], 200);
     });
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('carousel-post')
         ->and($childCreations)->toBe(4)
@@ -523,7 +543,7 @@ test('threads publisher throws exception on api error', function () {
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class);
 });
 
@@ -538,7 +558,7 @@ test('threads publisher throws token expired exception on auth error', function 
         ], 401),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(TokenExpiredException::class);
 });
 
@@ -553,6 +573,9 @@ test('threads publisher refreshes token when expired', function () {
         'https://graph.threads.net/v1.0/123456789/threads' => Http::response([
             'id' => 'container-123',
         ], 200),
+        'https://graph.threads.net/v1.0/container-123*' => Http::response([
+            'status' => 'FINISHED',
+        ], 200),
         'https://graph.threads.net/v1.0/123456789/threads_publish' => Http::response([
             'id' => 'post-123456789',
         ], 200),
@@ -561,7 +584,7 @@ test('threads publisher refreshes token when expired', function () {
         ], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), 'refresh_access_token');
@@ -580,7 +603,7 @@ test('threads publisher throws TokenExpiredException when refresh_token is rejec
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(TokenExpiredException::class, 'Token is invalid');
 });
 
@@ -613,7 +636,7 @@ test('threads publisher waits for media processing', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('post-123456789');
 });
@@ -641,14 +664,14 @@ test('threads publisher handles media processing error', function () {
         ], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Threads media processing failed');
 });
 
 test('threads publisher throws exception for text post with null content', function () {
     $this->post->update(['content' => null]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Threads text posts require content');
 });
 
@@ -681,7 +704,7 @@ test('threads publisher can publish image with null content', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('media-123');
 });
@@ -710,7 +733,7 @@ test('threads publisher throws exception when all carousel items fail', function
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Failed to create any carousel items');
 });
 
@@ -745,7 +768,7 @@ test('threads publisher sends capped alt text on single image container', functi
         ], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     $expectedAlt = mb_substr($longAlt, 0, Platform::Threads->altTextMaxLength());
 
@@ -784,7 +807,7 @@ test('threads publisher omits alt_text from single image container when no alt t
         ], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_ends_with($request->url(), '/123456789/threads')
@@ -831,7 +854,7 @@ test('threads publisher sends alt text on image carousel children but never on v
         ], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     $expectedAlt = mb_substr($imageAlt, 0, Platform::Threads->altTextMaxLength());
 
@@ -881,7 +904,7 @@ test('threads publisher can publish video with null content', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('video-123');
 });
@@ -893,15 +916,164 @@ test('threads publisher keeps links intact', function () {
 
     Http::fake([
         'https://graph.threads.net/v1.0/123456789/threads' => Http::response(['id' => 'container-123'], 200),
+        'https://graph.threads.net/v1.0/container-123*' => Http::response(['status' => 'FINISHED'], 200),
         'https://graph.threads.net/v1.0/123456789/threads_publish' => Http::response(['id' => 'post-123456789'], 200),
         'https://graph.threads.net/v1.0/post-123456789*' => Http::response([
             'permalink' => 'https://www.threads.net/@testuser/post/ABC123',
         ], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/123456789/threads')
         && ! str_contains($request->url(), 'threads_publish')
         && data_get($request->data(), 'text') === 'New post: https://acme.com/blog');
+});
+
+function fakeThreadsContainerFlow(): void
+{
+    $base = config('trypost.platforms.threads.graph_api');
+
+    Http::fake([
+        "{$base}/123456789/threads" => Http::response(['id' => 'container-1']),
+        "{$base}/123456789/threads_publish" => Http::response(['id' => 'post-1']),
+        "{$base}/post-1*" => Http::response(['permalink' => 'https://www.threads.net/@testuser/post/A']),
+        "{$base}/container-1*" => Http::response(['status' => 'FINISHED']),
+    ]);
+}
+
+test('a ghost post is a text container flagged as ghost and nothing else', function () {
+    $this->post->update([
+        'content_type' => ContentType::ThreadsGhostPost,
+        'meta' => ['topic_tag' => 'laravel'],
+    ]);
+    fakeThreadsContainerFlow();
+
+    $this->publisher->publish($this->post->fresh());
+
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/123456789/threads')
+        && data_get($request->data(), 'media_type') === 'TEXT'
+        && data_get($request->data(), 'is_ghost_post') === 'true'
+        && ! array_key_exists('topic_tag', $request->data()));
+});
+
+test('a ghost post with media fails before calling threads', function () {
+    $this->post->update(['content_type' => ContentType::ThreadsGhostPost]);
+    $this->post->update(['media' => [['id' => 'm', 'type' => 'image', 'path' => 'm.jpg', 'url' => 'https://example.com/m.jpg', 'mime_type' => 'image/jpeg']]]);
+    Http::fake();
+
+    expect(fn () => $this->publisher->publish($this->post->fresh()))->toThrow(ThreadsPublishException::class);
+    Http::assertNothingSent();
+});
+
+test('a ghost post without text fails before calling threads', function () {
+    $this->post->update(['content_type' => ContentType::ThreadsGhostPost]);
+    $this->post->update(['content' => null]);
+    Http::fake();
+
+    expect(fn () => $this->publisher->publish($this->post->fresh()))->toThrow(ThreadsPublishException::class);
+    Http::assertNothingSent();
+});
+
+test('the threads topic tag reaches the text container without its hash', function () {
+    $this->post->update(['meta' => ['topic_tag' => '#laravel']]);
+    fakeThreadsContainerFlow();
+
+    $this->publisher->publish($this->post->fresh());
+
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/123456789/threads')
+        && data_get($request->data(), 'topic_tag') === 'laravel'
+        && ! array_key_exists('is_ghost_post', $request->data()));
+});
+
+test('the threads topic tag reaches an image container', function () {
+    $this->post->update(['media' => [['id' => 'm', 'type' => 'image', 'path' => 'm.jpg', 'url' => 'https://example.com/m.jpg', 'mime_type' => 'image/jpeg']]]);
+    $this->post->update(['meta' => ['topic_tag' => 'laravel']]);
+    fakeThreadsContainerFlow();
+
+    $this->publisher->publish($this->post->fresh());
+
+    Http::assertSent(fn ($request): bool => data_get($request->data(), 'media_type') === 'IMAGE'
+        && data_get($request->data(), 'topic_tag') === 'laravel');
+});
+
+test('the threads topic tag reaches the carousel container and never its children', function () {
+    $this->post->update(['media' => [
+        ['id' => 'a', 'type' => 'image', 'path' => 'a.jpg', 'url' => 'https://example.com/a.jpg', 'mime_type' => 'image/jpeg'],
+        ['id' => 'b', 'type' => 'image', 'path' => 'b.jpg', 'url' => 'https://example.com/b.jpg', 'mime_type' => 'image/jpeg'],
+    ]]);
+    $this->post->update(['meta' => ['topic_tag' => 'laravel']]);
+    fakeThreadsContainerFlow();
+
+    $this->publisher->publish($this->post->fresh());
+
+    Http::assertSent(fn ($request): bool => data_get($request->data(), 'media_type') === 'CAROUSEL'
+        && data_get($request->data(), 'topic_tag') === 'laravel');
+    Http::assertNotSent(fn ($request): bool => data_get($request->data(), 'is_carousel_item') === 'true'
+        && array_key_exists('topic_tag', $request->data()));
+});
+
+test('a threads post without a topic sends only text', function () {
+    fakeThreadsContainerFlow();
+
+    $this->publisher->publish($this->post);
+
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/123456789/threads')
+        && array_keys($request->data()) === ['media_type', 'text', 'access_token']);
+});
+
+test('a ghost post with a link is published as a ghost text container', function () {
+    $this->post->update(['content_type' => ContentType::ThreadsGhostPost]);
+    $this->post->update(['content' => 'Read https://example.com/article']);
+    fakeThreadsContainerFlow();
+
+    $this->publisher->publish($this->post->fresh());
+
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/123456789/threads')
+        && data_get($request->data(), 'media_type') === 'TEXT'
+        && data_get($request->data(), 'is_ghost_post') === 'true'
+        && str_contains((string) data_get($request->data(), 'text'), 'https://example.com/article'));
+});
+
+test('a text post waits for its container before publishing and recreates it when threads cannot find it', function () {
+    $this->post->update(['content_type' => ContentType::ThreadsGhostPost]);
+    $base = config('trypost.platforms.threads.graph_api');
+    $containerCreations = 0;
+    $publicationAttempts = 0;
+    $requestOrder = [];
+
+    Http::fake(function ($request) use ($base, &$containerCreations, &$publicationAttempts, &$requestOrder) {
+        $url = $request->url();
+
+        if (str_starts_with($url, "{$base}/123456789/threads_publish")) {
+            $publicationAttempts++;
+            $requestOrder[] = 'publish';
+
+            return $publicationAttempts === 1
+                ? Http::response(['error' => ['code' => 24, 'error_subcode' => 4279009, 'message' => 'The requested resource does not exist']], 400)
+                : Http::response(['id' => 'post-1']);
+        }
+
+        if (str_starts_with($url, "{$base}/123456789/threads")) {
+            $containerCreations++;
+            $requestOrder[] = 'create';
+
+            return Http::response(['id' => "container-{$containerCreations}"]);
+        }
+
+        if (str_starts_with($url, "{$base}/container-")) {
+            $requestOrder[] = 'status';
+
+            return Http::response(['status' => 'FINISHED']);
+        }
+
+        return Http::response(['permalink' => 'https://www.threads.net/@testuser/post/A']);
+    });
+
+    $result = $this->publisher->publish($this->post->fresh());
+
+    expect($result['id'])->toBe('post-1')
+        ->and($containerCreations)->toBe(2)
+        ->and($publicationAttempts)->toBe(2)
+        ->and(array_slice($requestOrder, 0, 3))->toBe(['create', 'status', 'publish']);
 });

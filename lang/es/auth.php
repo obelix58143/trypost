@@ -52,9 +52,7 @@ return [
     'github_email_unavailable' => 'No fue posible obtener tu correo de GitHub. Haz tu correo público en GitHub o concede el permiso de correo y vuelve a intentar.',
 
     'login' => [
-        'title' => 'Inicia sesión en tu cuenta',
-        'description' => 'Introduce tu correo y contraseña para iniciar sesión',
-        'description_without_password' => 'Inicia sesión con la cuenta de tu organización para continuar',
+        'title' => 'Inicia sesión en TryPost',
         'page_title' => 'Iniciar sesión',
         'email' => 'Correo electrónico',
         'password' => 'Contraseña',
@@ -68,10 +66,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'Todo tu calendario social en un solo lugar',
-        'description' => 'Crea tu cuenta y empieza a programar publicaciones en todas las redes.',
+        'title' => 'Crea una cuenta de TryPost',
         'page_title' => 'Registro',
-        'signup_with_email' => 'Registrarse con correo',
         'name' => 'Nombre',
         'name_placeholder' => 'Nombre completo',
         'email' => 'Correo electrónico',
@@ -81,6 +77,12 @@ return [
         'submit' => 'Crear cuenta',
         'has_account' => '¿Ya tienes una cuenta?',
         'log_in' => 'Iniciar sesión',
+        'password_requirements' => [
+            'min' => 'Al menos :count caracteres',
+            'mixed_case' => 'Mayúsculas y minúsculas',
+            'number' => 'Al menos 1 número',
+            'symbol' => 'Al menos 1 símbolo',
+        ],
     ],
 
     'forgot_password' => [

@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => 'GitHub からメールアドレスを取得できませんでした。GitHub のメールアドレスを公開するか、email スコープを許可してから、もう一度お試しください。',
 
     'login' => [
-        'title' => 'アカウントにログイン',
-        'description' => 'ログインするにはメールアドレスとパスワードを入力してください',
-        'description_without_password' => '続行するには組織のアカウントでログインしてください',
+        'title' => 'TryPost にログイン',
         'page_title' => 'ログイン',
         'email' => 'メールアドレス',
         'password' => 'パスワード',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'すべてのソーシャルカレンダーを 1 か所に',
-        'description' => 'アカウントを作成して、あらゆるネットワークへの投稿スケジュールを始めましょう。',
+        'title' => 'TryPost アカウントを作成',
         'page_title' => '登録',
-        'signup_with_email' => 'メールで登録',
         'name' => '名前',
         'name_placeholder' => '氏名',
         'email' => 'メールアドレス',
@@ -93,6 +89,12 @@ return [
         'submit' => 'アカウントを作成',
         'has_account' => 'すでにアカウントをお持ちですか？',
         'log_in' => 'ログイン',
+        'password_requirements' => [
+            'min' => ':count 文字以上',
+            'mixed_case' => '大文字と小文字',
+            'number' => '数字を 1 つ以上',
+            'symbol' => '記号を 1 つ以上',
+        ],
     ],
 
     'forgot_password' => [

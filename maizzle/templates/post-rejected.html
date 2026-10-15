@@ -1,0 +1,24 @@
+<x-main>
+  <x-message authenticated="true">
+    <x-heading>
+      @{{ __('mail.post_rejected.heading') }}
+    </x-heading>
+
+    <p class="m-0 leading-6">
+      @{{ __('mail.post_rejected.body', ['name' => $approverName, 'workspace' => $workspaceName]) }}
+    </p>
+
+    @if($channel)
+      <p class="m-0 mt-4 text-sm font-semibold text-foreground">
+        @{{ __('mail.post_rejected.channel') }}
+      </p>
+      <x-channel-card />
+    @endif
+
+    <x-spacer height="24px" />
+
+    <x-button href="@{{ $url }}">
+      @{{ __('mail.post_rejected.button') }}
+    </x-button>
+  </x-message>
+</x-main>

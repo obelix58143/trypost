@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => 'Impossibile recuperare la tua email da GitHub. Rendi pubblica la tua email GitHub o concedi l\'ambito email, poi riprova.',
 
     'login' => [
-        'title' => 'Accedi al tuo account',
-        'description' => 'Inserisci la tua email e la password qui sotto per accedere',
-        'description_without_password' => 'Accedi con l\'account della tua organizzazione per continuare',
+        'title' => 'Accedi a TryPost',
         'page_title' => 'Accedi',
         'email' => 'Indirizzo email',
         'password' => 'Password',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'Tutto il tuo calendario social, in un unico posto',
-        'description' => 'Crea il tuo account e inizia a programmare i post su ogni rete.',
+        'title' => 'Crea un account TryPost',
         'page_title' => 'Registrati',
-        'signup_with_email' => 'Registrati con l\'email',
         'name' => 'Nome',
         'name_placeholder' => 'Nome completo',
         'email' => 'Indirizzo email',
@@ -93,6 +89,12 @@ return [
         'submit' => 'Crea account',
         'has_account' => 'Hai già un account?',
         'log_in' => 'Accedi',
+        'password_requirements' => [
+            'min' => 'Almeno :count caratteri',
+            'mixed_case' => 'Lettere maiuscole e minuscole',
+            'number' => 'Almeno 1 numero',
+            'symbol' => 'Almeno 1 simbolo',
+        ],
     ],
 
     'forgot_password' => [

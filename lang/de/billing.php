@@ -21,7 +21,6 @@ return [
     ],
 
     'plans' => [
-        'title' => 'Tarife',
         'description' => 'Jederzeit upgraden oder downgraden.',
         'monthly' => 'Monatlich',
         'yearly' => 'Jährlich',
@@ -48,8 +47,8 @@ return [
             'networks_all_tooltip' => 'Du kannst auf allen diesen Netzwerken posten.',
             'accounts_unlimited' => 'Unbegrenzte Social-Accounts',
             'accounts_unlimited_tooltip' => 'Verbinde so viele Konten, wie du willst, auch mehrere vom selben Netzwerk. Zum Beispiel drei Instagram-Konten.',
-            'calendar' => 'Kalender: Monats-, Wochen- und Tagesansicht',
-            'calendar_tooltip' => 'Sieh deinen ganzen Monat auf einen Blick: was geplant, terminiert und schon veröffentlicht ist. Wechsle zu Woche oder Tag, wenn du Details brauchst.',
+            'calendar' => 'Kalender: Monats- und Wochenansicht',
+            'calendar_tooltip' => 'Sieh deinen ganzen Monat auf einen Blick: was geplant, terminiert und schon veröffentlicht ist. Wechsle zur Woche, wenn du Details brauchst.',
             'ai' => 'TryPost Copilot',
             'ai_tooltip' => 'Dein KI-Assistent zum Schreiben und Überarbeiten von Posts.',
             'mcp' => 'MCP: posten mit Claude, ChatGPT oder Grok',
@@ -63,10 +62,14 @@ return [
         ],
     ],
 
-    'plan' => [
-        'trial' => 'Testphase',
-        'cancelling' => 'Wird gekündigt',
-        'trial_ends' => 'Testphase endet',
+    'current_plan' => [
+        'change' => 'Tarif ändern',
+        'price_monthly' => ':price/Monat',
+        'price_yearly' => ':price/Jahr',
+        'trial_until' => 'Testphase bis :date',
+        'renews' => 'Verlängert sich automatisch',
+        'cancelled' => 'Gekündigt, endet am :date',
+        'workspaces_usage' => 'Workspaces: :count von :limit',
     ],
 
     'subscription' => [
@@ -81,6 +84,7 @@ return [
         'title' => 'Rechnungen',
         'description' => 'Lade deine bisherigen Rechnungen herunter.',
         'paid' => 'Bezahlt',
+        'download' => 'Rechnung herunterladen',
     ],
 
     'flash' => [

@@ -27,7 +27,7 @@ class ListRepurposeItemsTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace($request, 'manageRepurposes', 'Not authorized to manage repurposes.');
+        $workspace = $this->currentWorkspace($request);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
@@ -38,6 +38,10 @@ class ListRepurposeItemsTool extends Tool
 
         if (! $repurpose instanceof Repurpose) {
             return $repurpose;
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'view', $repurpose, 'Repurpose not found.')) {
+            return $denied;
         }
 
         $items = ListRepurposeItems::execute($repurpose, page: (int) data_get($validated, 'page', 1));

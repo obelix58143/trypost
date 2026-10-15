@@ -25,7 +25,7 @@ test('list signatures', function () {
     );
 
     $response->assertOk();
-    $response->assertJsonCount(3);
+    $response->assertJsonCount(3, 'data');
 });
 
 test('create signature', function () {
@@ -158,7 +158,7 @@ test('list signatures returns correct structure', function () {
         ->getJson(route('api.signatures.index'))
         ->assertOk()
         ->assertJsonStructure([
-            '*' => ['id', 'name', 'content', 'created_at', 'updated_at'],
+            'data' => ['*' => ['id', 'name', 'content', 'created_at', 'updated_at']],
         ]);
 });
 

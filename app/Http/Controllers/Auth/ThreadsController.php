@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
-use App\Enums\SocialAccount\Status;
-use App\Exceptions\SocialAccount\ConnectPopupException;
-use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
-use App\Models\SocialAccount;
+use App\Exceptions\SocialAccount\ConnectFlowException;
 use App\Services\Social\TokenRedactor;
+use App\Support\Social\PendingConnection;
+use Exception;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
-use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 class ThreadsController extends SocialController
@@ -48,17 +47,17 @@ class ThreadsController extends SocialController
             'state' => $state,
         ]);
 
-        return Inertia::location("https://threads.net/oauth/authorize?{$params}");
+        return Inertia::location(config('trypost.platforms.threads.oauth_url')."/oauth/authorize?{$params}");
     }
 
-    public function callback(Request $request): InertiaResponse
+    public function callback(Request $request): RedirectResponse
     {
         $savedState = session('threads_oauth_state');
         session()->forget('threads_oauth_state');
         $workspace = $this->connectWorkspace($request);
 
         if ($request->state !== $savedState) {
-            throw new ConnectPopupException('invalid_state', $this->platform);
+            throw new ConnectFlowException('invalid_state', $this->platform);
         }
 
         try {
@@ -76,7 +75,7 @@ class ThreadsController extends SocialController
                     'status' => $tokenResponse->status(),
                     'body' => TokenRedactor::redact($tokenResponse->body()),
                 ]);
-                throw new \Exception('Failed to exchange token');
+                throw new Exception('Failed to exchange token');
             }
 
             $tokenData = $tokenResponse->json();
@@ -95,14 +94,19 @@ class ThreadsController extends SocialController
                     'status' => $longLivedResponse->status(),
                     'body' => TokenRedactor::redact($longLivedResponse->body()),
                 ]);
-                throw new \Exception('Failed to exchange long-lived token');
+                throw new Exception('Failed to exchange long-lived token');
             }
 
             $longLivedData = $longLivedResponse->json();
             $longLivedToken = $longLivedData['access_token'] ?? $shortLivedToken;
             $expiresIn = $longLivedData['expires_in'] ?? $this->platform->defaultTokenTtlSeconds();
+            $scopes = $this->tokenScopes($longLivedToken);
+            $refusal = $this->refusalForMissingPublishScopes($scopes);
 
-            // Fetch user profile
+            if ($refusal !== null) {
+                return $refusal;
+            }
+
             $profileResponse = Http::get(config('trypost.platforms.threads.graph_api')."/{$userId}", [
                 'access_token' => $longLivedToken,
                 'fields' => 'id,username,name,threads_profile_picture_url',
@@ -112,42 +116,55 @@ class ThreadsController extends SocialController
                 Log::error('Threads profile fetch failed', [
                     'body' => $profileResponse->body(),
                 ]);
-                throw new \Exception('Failed to fetch profile');
+                throw new Exception('Failed to fetch profile');
             }
 
             $profile = $profileResponse->json();
-            $avatarPath = uploadFromUrl(data_get($profile, 'threads_profile_picture_url', null));
-            $reconnect = $this->reconnectAccount($workspace);
 
-            SocialAccount::connectIdentity(
-                $workspace,
-                $this->platform,
-                (string) data_get($profile, 'id'),
-                [
-                    'username' => data_get($profile, 'username'),
-                    'display_name' => data_get($profile, 'name', data_get($profile, 'username')),
-                    'avatar_url' => $avatarPath,
-                    'access_token' => $longLivedToken,
-                    'refresh_token' => null,
-                    'token_expires_at' => now()->addSeconds($expiresIn),
-                    'scopes' => $this->scopes,
-                    'status' => Status::Connected,
-                    'error_message' => null,
-                    'disconnected_at' => null,
-                ],
-                $reconnect,
-            );
-
-            return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException $e) {
-            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
-        } catch (\Exception $e) {
+            return $this->offerIdentities($workspace, [
+                PendingConnection::identity(
+                    $this->platform,
+                    (string) data_get($profile, 'id'),
+                    data_get($profile, 'name', data_get($profile, 'username')),
+                    data_get($profile, 'username'),
+                    data_get($profile, 'threads_profile_picture_url'),
+                    $this->platform->identityType()->value,
+                    [
+                        'username' => data_get($profile, 'username'),
+                        'display_name' => data_get($profile, 'name', data_get($profile, 'username')),
+                        'access_token' => $longLivedToken,
+                        'refresh_token' => null,
+                        'token_expires_at' => now()->addSeconds($expiresIn),
+                        'scopes' => $scopes,
+                    ],
+                ),
+            ], $this->reconnectAccount($workspace));
+        } catch (Exception $e) {
             Log::error('Threads OAuth Error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
+            return $this->failConnection('error_connecting');
         }
+    }
+
+    /**
+     * The scopes Threads reports for this token through `/debug_token`. The token
+     * response carries none, and a failed lookup leaves the requested list.
+     *
+     * @return array<int, string>
+     */
+    private function tokenScopes(string $accessToken): array
+    {
+        $response = rescue(fn () => Http::timeout(15)->connectTimeout(5)->get(config('trypost.platforms.threads.graph_api').'/debug_token', [
+            'access_token' => $accessToken,
+            'input_token' => $accessToken,
+        ]), report: false);
+
+        return $this->reportedScopes(
+            $response?->successful() ? $response->json('data.scopes') : null,
+            $this->scopes,
+        );
     }
 }

@@ -42,7 +42,7 @@ trait PreservesInvite
 
     private function inviteEmailMismatchRedirect(?Invite $invite, ?string $oauthEmail): ?RedirectResponse
     {
-        if ($invite && $invite->email !== $oauthEmail) {
+        if ($invite && ! $invite->isFor($oauthEmail)) {
             return redirect()->route('login')->withErrors([
                 'email' => __('settings.members.flash.wrong_email'),
             ]);

@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Enums\Webhook\EventType;
 use App\Enums\Webhook\Status;
 use App\Jobs\DispatchWebhook;
 use App\Mcp\Servers\TryPostServer;
+use App\Mcp\Tools\Label\DeleteLabelTool;
+use App\Mcp\Tools\Label\UpdateLabelTool;
+use App\Mcp\Tools\Signature\DeleteSignatureTool;
+use App\Mcp\Tools\Signature\UpdateSignatureTool;
 use App\Mcp\Tools\Webhook\CreateWebhookTool;
 use App\Mcp\Tools\Webhook\DeleteWebhookTool;
 use App\Mcp\Tools\Webhook\GetWebhookTool;
@@ -27,7 +30,7 @@ use Illuminate\Testing\Fluent\AssertableJson;
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Admin->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('admin'));
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
 
     $mock = Mockery::mock(WebhookService::class);
@@ -43,7 +46,7 @@ test('list webhooks returns wrapped webhooks without signing secret', function (
         ->tool(ListWebhooksTool::class, [])
         ->assertOk()
         ->assertStructuredContent(function (AssertableJson $json) {
-            $json->has('webhooks', 2, function (AssertableJson $webhook) {
+            $json->where('current_page', 1)->where('per_page', (int) config('app.pagination.default'))->etc()->has('webhooks', 2, function (AssertableJson $webhook) {
                 $webhook->hasAll(['id', 'endpoint', 'events', 'status', 'created_at', 'updated_at'])
                     ->missing('signing_secret')
                     ->missing('workspace_id')
@@ -320,11 +323,12 @@ test('list webhook logs', function () {
             $json->has('logs', 2, function (AssertableJson $log) {
                 $log->hasAll(['id', 'event_type', 'payload', 'response_status', 'created_at'])
                     ->etc();
-            });
+            })->where('total', 2)->etc();
         });
 });
 
-test('list webhook logs honors limit', function () {
+test('list webhook logs pages by the app default', function () {
+    config()->set('app.pagination.default', 1);
     $webhook = Webhook::factory()->create([
         'workspace_id' => $this->workspace->id,
     ]);
@@ -335,10 +339,10 @@ test('list webhook logs honors limit', function () {
     TryPostServer::actingAs($this->user)
         ->tool(ListWebhookLogsTool::class, [
             'webhook_id' => $webhook->id,
-            'limit' => 1,
+            'page' => 2,
         ])
         ->assertOk()
-        ->assertStructuredContent(fn (AssertableJson $json) => $json->has('logs', 1)->etc());
+        ->assertStructuredContent(fn (AssertableJson $json) => $json->has('logs', 1)->where('total', 3)->where('per_page', 1)->where('current_page', 2)->where('last_page', 3));
 });
 
 test('replay webhook log', function () {
@@ -434,9 +438,9 @@ test('cannot send test rotate or list logs for a webhook from another workspace'
         ->assertHasErrors(['Webhook not found.']);
 });
 
-test('members and viewers cannot manage webhooks through mcp', function (Role $role) {
+test('members who are not admins cannot manage webhooks through mcp', function (string $role) {
     $teammate = User::factory()->create(['account_id' => $this->user->account_id]);
-    $this->workspace->members()->attach($teammate->id, ['role' => $role->value]);
+    $this->workspace->members()->attach($teammate->id, membershipPivot($role));
     $teammate->update(['current_workspace_id' => $this->workspace->id]);
 
     $webhook = Webhook::factory()->create([
@@ -448,54 +452,82 @@ test('members and viewers cannot manage webhooks through mcp', function (Role $r
 
     TryPostServer::actingAs($teammate)
         ->tool(ListWebhooksTool::class, [])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(CreateWebhookTool::class, [
             'endpoint' => 'https://member.example.com/webhooks',
             'events' => [EventType::PostPublished->value],
         ])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(GetWebhookTool::class, ['webhook_id' => $webhook->id])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(UpdateWebhookTool::class, [
             'webhook_id' => $webhook->id,
             'status' => Status::Disabled->value,
         ])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(SendWebhookTestTool::class, ['webhook_id' => $webhook->id])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(RotateWebhookSecretTool::class, ['webhook_id' => $webhook->id])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(ListWebhookLogsTool::class, ['webhook_id' => $webhook->id])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(ReplayWebhookLogTool::class, [
             'webhook_id' => $webhook->id,
             'log_id' => $log->id,
         ])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     TryPostServer::actingAs($teammate)
         ->tool(DeleteWebhookTool::class, ['webhook_id' => $webhook->id])
-        ->assertHasErrors(['Not authorized to manage webhooks.']);
+        ->assertHasErrors(['This action is unauthorized.']);
 
     expect($webhook->fresh())->not->toBeNull();
     $this->assertDatabaseMissing('webhooks', [
         'endpoint' => 'https://member.example.com/webhooks',
     ]);
 })->with([
-    Role::Member,
-    Role::Viewer,
+    'member',
+    'approval',
 ]);
+
+dataset('mcp tools with a uuid id', function () {
+    return [
+        'get webhook' => [GetWebhookTool::class, ['webhook_id' => 'not-a-uuid']],
+        'update webhook' => [UpdateWebhookTool::class, ['webhook_id' => 'not-a-uuid']],
+        'delete webhook' => [DeleteWebhookTool::class, ['webhook_id' => 'not-a-uuid']],
+        'send webhook test' => [SendWebhookTestTool::class, ['webhook_id' => 'not-a-uuid']],
+        'rotate webhook secret' => [RotateWebhookSecretTool::class, ['webhook_id' => 'not-a-uuid']],
+        'list webhook logs' => [ListWebhookLogsTool::class, ['webhook_id' => 'not-a-uuid']],
+        'replay webhook log (webhook)' => [ReplayWebhookLogTool::class, ['webhook_id' => 'not-a-uuid', 'log_id' => '8a1b5c2e-1111-4111-8111-111111111111']],
+        'replay webhook log (log)' => [ReplayWebhookLogTool::class, ['webhook_id' => '8a1b5c2e-1111-4111-8111-111111111111', 'log_id' => 'not-a-uuid']],
+        'update label' => [UpdateLabelTool::class, ['label_id' => 'not-a-uuid', 'name' => 'x', 'color' => '#000000']],
+        'delete label' => [DeleteLabelTool::class, ['label_id' => 'not-a-uuid']],
+        'update signature' => [UpdateSignatureTool::class, ['signature_id' => 'not-a-uuid', 'name' => 'x', 'content' => 'x']],
+        'delete signature' => [DeleteSignatureTool::class, ['signature_id' => 'not-a-uuid']],
+    ];
+});
+
+it('rejects a non uuid id with a validation error', function (string $tool, array $arguments) {
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->create(['user_id' => $user->id]);
+    $workspace->members()->attach($user->id, membershipPivot('admin'));
+    $user->update(['current_workspace_id' => $workspace->id]);
+
+    TryPostServer::actingAs($user)
+        ->tool($tool, $arguments)
+        ->assertHasErrors(['must be a valid UUID']);
+})->with('mcp tools with a uuid id');

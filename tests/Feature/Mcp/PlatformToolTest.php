@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Mcp\Servers\TryPostServer;
 use App\Mcp\Tools\Platform\ListContentTypesTool;
 use App\Models\User;
@@ -12,7 +11,7 @@ use Illuminate\Testing\Fluent\AssertableJson;
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
 });
 
@@ -28,6 +27,9 @@ test('list content types returns all platforms with constraints', function () {
                         'platform',
                         'label',
                         'max_content_length',
+                        'max_hashtags',
+                        'alt_text_max_length',
+                        'required_meta',
                         'recommended_content_length',
                         'allowed_media_types',
                         'default_content_type',
@@ -52,6 +54,22 @@ test('list content types returns all platforms with constraints', function () {
                                 'max_image_bytes',
                                 'max_video_bytes',
                                 'max_document_bytes',
+                                'aspect_ratio_min',
+                                'aspect_ratio_max',
+                                'video_aspect_ratio_min',
+                                'video_aspect_ratio_max',
+                                'auto_fits_image',
+                                'image_min_width',
+                                'image_min_height',
+                                'image_max_width',
+                                'image_max_height',
+                                'supports_alt_text',
+                                'supports_user_tags',
+                                'supports_video_cover',
+                                'captionless',
+                                'document_must_be_alone',
+                                'supports_thread_replies',
+                                'max_thread_replies',
                             ])
                         )
                     )

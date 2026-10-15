@@ -7,17 +7,25 @@ namespace App\Providers;
 use App\Listeners\StripeEventListener;
 use App\Models\AccessToken;
 use App\Models\Account;
-use App\Models\AiUsageLog;
+use App\Models\AnalyticsAccountDailySnapshot;
+use App\Models\AnalyticsPublication;
+use App\Models\AnalyticsPublicationDailySnapshot;
+use App\Models\AnalyticsSyncState;
+use App\Models\Idea;
+use App\Models\IdeaStage;
 use App\Models\Invite;
 use App\Models\Media;
-use App\Models\Notification;
+use App\Models\MediaSourceConnection;
 use App\Models\NotificationPreference;
 use App\Models\Plan;
 use App\Models\Post;
-use App\Models\PostComment;
-use App\Models\PostPlatform;
+use App\Models\PostNote;
+use App\Models\PostTemplate;
 use App\Models\Repurpose;
 use App\Models\RepurposeItem;
+use App\Models\RssFeed;
+use App\Models\RssFeedCollection;
+use App\Models\RssFeedItem;
 use App\Models\SocialAccount;
 use App\Models\Subscription;
 use App\Models\SubscriptionItem;
@@ -25,7 +33,6 @@ use App\Models\User;
 use App\Models\Webhook;
 use App\Models\WebhookLog;
 use App\Models\Workspace;
-use App\Models\WorkspaceInvite;
 use App\Models\WorkspaceLabel;
 use App\Models\WorkspaceSignature;
 use App\Services\PostHogService;
@@ -33,6 +40,7 @@ use App\Socialite\DiscordProvider;
 use App\Socialite\InstagramProvider;
 use App\Socialite\LinkedInPageExtendSocialite;
 use App\Socialite\OidcProvider;
+use App\Support\Auth\PasswordRequirements;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
@@ -97,17 +105,25 @@ class AppServiceProvider extends ServiceProvider
         Relation::enforceMorphMap([
             'accessToken' => AccessToken::class,
             'account' => Account::class,
-            'aiUsageLog' => AiUsageLog::class,
+            'analyticsAccountDailySnapshot' => AnalyticsAccountDailySnapshot::class,
+            'analyticsPublication' => AnalyticsPublication::class,
+            'analyticsPublicationDailySnapshot' => AnalyticsPublicationDailySnapshot::class,
+            'analyticsSyncState' => AnalyticsSyncState::class,
+            'idea' => Idea::class,
+            'ideaStage' => IdeaStage::class,
             'invite' => Invite::class,
             'media' => Media::class,
-            'notification' => Notification::class,
+            'mediaSourceConnection' => MediaSourceConnection::class,
             'notificationPreference' => NotificationPreference::class,
             'plan' => Plan::class,
             'post' => Post::class,
             'repurpose' => Repurpose::class,
             'repurposeItem' => RepurposeItem::class,
-            'postComment' => PostComment::class,
-            'postPlatform' => PostPlatform::class,
+            'rssFeed' => RssFeed::class,
+            'rssFeedCollection' => RssFeedCollection::class,
+            'rssFeedItem' => RssFeedItem::class,
+            'postComment' => PostNote::class,
+            'postTemplate' => PostTemplate::class,
             'socialAccount' => SocialAccount::class,
             'subscription' => Subscription::class,
             'subscriptionItem' => SubscriptionItem::class,
@@ -115,7 +131,6 @@ class AppServiceProvider extends ServiceProvider
             'webhook' => Webhook::class,
             'webhookLog' => WebhookLog::class,
             'workspace' => Workspace::class,
-            'workspaceInvite' => WorkspaceInvite::class,
             'workspaceLabel' => WorkspaceLabel::class,
             'workspaceSignature' => WorkspaceSignature::class,
         ]);
@@ -139,12 +154,48 @@ class AppServiceProvider extends ServiceProvider
                 return Limit::none();
             }
 
-            return Limit::perMinute(60)->by($request->workspace?->id ?: $request->ip());
+            $user = $request->user();
+            $workspaceId = $user->current_workspace_id;
+
+            $key = $workspaceId !== null
+                ? "workspace:{$workspaceId}"
+                : "user:{$user->id}";
+
+            return Limit::perMinute(60)->by($key);
         });
 
         RateLimiter::for(
             'mcp-oauth-registration',
             fn (Request $request): Limit => Limit::perMinute(30)->by($request->ip()),
+        );
+
+        RateLimiter::for(
+            'media-imports',
+            fn (Request $request): Limit => Limit::perMinute((int) config('trypost.media_sources.imports_per_user_per_minute'))
+                ->by("user:{$request->user()?->id}"),
+        );
+
+        RateLimiter::for(
+            'google-photos-polling',
+            fn (Request $request): Limit => Limit::perMinute((int) config('trypost.media_sources.google_photos.polls_per_user_per_minute'))
+                ->by("user:{$request->user()?->id}"),
+        );
+
+        RateLimiter::for(
+            'unsplash',
+            fn (Request $request): Limit => Limit::perMinute((int) config('trypost.media_sources.unsplash.requests_per_user_per_minute'))
+                ->by("user:{$request->user()?->id}"),
+        );
+
+        RateLimiter::for(
+            'analytics-publications',
+            fn (object $job): array => $job->analyticsRateLimits(),
+        );
+
+        RateLimiter::for(
+            'external-post-media',
+            fn (object $job): Limit => Limit::perMinute((int) config('trypost.external_posts.media_requests_per_network_per_minute'))
+                ->by($job->providerRateLimitKey()),
         );
 
         // Signed media uploads (api.uploads.store). MCP hosts share egress IPs
@@ -231,15 +282,7 @@ class AppServiceProvider extends ServiceProvider
             app()->isProduction(),
         );
 
-        Password::defaults(fn (): ?Password => app()->isProduction()
-            ? Password::min(12)
-                ->mixedCase()
-                ->letters()
-                ->numbers()
-                ->symbols()
-                ->uncompromised()
-            : null
-        );
+        Password::defaults(fn (): Password => PasswordRequirements::rule());
 
         Nightwatch::rejectCacheEvents(function (CacheEvent $cacheEvent) {
             return in_array($cacheEvent->key, [

@@ -8,6 +8,7 @@ use App\Enums\PostPlatform\ContentType;
 use App\Enums\Repurpose\PublishMode;
 use App\Enums\Repurpose\SourceFormat;
 use App\Enums\SocialAccount\Platform;
+use App\Models\SocialAccount;
 use App\Rules\ContentTypeMatchesPlatform;
 use App\Services\Repurpose\SourceFetcherFactory;
 use Illuminate\Validation\Rule;
@@ -33,7 +34,6 @@ class RepurposeRules
                 'uuid',
                 Rule::exists('social_accounts', 'id')
                     ->where('workspace_id', $workspaceId)
-                    ->where('is_active', true)
                     ->whereIn('platform', array_map(
                         fn (Platform $platform): string => $platform->value,
                         SourceFetcherFactory::supportedPlatforms(),
@@ -52,17 +52,21 @@ class RepurposeRules
         return [
             'destinations' => ['sometimes', 'array'],
             'destinations.*.social_account_id' => [
+                'bail',
                 'required',
                 'string',
                 'uuid',
                 Rule::exists('social_accounts', 'id')
                     ->where('workspace_id', $workspaceId),
+                fn (string $attribute, mixed $value, callable $fail) => SocialAccount::query()->find($value)?->platform->acceptsRepurposeDestination() === false
+                    ? $fail(__('repurposes.errors.destination_not_supported'))
+                    : null,
             ],
             'destinations.*.content_type' => [
                 'required',
                 'string',
                 Rule::enum(ContentType::class),
-                new ContentTypeMatchesPlatform,
+                new ContentTypeMatchesPlatform($workspaceId),
                 fn (string $attribute, mixed $value, callable $fail) => ContentType::tryFrom((string) $value)?->supportsVideo() === false
                     ? $fail(__('repurposes.errors.destination_needs_video'))
                     : null,

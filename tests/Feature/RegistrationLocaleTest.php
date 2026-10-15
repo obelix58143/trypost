@@ -19,7 +19,7 @@ function registerWithLocale(array $overrides = []): TestResponse
     return test()->post(route('register.store'), array_merge([
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ], $overrides));
 }

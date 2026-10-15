@@ -37,7 +37,7 @@ test('new users can register', function () {
     $response = $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -50,7 +50,7 @@ test('new users get a default workspace on registration', function () {
     $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -67,7 +67,7 @@ test('new users do not have verified email by default', function () {
     $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -94,7 +94,7 @@ test('new users registering via invite have verified email automatically', funct
     $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'invite' => $invite->id,
         'locale' => 'en',
     ]);
@@ -118,7 +118,7 @@ test('register POST returns 404 when self_hosted and no pending invite in sessio
     $response = $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -155,7 +155,7 @@ test('signup clears pending_invite_id from session', function () {
         ->post(route('register.store'), [
             'name' => 'Invitee',
             'email' => 'invitee@example.com',
-            'password' => 'Password123!',
+            'password' => strongPassword(),
             'locale' => 'en',
         ]);
 
@@ -170,7 +170,7 @@ test('register POST passes when self_hosted with invite query param even without
     $response = $this->post(route('register.store', ['invite' => $invite->id]), [
         'name' => 'Invitee',
         'email' => 'invitee@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -186,7 +186,7 @@ test('register works normally when not self_hosted even with pending invite in s
         ->post(route('register.store'), [
             'name' => 'Invitee',
             'email' => 'invitee@example.com',
-            'password' => 'Password123!',
+            'password' => strongPassword(),
             'locale' => 'en',
         ]);
 

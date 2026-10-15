@@ -1,0 +1,12 @@
+---
+paths:
+  - app/Http/Middleware/App/HandleInertiaRequests.php
+---
+
+# Middleware App
+
+## Composer data is a shared once prop plus a per-open live endpoint
+The composer reads workspace data from the `composer` once prop (ComposerResource::once, keyed `composer:{workspace}:{locale}:{fingerprint}`; the fingerprint is one query over social_accounts/signatures/labels count+max(updated_at), plus the `composer:version:{workspace}` cache counter that ComposerVersionObserver bumps on every save/delete of those models, so same-second edits still change the key) and account display data from the shared `channels` prop. On every open, `app.posts.composer.live` only checks the bundle key; Pinterest boards (5-min cache, ListPinterestBoards::cached) and TikTok creator info (never a once prop; TikTok wants it fresh per post page; failures are not cached) come per channel from `app.posts.composer.account`, read with the interactive client (`HasSocialHttpClient::interactive()`: short timeout, no 429 retry), and taken slots come from `app.posts.composer.taken-slots` for the day the schedule picker shows. Anything new the composer must reflect after a mutation must move social_accounts/signatures/workspace_labels updated_at or count, or be added to the fingerprint. The key is resolved lazily (LazilyKeyedOnceProp) so partial reloads that leave `composer` out never run the fingerprint query.
+
+## Composer bundle staleness model
+The client's `composer` once prop refreshes on the next Inertia visit whenever the key changed. The user's own changes made without a visit (channel settings saved over useHttp, signatures created in the composer) reach the next composer open through `app.posts.composer.live`: the client sends its key, and when it differs the response carries the fresh bundle (`composer`, `composerKey`), which useComposerData prefers while the page still holds the old key. Because the live endpoint compares against the server key, other members' changes also arrive on the next composer open (and on the next visit); only an already open composer stays as it was. Never reload `composer` through a partial reload (`only`/`except`): a partial response keeps old once metadata, and after hard deletes a count+max key can repeat. Each TikTok/Pinterest channel's settings stay behind its own `accountLoaded(id)` and the slot buttons behind their day's taken-slots read, so one slow network never holds another channel and TikTok's creator-info watch never sees null→loaded on mount.

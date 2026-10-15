@@ -7,17 +7,26 @@ use App\Enums\Repurpose\ItemStatus;
 use App\Enums\Repurpose\SourceFormat;
 use App\Enums\Repurpose\Status;
 use App\Enums\SocialAccount\Platform;
+use App\Jobs\Analytics\BootstrapAccountAnalytics;
+use App\Jobs\Analytics\CollectAccountDailySnapshot;
 use App\Jobs\Repurpose\PollRepurposeSource;
 use App\Jobs\Repurpose\ProcessRepurposeItem;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\Repurpose;
 use App\Models\RepurposeItem;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
 use App\Services\Repurpose\SourceFetcherFactory;
+use Carbon\CarbonImmutable;
+use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Http\Client\ResponseSequence;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+
+beforeEach(function () {
+    Queue::fake([BootstrapAccountAnalytics::class, CollectAccountDailySnapshot::class]);
+});
 
 function fakeInstagramMedia(array $rows): void
 {
@@ -131,8 +140,7 @@ test('media already published through trypost is skipped', function () {
     $account = instagramAccount();
     $repurpose = activeRepurposeOn($account);
 
-    $post = Post::factory()->create(['workspace_id' => $account->workspace_id]);
-    PostPlatform::factory()->for($post)->create(['platform_post_id' => 'known-1']);
+    Post::factory()->instagram()->published()->create(['workspace_id' => $account->workspace_id, 'platform_post_id' => 'known-1']);
 
     poll($account);
 
@@ -148,8 +156,7 @@ test('another workspace publishing the same media id does not skip ours', functi
     $account = instagramAccount();
     $repurpose = activeRepurposeOn($account);
 
-    $post = Post::factory()->create(['workspace_id' => Workspace::factory()->create()->id]);
-    PostPlatform::factory()->for($post)->create(['platform_post_id' => 'known-1']);
+    Post::factory()->instagram()->published()->create(['workspace_id' => Workspace::factory()->create()->id, 'platform_post_id' => 'known-1']);
 
     poll($account);
 
@@ -311,7 +318,7 @@ test('a skipped poll reschedules without erasing the recorded error', function (
     $workspace = Workspace::factory()->create();
     $source = SocialAccount::factory()->for($workspace)->create([
         'platform' => Platform::Instagram,
-        'is_active' => false,
+        'disconnected_at' => now(),
     ]);
 
     $repurpose = Repurpose::factory()->active()->create([
@@ -365,7 +372,7 @@ test('polling the same video twice queues it only once', function () {
     Repurpose::factory()->active()->create([
         'workspace_id' => $workspace->id,
         'source_social_account_id' => $source->id,
-        'activated_at' => now()->subDays(30),
+        'activated_at' => CarbonImmutable::parse('2026-09-01 00:00:00', 'UTC'),
     ]);
 
     (new PollRepurposeSource($source))->handle(app(SourceFetcherFactory::class));
@@ -373,4 +380,118 @@ test('polling the same video twice queues it only once', function () {
 
     Bus::assertDispatchedTimes(ProcessRepurposeItem::class, 1);
     expect(RepurposeItem::query()->count())->toBe(1);
+});
+
+test('a post imported from the network does not count as published through trypost', function () {
+    Bus::fake();
+    fakeInstagramMedia([mediaRow('imported-1')]);
+
+    $account = instagramAccount();
+    $repurpose = activeRepurposeOn($account);
+
+    Post::factory()->instagram()->imported()->create(['workspace_id' => $account->workspace_id, 'platform_post_id' => 'imported-1']);
+
+    poll($account);
+
+    expect($repurpose->items()->sole()->reason)->toBeNull();
+
+    Bus::assertDispatched(ProcessRepurposeItem::class);
+});
+
+function fakeFacebookStory(PromiseInterface|ResponseSequence $source): void
+{
+    Http::fake([
+        config('trypost.platforms.facebook.graph_api').'/*/stories*' => Http::response(['data' => [
+            ['post_id' => 's1', 'status' => 'PUBLISHED', 'media_type' => 'video', 'media_id' => 'vid-1', 'url' => 'https://facebook.com/stories/1', 'creation_time' => '2026-09-03T10:00:00+0000'],
+        ]]),
+        config('trypost.platforms.facebook.graph_api').'/vid-1*' => $source,
+    ]);
+}
+
+function facebookStoryRepurpose(): Repurpose
+{
+    $account = SocialAccount::factory()->for(Workspace::factory())->create(['platform' => Platform::Facebook]);
+
+    return activeRepurposeOn($account, SourceFormat::Story);
+}
+
+test('a rate limited story file lookup backs off and keeps the story for the next poll', function () {
+    Bus::fake();
+    config()->set('trypost.repurpose.backoff_minutes', 60);
+    fakeFacebookStory(Http::sequence()
+        ->push(['error' => ['code' => 80001, 'message' => 'Too many calls']], 400)
+        ->push(['source' => 'https://cdn.example.com/story.mp4']));
+
+    $repurpose = facebookStoryRepurpose();
+
+    poll($repurpose->sourceAccount);
+
+    expect($repurpose->items()->count())->toBe(0)
+        ->and($repurpose->fresh()->last_error)->toContain('Too many calls')
+        ->and(now()->diffInMinutes($repurpose->fresh()->next_poll_at, absolute: true))->toBeGreaterThan(30);
+
+    Bus::assertNotDispatched(ProcessRepurposeItem::class);
+
+    poll($repurpose->sourceAccount->fresh());
+
+    expect($repurpose->items()->sole()->status)->toBe(ItemStatus::Pending);
+
+    Bus::assertDispatched(ProcessRepurposeItem::class, fn (ProcessRepurposeItem $job) => $job->downloadUrl === 'https://cdn.example.com/story.mp4');
+});
+
+test('a story whose file is confirmed gone is skipped', function () {
+    Bus::fake();
+    fakeFacebookStory(Http::response(['error' => ['code' => 100, 'message' => 'Object does not exist']], 400));
+
+    $repurpose = facebookStoryRepurpose();
+
+    poll($repurpose->sourceAccount);
+
+    expect($repurpose->items()->sole()->reason)->toBe(ItemReason::MediaUrlMissing)
+        ->and($repurpose->fresh()->last_error)->toBeNull();
+});
+
+test('a story already recorded does not look its file up again', function () {
+    Bus::fake();
+    fakeFacebookStory(Http::response(['source' => 'https://cdn.example.com/story.mp4']));
+
+    $repurpose = facebookStoryRepurpose();
+
+    poll($repurpose->sourceAccount);
+    poll($repurpose->sourceAccount->fresh());
+
+    Http::assertSentCount(3);
+    Bus::assertDispatchedTimes(ProcessRepurposeItem::class, 1);
+});
+
+test('an item left pending by a lost job is queued again on a later poll', function () {
+    Bus::fake();
+    fakeInstagramMedia([mediaRow('m1')]);
+
+    $account = instagramAccount();
+    $repurpose = activeRepurposeOn($account);
+    $item = RepurposeItem::factory()->for($repurpose)->create([
+        'source_media_id' => 'm1',
+        'status' => ItemStatus::Pending,
+        'created_at' => now()->subHour(),
+    ]);
+
+    poll($account);
+
+    expect($repurpose->items()->sole()->is($item))->toBeTrue();
+
+    Bus::assertDispatched(ProcessRepurposeItem::class, fn (ProcessRepurposeItem $job) => $job->item->is($item));
+});
+
+test('a pending item that was just queued is not queued again', function () {
+    Bus::fake();
+    fakeInstagramMedia([mediaRow('m1')]);
+
+    $account = instagramAccount();
+    $repurpose = activeRepurposeOn($account);
+    RepurposeItem::factory()->for($repurpose)->create(['source_media_id' => 'm1', 'status' => ItemStatus::Pending]);
+
+    poll($account);
+
+    Bus::assertNotDispatched(ProcessRepurposeItem::class);
 });

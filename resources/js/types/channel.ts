@@ -1,4 +1,6 @@
 import type { PinterestBoard } from '@/types';
+import type { VerifiedBadge } from '@/types/social-account';
+import type { SocialAccountStatusValue } from '@/types/social-account-status';
 import type { TikTokPrivacyLevelValue } from '@/types/tiktok-privacy';
 
 export interface ChannelAccount {
@@ -8,8 +10,7 @@ export interface ChannelAccount {
     username: string;
     display_label: string;
     avatar_url: string | null;
-    is_active?: boolean;
-    status?: string;
+    status?: SocialAccountStatusValue;
 }
 
 export interface ChannelTikTokCreatorInfo {
@@ -41,3 +42,23 @@ export interface Channel {
     boards?: PinterestBoard[];
     boardsTruncated?: boolean;
 }
+
+export interface SidebarChannel {
+    id: string;
+    platform: string;
+    network: string;
+    username: string;
+    display_name: string | null;
+    display_label: string;
+    handle_label: string;
+    avatar_url: string | null;
+    verified_badge?: VerifiedBadge | null;
+    status: SocialAccountStatusValue | null;
+    timezone: string;
+    scheduled_posts_count: number;
+}
+
+export const channelName = (channel: {
+    display_name: string | null;
+    username: string | null;
+}): string => channel.display_name || channel.username || '';

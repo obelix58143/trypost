@@ -19,7 +19,6 @@ return [
     ],
 
     'plans' => [
-        'title' => 'Planos',
         'description' => 'Faça upgrade ou downgrade a qualquer momento.',
         'monthly' => 'Mensal',
         'yearly' => 'Anual',
@@ -46,13 +45,13 @@ return [
             'networks_all_tooltip' => 'Você pode publicar em todas estas redes.',
             'accounts_unlimited' => 'Redes sociais ilimitadas',
             'accounts_unlimited_tooltip' => 'Conecte quantas contas quiser, inclusive várias da mesma rede. Três Instagrams, por exemplo.',
-            'calendar' => 'Calendário mensal, semanal e diário',
-            'calendar_tooltip' => 'Veja o mês inteiro de uma vez: o que está planejado, agendado e já publicado. Mude para a semana ou o dia quando precisar de detalhe.',
+            'calendar' => 'Calendário mensal e semanal',
+            'calendar_tooltip' => 'Veja o mês inteiro de uma vez: o que está planejado, agendado e já publicado. Mude para a semana quando precisar de detalhe.',
             'ai' => 'TryPost Copilot',
             'ai_tooltip' => 'Seu assistente de IA para escrever e revisar posts.',
             'mcp' => 'MCP: poste pelo Claude, ChatGPT ou Grok',
             'mcp_tooltip' => 'Conecte o Claude, ChatGPT ou Grok ao seu workspace. Peça para criar e agendar posts, puxar métricas, ver o que performou melhor e planejar o próximo conteúdo com base nos seus dados.',
-            'repurpose' => 'Repost: republique automaticamente nas outras redes',
+            'repurpose' => 'Repurpose: transforme um post em vários',
             'repurpose_tooltip' => 'Escolha uma conta de origem. Cada post novo que você publicar nela é republicado automaticamente nas suas outras redes. Você não precisa abrir o TryPost.',
             'analytics' => 'Analytics',
             'analytics_tooltip' => 'Obtenha métricas como impressões, alcance, likes e comentários de cada post e de cada conta, tudo num só lugar.',
@@ -61,10 +60,14 @@ return [
         ],
     ],
 
-    'plan' => [
-        'trial' => 'Trial',
-        'cancelling' => 'Cancelando',
-        'trial_ends' => 'Teste termina em',
+    'current_plan' => [
+        'change' => 'Mudar plano',
+        'price_monthly' => ':price/mês',
+        'price_yearly' => ':price/ano',
+        'trial_until' => 'Trial até :date',
+        'renews' => 'Renova automaticamente',
+        'cancelled' => 'Cancelado, termina em :date',
+        'workspaces_usage' => 'Workspaces: :count de :limit',
     ],
 
     'subscription' => [
@@ -79,6 +82,7 @@ return [
         'title' => 'Faturas',
         'description' => 'Baixe suas faturas anteriores.',
         'paid' => 'Pago',
+        'download' => 'Baixar fatura',
     ],
 
     'flash' => [

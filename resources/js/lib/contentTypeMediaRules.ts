@@ -1,5 +1,7 @@
 import type { Page } from '@inertiajs/core';
 
+import type { CropPresetValue } from '@/lib/mediaEditor';
+
 /** CamelCase shape consumed by the Vue media picker / compliance checks. */
 export type MediaRules = {
     maxFiles: number;
@@ -17,7 +19,18 @@ export type MediaRules = {
     maxVideoDurationSec?: number;
     aspectRatioMin?: number;
     aspectRatioMax?: number;
+    videoAspectRatioMin?: number;
+    videoAspectRatioMax?: number;
     autoFitsImage?: boolean;
+    cropPresets: CropPresetValue[];
+    supportsAltText: boolean;
+    supportsUserTags: boolean;
+    supportsVideoCover: boolean;
+    platformLabel?: string;
+    imageMinWidth?: number;
+    imageMinHeight?: number;
+    imageMaxWidth?: number;
+    imageMaxHeight?: number;
 };
 
 /**
@@ -39,20 +52,40 @@ export type ContentTypeMediaRule = {
     max_video_duration_sec: number | null;
     aspect_ratio_min: number | null;
     aspect_ratio_max: number | null;
+    video_aspect_ratio_min: number | null;
+    video_aspect_ratio_max: number | null;
     auto_fits_image: boolean;
+    crop_presets: CropPresetValue[];
+    supports_alt_text: boolean;
+    supports_user_tags: boolean;
+    supports_video_cover: boolean;
+    platform_label: string;
+    image_min_width: number | null;
+    image_min_height: number | null;
+    image_max_width: number | null;
+    image_max_height: number | null;
 };
 
 type ContentTypeMediaRulesMap = Record<string, ContentTypeMediaRule>;
 
 let cachedRules: ContentTypeMediaRulesMap | null = null;
+let cachedDefaultCropPresets: CropPresetValue[] = [];
 
 export const syncContentTypeMediaRules = (page: Page): void => {
     const rules = page.props.contentTypeMediaRules as ContentTypeMediaRulesMap | undefined;
+    const defaultCropPresets = page.props.defaultCropPresets as CropPresetValue[] | undefined;
 
     if (rules) {
         cachedRules = rules;
     }
+
+    if (defaultCropPresets) {
+        cachedDefaultCropPresets = defaultCropPresets;
+    }
 };
+
+/** Crop presets when no channel applies: ContentType::defaultCropPresets(). */
+export const defaultCropPresets = (): CropPresetValue[] => cachedDefaultCropPresets;
 
 export const mediaRuleFor = (contentType: string): ContentTypeMediaRule | undefined => {
     return cachedRules?.[contentType];
@@ -75,5 +108,16 @@ export const toMediaRules = (rule: ContentTypeMediaRule): MediaRules => ({
     maxVideoDurationSec: rule.max_video_duration_sec ?? undefined,
     aspectRatioMin: rule.aspect_ratio_min ?? undefined,
     aspectRatioMax: rule.aspect_ratio_max ?? undefined,
+    videoAspectRatioMin: rule.video_aspect_ratio_min ?? undefined,
+    videoAspectRatioMax: rule.video_aspect_ratio_max ?? undefined,
     autoFitsImage: rule.auto_fits_image,
+    cropPresets: rule.crop_presets,
+    supportsAltText: rule.supports_alt_text,
+    supportsUserTags: rule.supports_user_tags,
+    supportsVideoCover: rule.supports_video_cover,
+    platformLabel: rule.platform_label,
+    imageMinWidth: rule.image_min_width ?? undefined,
+    imageMinHeight: rule.image_min_height ?? undefined,
+    imageMaxWidth: rule.image_max_width ?? undefined,
+    imageMaxHeight: rule.image_max_height ?? undefined,
 });

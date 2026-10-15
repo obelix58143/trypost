@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Webhook\CreateWebhook;
 use App\Actions\Webhook\DeleteWebhook;
+use App\Actions\Webhook\ListWebhookLogs;
 use App\Actions\Webhook\ReplayWebhookLog;
 use App\Actions\Webhook\RotateWebhookSecret;
 use App\Actions\Webhook\SendWebhookTest;
@@ -32,7 +33,8 @@ class WebhookController extends Controller
         $webhooks = Webhook::query()
             ->where('workspace_id', $request->user()->currentWorkspace->id)
             ->orderByDesc('created_at')
-            ->get();
+            ->orderByDesc('id')
+            ->paginate((int) config('app.pagination.default'));
 
         return WebhookResource::collection($webhooks);
     }
@@ -102,8 +104,7 @@ class WebhookController extends Controller
     {
         $this->authorize('view', $this->webhookInWorkspace($request, $webhook));
 
-        $logs = $webhook->logs()
-            ->orderByDesc('created_at')
+        $logs = ListWebhookLogs::execute($webhook)
             ->paginate((int) config('app.pagination.default'));
 
         return WebhookLogResource::collection($logs);

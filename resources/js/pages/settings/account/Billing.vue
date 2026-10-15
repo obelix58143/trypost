@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { IconCreditCard, IconDownload, IconFileText } from '@tabler/icons-vue';
-import { trans } from 'laravel-vue-i18n';
 import { computed, ref } from 'vue';
 
 import PlanPicker from '@/components/billing/PlanPicker.vue';
-import HeadingSmall from '@/components/HeadingSmall.vue';
-import PageHeader from '@/components/PageHeader.vue';
-import SettingsTabsNav from '@/components/settings/SettingsTabsNav.vue';
+import SettingsListRow from '@/components/settings/SettingsListRow.vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import date from '@/date';
-import AppLayout from '@/layouts/AppLayout.vue';
-import { edit as accountEdit } from '@/routes/app/account';
 import {
-    index as billingIndex,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
+import date from '@/date';
+import SettingsLayout from '@/layouts/SettingsLayout.vue';
+import {
     changePlan as changePlanRoute,
     portal,
 } from '@/routes/app/billing';
@@ -22,6 +26,7 @@ import type { AuthPlan, SharedData } from '@/types';
 import {
     DEFAULT_BILLING_INTERVAL,
     deniedPlanIdsFor,
+    isPricedPlanSlug,
     type BillingInterval,
     type PlanOption,
 } from '@/types/plan';
@@ -53,29 +58,16 @@ const props = defineProps<{
     subscription: Subscription | null;
     plan: PlanOption | null;
     workspaceCount: number;
+    workspaceLimit: number | null;
     invoices: Invoice[];
     defaultPaymentMethod: PaymentMethod | null;
 }>();
-
-const tabs = computed(() => [
-    {
-        name: 'account',
-        label: trans('settings.account.tabs.account'),
-        href: accountEdit().url,
-    },
-    {
-        name: 'billing',
-        label: trans('settings.account.tabs.billing'),
-        href: billingIndex().url,
-    },
-]);
 
 const page = usePage<SharedData>();
 const plans = computed((): PlanOption[] => page.props.plans ?? []);
 const authPlan = computed((): AuthPlan | null => page.props.auth.plan);
 const currentInterval = computed(
-    (): BillingInterval =>
-        authPlan.value?.interval ?? DEFAULT_BILLING_INTERVAL,
+    (): BillingInterval => authPlan.value?.interval ?? DEFAULT_BILLING_INTERVAL,
 );
 
 const subscriptionStatus = computed(() => {
@@ -103,6 +95,19 @@ const deniedPlanIds = computed((): string[] =>
 );
 
 const selectedInterval = ref<BillingInterval>(currentInterval.value);
+const isPlanDialogOpen = ref(false);
+
+const priceKey = computed((): string | null => {
+    if (!props.plan || !isPricedPlanSlug(props.plan.slug)) {
+        return null;
+    }
+
+    return `billing.subscribe.prices.${props.plan.slug}.${currentInterval.value === 'yearly' ? 'yearly' : 'monthly'}`;
+});
+
+const priceLabelKey = computed(
+    (): string => `billing.current_plan.price_${currentInterval.value}`,
+);
 
 const planForm = useForm<{
     plan_id: string | null;
@@ -112,166 +117,221 @@ const planForm = useForm<{
     interval: DEFAULT_BILLING_INTERVAL,
 });
 
-const changePlan = (planId: string, interval: BillingInterval): void => {
+const openPlanDialog = (): void => {
+    selectedInterval.value = currentInterval.value;
+    isPlanDialogOpen.value = true;
+};
+
+const closePlanDialog = (): void => {
+    isPlanDialogOpen.value = false;
+};
+
+const selectPlan = (planId: string): void => {
     if (planForm.processing) {
         return;
     }
 
     planForm.plan_id = planId;
-    planForm.interval = interval;
-    planForm.post(changePlanRoute.url(), { preserveScroll: true });
+    planForm.interval = selectedInterval.value;
+    planForm.post(changePlanRoute.url(), {
+        preserveScroll: true,
+        onSuccess: closePlanDialog,
+    });
 };
 </script>
 
 <template>
     <Head :title="$t('billing.title')" />
 
-    <AppLayout>
-        <div class="mx-auto max-w-5xl space-y-8 px-6 py-8">
-            <PageHeader
-                :title="$t('settings.hub.title')"
-                :description="$t('settings.hub.description')"
-            />
-
-            <SettingsTabsNav :tabs="tabs" active="billing" />
-
-            <section class="space-y-12">
-                <div v-if="hasSubscription" class="space-y-6">
-                    <div
-                        class="flex flex-wrap items-start justify-between gap-3"
-                    >
-                        <HeadingSmall
-                            :title="$t('billing.plans.title')"
-                            :description="$t('billing.plans.description')"
-                        />
-                        <div
-                            v-if="
-                                subscriptionStatus === 'trial' ||
-                                subscriptionStatus === 'cancelling'
-                            "
-                            class="flex flex-wrap items-center gap-2"
-                        >
-                            <Badge
-                                v-if="subscriptionStatus === 'trial'"
-                                variant="secondary"
-                            >
-                                {{ $t('billing.plan.trial') }}
-                            </Badge>
-                            <Badge
-                                v-else-if="subscriptionStatus === 'cancelling'"
-                                variant="secondary"
-                            >
-                                {{ $t('billing.plan.cancelling') }}
-                            </Badge>
+    <SettingsLayout :title="$t('billing.title')">
+        <div class="flex flex-col gap-10">
+            <SettingsSection
+                v-if="hasSubscription"
+                :title="$t('billing.plans.current')"
+            >
+                <div
+                    class="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-4 py-6"
+                    data-testid="billing-current-plan"
+                >
+                    <div class="flex min-w-0 flex-1 flex-col gap-1">
+                        <div class="flex flex-wrap items-baseline gap-x-2">
                             <p
-                                v-if="onTrial && trialEndsAt"
-                                class="text-sm font-medium text-foreground/70"
+                                class="text-base leading-tight font-emphasis text-foreground"
+                                data-testid="billing-current-plan-name"
                             >
-                                {{ $t('billing.plan.trial_ends') }}:
-                                <span class="text-foreground">{{
-                                    date.formatDate(trialEndsAt)
-                                }}</span>
+                                {{ plan?.name }}
                             </p>
-                        </div>
-                    </div>
-
-                    <PlanPicker
-                        :plans="plans"
-                        :interval="selectedInterval"
-                        :current-plan-id="plan?.id ?? null"
-                        :current-interval="currentInterval"
-                        :disabled-plan-ids="deniedPlanIds"
-                        :processing="planForm.processing"
-                        @update:interval="(value) => (selectedInterval = value)"
-                        @select="
-                            (planId) => changePlan(planId, selectedInterval)
-                        "
-                    />
-                </div>
-
-                <div v-if="hasSubscription" class="space-y-6">
-                    <HeadingSmall
-                        :title="$t('billing.subscription.title')"
-                        :description="$t('billing.subscription.description')"
-                    />
-
-                    <div
-                        class="flex flex-wrap items-center gap-4 rounded-2xl border-2 border-foreground bg-card p-4 shadow-2xs"
-                    >
-                        <span
-                            class="inline-flex size-12 rotate-2 items-center justify-center rounded-2xl border-2 border-foreground bg-violet-200 shadow-2xs"
-                        >
-                            <IconCreditCard
-                                class="size-6 text-foreground"
-                                stroke-width="2"
-                            />
-                        </span>
-                        <div v-if="defaultPaymentMethod" class="min-w-0 flex-1">
                             <p
-                                class="text-base font-bold text-foreground capitalize"
+                                v-if="priceKey"
+                                class="text-sm text-muted-foreground tabular-nums"
+                                data-testid="billing-current-plan-price"
                             >
-                                {{ defaultPaymentMethod.brand }} ••••
-                                {{ defaultPaymentMethod.last4 }}
-                            </p>
-                            <p class="text-xs font-medium text-foreground/60">
                                 {{
-                                    $t('billing.subscription.expires_on', {
-                                        month: defaultPaymentMethod.exp_month
-                                            .toString()
-                                            .padStart(2, '0'),
-                                        year: defaultPaymentMethod.exp_year.toString(),
+                                    $t(priceLabelKey, {
+                                        price: $t(priceKey),
                                     })
                                 }}
                             </p>
                         </div>
-                        <div v-else class="min-w-0 flex-1">
-                            <p class="text-sm font-semibold text-foreground/70">
+                        <p
+                            class="text-sm text-muted-foreground"
+                            data-testid="billing-current-plan-status"
+                        >
+                            <template
+                                v-if="subscriptionStatus === 'trial' && trialEndsAt"
+                            >
                                 {{
-                                    $t('billing.subscription.no_payment_method')
+                                    $t('billing.current_plan.trial_until', {
+                                        date: date.formatDate(trialEndsAt),
+                                    })
                                 }}
-                            </p>
-                        </div>
-                        <Button as="a" :href="portal.url()" class="shrink-0">
-                            {{ $t('billing.subscription.manage_stripe') }}
-                        </Button>
+                            </template>
+                            <template
+                                v-else-if="
+                                    subscriptionStatus === 'cancelling' &&
+                                    subscription?.ends_at
+                                "
+                            >
+                                {{
+                                    $t('billing.current_plan.cancelled', {
+                                        date: date.formatDate(
+                                            subscription.ends_at,
+                                        ),
+                                    })
+                                }}
+                            </template>
+                            <template v-else-if="subscriptionStatus === 'past_due'">
+                                {{ $t('billing.past_due_notice.title') }}
+                            </template>
+                            <template v-else>
+                                {{ $t('billing.current_plan.renews') }}
+                            </template>
+                        </p>
+                        <p
+                            class="text-sm text-muted-foreground tabular-nums"
+                            data-testid="billing-current-plan-usage"
+                        >
+                            {{
+                                workspaceLimit === null
+                                    ? $t('billing.plans.workspaces_unlimited')
+                                    : $t('billing.current_plan.workspaces_usage', {
+                                          count: workspaceCount.toString(),
+                                          limit: workspaceLimit.toString(),
+                                      })
+                            }}
+                        </p>
                     </div>
+                    <Button
+                        variant="outline"
+                        class="shrink-0"
+                        data-testid="billing-change-plan"
+                        @click="openPlanDialog"
+                    >
+                        {{ $t('billing.current_plan.change') }}
+                    </Button>
                 </div>
 
-                <div v-if="invoices.length > 0" class="space-y-6">
-                    <HeadingSmall
-                        :title="$t('billing.invoices.title')"
-                        :description="$t('billing.invoices.description')"
-                    />
+                <Dialog v-model:open="isPlanDialogOpen">
+                    <DialogContent
+                        class="sm:max-w-3xl"
+                        data-testid="billing-plan-dialog"
+                    >
+                        <DialogHeader>
+                            <DialogTitle>
+                                {{ $t('billing.current_plan.change') }}
+                            </DialogTitle>
+                            <DialogDescription>
+                                {{ $t('billing.plans.description') }}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <PlanPicker
+                            :plans="plans"
+                            v-model:interval="selectedInterval"
+                            :current-plan-id="plan?.id ?? null"
+                            :current-interval="currentInterval"
+                            :disabled-plan-ids="deniedPlanIds"
+                            :processing="planForm.processing"
+                            @select="selectPlan"
+                        />
+                    </DialogContent>
+                </Dialog>
+            </SettingsSection>
 
-                    <div class="space-y-3">
-                        <div
-                            v-for="invoice in invoices"
-                            :key="invoice.id"
-                            class="flex items-center gap-4 rounded-xl border-2 border-foreground bg-card p-4 shadow-2xs"
+            <Separator v-if="hasSubscription" />
+
+            <SettingsSection
+                v-if="hasSubscription"
+                :title="$t('billing.subscription.title')"
+                :description="$t('billing.subscription.description')"
+            >
+                <div
+                    class="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-4 py-6"
+                >
+                    <span
+                        class="inline-flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary-subtle text-primary-text"
+                    >
+                        <IconCreditCard class="size-6" />
+                    </span>
+                    <div
+                        v-if="defaultPaymentMethod"
+                        class="flex min-w-0 flex-1 flex-col gap-1"
+                    >
+                        <p
+                            class="text-sm leading-tight font-emphasis text-foreground capitalize"
                         >
-                            <span
-                                class="inline-flex size-10 -rotate-2 items-center justify-center rounded-2xl border-2 border-foreground bg-violet-100 shadow-2xs"
-                            >
-                                <IconFileText
-                                    class="size-5 text-foreground"
-                                    stroke-width="2"
-                                />
-                            </span>
-                            <div class="min-w-0 flex-1">
-                                <p class="text-sm font-bold text-foreground">
-                                    {{ date.formatDate(invoice.date) }}
-                                </p>
-                                <p
-                                    class="text-xs font-medium text-foreground/60 tabular-nums"
-                                >
-                                    {{ invoice.total }}
-                                </p>
-                            </div>
+                            {{ defaultPaymentMethod.brand }} ••••
+                            {{ defaultPaymentMethod.last4 }}
+                        </p>
+                        <p class="text-sm text-muted-foreground">
+                            {{
+                                $t('billing.subscription.expires_on', {
+                                    month: defaultPaymentMethod.exp_month
+                                        .toString()
+                                        .padStart(2, '0'),
+                                    year: defaultPaymentMethod.exp_year.toString(),
+                                })
+                            }}
+                        </p>
+                    </div>
+                    <p v-else class="min-w-0 flex-1 text-sm text-muted-foreground">
+                        {{ $t('billing.subscription.no_payment_method') }}
+                    </p>
+                    <Button
+                        as="a"
+                        variant="outline"
+                        :href="portal.url()"
+                        class="shrink-0"
+                    >
+                        {{ $t('billing.subscription.manage_stripe') }}
+                    </Button>
+                </div>
+            </SettingsSection>
+
+            <Separator v-if="hasSubscription && invoices.length > 0" />
+
+            <SettingsSection
+                v-if="invoices.length > 0"
+                :title="$t('billing.invoices.title')"
+                :description="$t('billing.invoices.description')"
+            >
+                <ul class="flex flex-col gap-2">
+                    <SettingsListRow
+                        v-for="invoice in invoices"
+                        :key="invoice.id"
+                        :icon="IconFileText"
+                    >
+                        <p
+                            class="text-sm leading-tight font-emphasis text-foreground"
+                        >
+                            {{ date.formatDate(invoice.date) }}
+                        </p>
+                        <p class="text-sm text-muted-foreground tabular-nums">
+                            {{ invoice.total }}
+                        </p>
+                        <template #actions>
                             <Badge
                                 :variant="
-                                    invoice.status === 'paid'
-                                        ? 'success'
-                                        : 'outline'
+                                    invoice.status === 'paid' ? 'success' : 'secondary'
                                 "
                             >
                                 {{
@@ -281,18 +341,20 @@ const changePlan = (planId: string, interval: BillingInterval): void => {
                                 }}
                             </Badge>
                             <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="icon"
                                 as="a"
                                 :href="invoice.invoice_pdf"
                                 target="_blank"
+                                class="text-muted-foreground"
+                                :aria-label="$t('billing.invoices.download')"
                             >
                                 <IconDownload class="size-4" />
                             </Button>
-                        </div>
-                    </div>
-                </div>
-            </section>
+                        </template>
+                    </SettingsListRow>
+                </ul>
+            </SettingsSection>
         </div>
-    </AppLayout>
+    </SettingsLayout>
 </template>

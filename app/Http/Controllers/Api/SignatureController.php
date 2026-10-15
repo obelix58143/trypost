@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Signature\CreateSignature;
 use App\Actions\Signature\DeleteSignature;
+use App\Actions\Signature\ListSignatures;
 use App\Actions\Signature\UpdateSignature;
 use App\Http\Requests\Api\Signature\StoreSignatureRequest;
 use App\Http\Requests\Api\Signature\UpdateSignatureRequest;
@@ -20,7 +21,7 @@ class SignatureController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $signatures = $request->user()->currentWorkspace->signatures()->latest()->get();
+        $signatures = ListSignatures::execute($request->user()->currentWorkspace)->paginate((int) config('app.pagination.default'));
 
         return SignatureResource::collection($signatures);
     }
@@ -36,10 +37,6 @@ class SignatureController extends Controller
 
     public function update(UpdateSignatureRequest $request, WorkspaceSignature $signature): SignatureResource
     {
-        if ($signature->workspace_id !== $request->user()->currentWorkspace->id) {
-            abort(Response::HTTP_NOT_FOUND);
-        }
-
         $signature = UpdateSignature::execute($signature, $request->validated());
 
         return new SignatureResource($signature);

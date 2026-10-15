@@ -6,6 +6,9 @@ use App\Enums\Plan\Slug;
 use App\Models\Plan;
 use App\Models\User;
 use App\Models\Workspace;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['trypost.self_hosted' => false]);
@@ -152,7 +155,26 @@ test('the workspaces plan can store another workspace', function () use ($onPlan
 
     $this->actingAs($user)
         ->post(route('app.workspaces.store'), ['name' => 'Second'])
-        ->assertRedirect(route('app.accounts'));
+        ->assertRedirect(route('app.workspace.channels'));
 
     expect($user->account->workspaces()->count())->toBe(2);
+});
+
+test('storing a workspace checks the cap under a lock on the account row', function () use ($onPlan) {
+    $user = $onPlan(Slug::Workspaces);
+    $statements = [];
+    DB::listen(function (QueryExecuted $query) use (&$statements): void {
+        $statements[] = Str::lower($query->sql);
+    });
+
+    $this->actingAs($user)
+        ->post(route('app.workspaces.store'), ['name' => 'Second'])
+        ->assertRedirect(route('app.workspace.channels'));
+
+    $lock = collect($statements)->search(fn (string $sql): bool => str_contains($sql, 'accounts') && str_contains($sql, 'for update'));
+    $insert = collect($statements)->search(fn (string $sql): bool => str_starts_with($sql, 'insert into') && str_contains($sql, 'workspaces'));
+
+    expect($lock)->toBeInt()
+        ->and($insert)->toBeInt()
+        ->and($lock)->toBeLessThan($insert);
 });

@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => '无法从 GitHub 获取你的邮箱。请将你的 GitHub 邮箱设为公开，或授予邮箱权限后重试。',
 
     'login' => [
-        'title' => '登录你的账户',
-        'description' => '请在下方输入你的邮箱和密码以登录',
-        'description_without_password' => '请使用你的组织账户登录以继续',
+        'title' => '登录 TryPost',
         'page_title' => '登录',
         'email' => '邮箱地址',
         'password' => '密码',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => '你的整个社交日历，尽在一处',
-        'description' => '创建账户，开始在每个平台上安排发帖。',
+        'title' => '创建 TryPost 账户',
         'page_title' => '注册',
-        'signup_with_email' => '使用邮箱注册',
         'name' => '姓名',
         'name_placeholder' => '全名',
         'email' => '邮箱地址',
@@ -93,6 +89,12 @@ return [
         'submit' => '创建账户',
         'has_account' => '已经有账户了？',
         'log_in' => '登录',
+        'password_requirements' => [
+            'min' => '至少 :count 个字符',
+            'mixed_case' => '包含大小写字母',
+            'number' => '至少 1 个数字',
+            'symbol' => '至少 1 个符号',
+        ],
     ],
 
     'forgot_password' => [

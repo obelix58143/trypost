@@ -151,8 +151,17 @@ return [
         'secret_key' => env('UNSPLASH_SECRET_KEY'),
     ],
 
-    'giphy' => [
-        'api_key' => env('GIPHY_API_KEY'),
+    'google_media' => [
+        'client_id' => env('GOOGLE_MEDIA_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_MEDIA_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_MEDIA_CLIENT_REDIRECT'),
+        'api_key' => env('GOOGLE_MEDIA_API_KEY'),
+        'app_id' => env('GOOGLE_MEDIA_APP_ID'),
+    ],
+
+    'canva' => [
+        'client_id' => env('CANVA_CLIENT_ID'),
+        'client_secret' => env('CANVA_CLIENT_SECRET'),
     ],
 
     'openai' => [
@@ -163,4 +172,9 @@ return [
         'api_key' => env('GEMINI_API_KEY'),
     ],
 
+    'bitly' => [
+        'client_id' => env('BITLY_CLIENT_ID'),
+        'client_secret' => env('BITLY_CLIENT_SECRET'),
+        'redirect' => env('BITLY_CLIENT_REDIRECT'),
+    ],
 ];

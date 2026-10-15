@@ -3,13 +3,11 @@
 declare(strict_types=1);
 
 use App\Enums\SocialAccount\Platform;
-use App\Enums\UserWorkspace\Role;
 use App\Events\TelegramChannelConnected;
 use App\Events\TelegramConnectFailed;
 use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\TokenExpiredException;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
@@ -32,7 +30,7 @@ beforeEach(function () {
         'current_workspace_id' => $this->workspace->id,
         'account_id' => $this->workspace->account_id,
     ]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Admin->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('admin'));
     $this->user->refresh();
 });
 
@@ -56,9 +54,10 @@ it('issues a signed connect code carrying the workspace', function () {
     $response = $this->actingAs($this->user)
         ->postJson(route('app.social.telegram.connect'))
         ->assertOk()
-        ->assertJsonStructure(['code', 'nonce', 'bot_username', 'expires_at']);
+        ->assertJsonStructure(['code', 'nonce', 'bot_username', 'bot_url', 'expires_at']);
 
-    expect($response->json('bot_username'))->toBe('TryPostBot');
+    expect($response->json('bot_username'))->toBe('TryPostBot')
+        ->and($response->json('bot_url'))->toBe(config('trypost.platforms.telegram.deep_link').'/TryPostBot');
     expect(data_get(TelegramConnectCode::decode($response->json('code')), 'workspace_id'))
         ->toBe($this->workspace->id);
     expect($response->json('nonce'))
@@ -262,14 +261,8 @@ it('consumes the code once so it cannot be replayed for another chat', function 
 
 it('stores reaction counts on the matching post from a reaction update', function () {
     $account = SocialAccount::factory()->telegram()->create(['workspace_id' => $this->workspace->id]);
-    $post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $post = Post::factory()->forAccount($account)->published()->create([
         'user_id' => $this->user->id,
-    ]);
-    $postPlatform = PostPlatform::factory()->published()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $account->id,
-        'platform' => Platform::Telegram,
         'platform_post_id' => '42',
     ]);
 
@@ -288,7 +281,7 @@ it('stores reaction counts on the matching post from a reaction update', functio
         ->postJson(route('telegram.webhook'), $update)
         ->assertNoContent();
 
-    expect(data_get($postPlatform->fresh()->meta, 'reactions'))
+    expect(data_get($post->fresh()->meta, 'reactions'))
         ->toBe([['type' => '👍', 'count' => 12], ['type' => '❤️', 'count' => 5]]);
 });
 
@@ -298,11 +291,8 @@ it('does not store reactions on a post from a different channel with the same me
         'platform_user_id' => '-1009999999999',
         'meta' => ['chat_id' => '-1009999999999', 'username' => 'other', 'type' => 'channel'],
     ]);
-    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
-    $postPlatform = PostPlatform::factory()->published()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $otherAccount->id,
-        'platform' => Platform::Telegram,
+    $post = Post::factory()->forAccount($otherAccount)->published()->create([
+        'user_id' => $this->user->id,
         'platform_post_id' => '42',
     ]);
 
@@ -318,16 +308,13 @@ it('does not store reactions on a post from a different channel with the same me
         ->postJson(route('telegram.webhook'), $update)
         ->assertNoContent();
 
-    expect(data_get($postPlatform->fresh()->meta, 'reactions'))->toBeNull();
+    expect(data_get($post->fresh()->meta, 'reactions'))->toBeNull();
 });
 
 it('labels custom emoji reactions with a fallback', function () {
     $account = SocialAccount::factory()->telegram()->create(['workspace_id' => $this->workspace->id]);
-    $post = Post::factory()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
-    $postPlatform = PostPlatform::factory()->published()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $account->id,
-        'platform' => Platform::Telegram,
+    $post = Post::factory()->forAccount($account)->published()->create([
+        'user_id' => $this->user->id,
         'platform_post_id' => '77',
     ]);
 
@@ -343,7 +330,7 @@ it('labels custom emoji reactions with a fallback', function () {
         ->postJson(route('telegram.webhook'), $update)
         ->assertNoContent();
 
-    expect(data_get($postPlatform->fresh()->meta, 'reactions'))
+    expect(data_get($post->fresh()->meta, 'reactions'))
         ->toBe([['type' => 'Custom', 'count' => 3]]);
 });
 
@@ -399,7 +386,9 @@ it('broadcasts to the workspace with the nonce when a channel connects', functio
     Event::assertDispatched(
         TelegramChannelConnected::class,
         fn (TelegramChannelConnected $event) => $event->workspaceId === $this->workspace->id
-            && $event->nonce === $nonce,
+            && $event->nonce === $nonce
+            && $event->created === true
+            && $event->accountId === SocialAccount::where('platform', Platform::Telegram)->value('id'),
     );
 });
 

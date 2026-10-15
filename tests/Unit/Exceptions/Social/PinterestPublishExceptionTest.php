@@ -68,13 +68,15 @@ test('processing status failed maps to MediaFormat category', function () {
     $exception = PinterestPublishException::fromProcessingStatus('failed');
 
     expect($exception->category)->toBe(ErrorCategory::MediaFormat)
-        ->and($exception->userMessage)->toBe('Media processing failed. Please try a different file.');
+        ->and($exception->userMessage)->toBe('Media processing failed. Please try a different file.')
+        ->and($exception->isNetworkRejection())->toBeTrue();
 });
 
 test('processing status unknown maps to Unknown category', function () {
     $exception = PinterestPublishException::fromProcessingStatus('pending', 'raw response');
 
-    expect($exception->category)->toBe(ErrorCategory::Unknown);
+    expect($exception->category)->toBe(ErrorCategory::Unknown)
+        ->and($exception->isNetworkRejection())->toBeFalse();
 });
 
 test('HTTP 500 maps to ServerError category', function () {
@@ -92,3 +94,15 @@ test('platform returns pinterest', function () {
 
     expect($exception->platform())->toBe('pinterest');
 });
+
+test('only a Pinterest rejection caused by the user is marked as a network rejection', function (int $status, array $body, bool $marked) {
+    $fakeResponse = Http::fake(['*' => Http::response($body, $status)])
+        ->post(config('trypost.platforms.pinterest.api').'/pins');
+
+    expect(PinterestPublishException::fromApiResponse($fakeResponse)->isNetworkRejection())->toBe($marked);
+})->with([
+    'user lacks permission' => [403, ['code' => 403, 'message' => 'Forbidden'], true],
+    'undocumented code 1' => [400, ['code' => 1, 'message' => "Sorry! This site doesn't allow you to save Pins."], false],
+    'a board we sent that does not exist' => [404, ['code' => 404, 'message' => 'Not found'], false],
+    'rate limit' => [429, ['code' => 429, 'message' => 'Too many requests'], false],
+]);

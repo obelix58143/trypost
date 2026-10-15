@@ -36,12 +36,12 @@ class TelegramPublishException extends SocialPublishException
         }
 
         if ($status === 429) {
-            return new static(
+            return (new static(
                 userMessage: 'Telegram rate limit reached. Please try again shortly.',
                 category: ErrorCategory::RateLimit,
                 platformErrorCode: (string) $status,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response);
         }
 
         if ($status >= 500) {

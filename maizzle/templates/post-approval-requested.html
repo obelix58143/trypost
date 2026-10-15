@@ -1,0 +1,41 @@
+<x-main>
+  <x-message authenticated="true">
+    <x-heading>
+      @{{ __('mail.post_approval_requested.heading') }}
+    </x-heading>
+
+    <p class="m-0 leading-6">
+      @{{ __('mail.post_approval_requested.body', ['name' => $requesterName, 'email' => $requesterEmail, 'workspace' => $workspaceName]) }}
+    </p>
+
+    <div class="email-context">
+      <p class="m-0 leading-6 text-sm text-foreground" style="white-space: pre-line;">@{{ $postExcerpt !== '' ? $postExcerpt : __('mail.post_approval_requested.post_without_text') }}</p>
+    </div>
+
+    @if($channel)
+      <p class="m-0 mt-4 text-sm font-semibold text-foreground">
+        @{{ __('mail.post_approval_requested.channel') }}
+      </p>
+      <x-channel-card />
+    @endif
+
+    <p class="m-0 mt-4 text-sm font-semibold text-foreground">
+      @{{ __('mail.post_approval_requested.requested_time') }}
+    </p>
+    <p class="m-0 mt-2 leading-6 text-sm">
+      @if($queued)
+        @{{ __('mail.post_approval_requested.next_queue_slot') }}
+      @elseif($requestedTime !== null)
+        @{{ $requestedTime }}
+      @else
+        @{{ __('mail.post_approval_requested.as_soon_as_approved') }}
+      @endif
+    </p>
+
+    <x-spacer height="24px" />
+
+    <x-button href="@{{ $url }}">
+      @{{ __('mail.post_approval_requested.button') }}
+    </x-button>
+  </x-message>
+</x-main>

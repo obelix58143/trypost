@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 class DiscordController extends SocialController
@@ -26,8 +26,8 @@ class DiscordController extends SocialController
         return $this->redirectToProvider($request, $this->driver, config('trypost.platforms.discord.scopes'));
     }
 
-    public function callback(Request $request): InertiaResponse
+    public function callback(Request $request): RedirectResponse
     {
-        return $this->handleCallback($request, $this->driver);
+        return $this->handleCallback($request, $this->driver, config('trypost.platforms.discord.scopes'));
     }
 }

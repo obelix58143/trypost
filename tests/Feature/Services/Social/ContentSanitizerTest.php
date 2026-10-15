@@ -105,7 +105,7 @@ test('it keeps telegram-allowed html and converts strong/em', function () {
 test('it strips disallowed tags but keeps links for telegram', function () {
     $sanitizer = new ContentSanitizer;
     $result = $sanitizer->sanitize('<div>see <a href="https://example.com">link</a></div><script>x</script>', Platform::Telegram);
-    expect($result)->toBe('see <a href="https://example.com">link</a>x');
+    expect($result)->toBe("see <a href=\"https://example.com\">link</a>\nx");
 });
 
 test('it escapes bare ampersands for telegram', function () {
@@ -411,4 +411,17 @@ test('it strips mastodon markup for length without decoding its entities twice',
     $content = '<p>Tom &amp;amp; <strong>Jerry</strong></p>';
 
     expect($sanitizer->displayText($content, Platform::Mastodon))->toBe('Tom &amp; Jerry');
+});
+
+test('a less-than sign typed as text is published, not read as a tag', function (Platform $platform) {
+    expect(app(ContentSanitizer::class)->displayText("I <3 TryPost\nprice < 10 and > 5", $platform))
+        ->toBe("I <3 TryPost\nprice < 10 and > 5");
+})->with([Platform::X, Platform::LinkedIn, Platform::Instagram, Platform::Mastodon, Platform::Telegram]);
+
+test('telegram receives a typed less-than sign escaped for its html parser', function () {
+    expect(app(ContentSanitizer::class)->sanitize('I <3 TryPost & co', Platform::Telegram))->toBe('I &lt;3 TryPost &amp; co');
+});
+
+test('content written by the former rich editor still loses its tags', function () {
+    expect(app(ContentSanitizer::class)->sanitize('<p>Hello <strong>world</strong> &lt;3</p><p>Bye</p>', Platform::X))->toBe("Hello world <3\nBye");
 });

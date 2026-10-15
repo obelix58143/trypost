@@ -2,209 +2,131 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Mcp\Concerns\AuthorizesMcpTool;
+use App\Models\Post;
 use App\Models\User;
+use App\Models\Webhook;
 use App\Models\Workspace;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 
-it('denies when the mcp request has no authenticated user', function () {
-    $tool = new class
+function authorizesMcpToolProbe(): object
+{
+    return new class
     {
         use AuthorizesMcpTool;
 
-        public function probe(Request $request, Workspace $workspace): Response|ResponseFactory|null
+        public function can(Request $request, string $ability, mixed $arguments, string $notFound = 'Not found.'): Response|ResponseFactory|null
         {
-            return $this->denyUnlessCan($request, 'view', $workspace, 'Not authorized.');
+            return $this->denyUnlessCan($request, $ability, $arguments, $notFound);
+        }
+
+        public function workspace(Request $request, string $ability, mixed $arguments = null): Workspace|Response|ResponseFactory
+        {
+            return $this->authorizeCurrentWorkspace($request, $ability, $arguments);
         }
     };
+}
 
-    $workspace = Workspace::factory()->create();
+function authorizesMcpToolRequest(?User $user): Request
+{
     $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->once()->andReturn(null);
+    $request->shouldReceive('user')->andReturn($user);
 
-    $denied = $tool->probe($request, $workspace);
+    return $request;
+}
+
+function authorizesMcpToolWorkspace(string $access): array
+{
+    $owner = User::factory()->create();
+    $workspace = Workspace::factory()->create(['user_id' => $owner->id]);
+    $workspace->members()->attach($owner->id, membershipPivot('admin'));
+    $owner->update(['current_workspace_id' => $workspace->id]);
+
+    return [$access === 'owner' ? $owner->fresh() : workspaceMember($workspace, $access), $workspace];
+}
+
+it('denies with the web authorization message when the mcp request has no authenticated user', function () {
+    $denied = authorizesMcpToolProbe()->can(authorizesMcpToolRequest(null), 'view', Workspace::factory()->create());
 
     expect($denied)->toBeInstanceOf(Response::class)
         ->and($denied->isError())->toBeTrue()
-        ->and((string) $denied->content())->toBe('Not authorized.');
+        ->and((string) $denied->content())->toBe('This action is unauthorized.');
 });
 
 it('denies when the policy argument is null', function () {
-    $owner = User::factory()->create();
-    $workspace = Workspace::factory()->create(['user_id' => $owner->id]);
-    $workspace->members()->attach($owner->id, ['role' => Role::Admin->value]);
-    $owner->update(['current_workspace_id' => $workspace->id]);
+    [$owner] = authorizesMcpToolWorkspace('owner');
 
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
+    $denied = authorizesMcpToolProbe()->can(authorizesMcpToolRequest($owner), 'createPost', null);
 
-        public function probe(Request $request): Response|ResponseFactory|null
-        {
-            return $this->denyUnlessCan($request, 'createPost', null, 'Not authorized to create posts.');
-        }
-    };
+    expect($denied)->toBeInstanceOf(Response::class)
+        ->and((string) $denied->content())->toBe('This action is unauthorized.');
+});
 
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->once()->andReturn($owner->fresh());
+it('denies with the web authorization message when the user lacks the ability', function () {
+    [$requester, $workspace] = authorizesMcpToolWorkspace('approval');
 
-    $denied = $tool->probe($request);
+    $denied = authorizesMcpToolProbe()->can(authorizesMcpToolRequest($requester), 'publishDirectly', $workspace);
 
     expect($denied)->toBeInstanceOf(Response::class)
         ->and($denied->isError())->toBeTrue()
-        ->and((string) $denied->content())->toBe('Not authorized to create posts.');
+        ->and((string) $denied->content())->toBe('This action is unauthorized.');
 });
 
-it('authorizeCurrentWorkspace fails closed without a user', function () {
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
+it('answers not found when the policy denies as not found', function () {
+    [$owner] = authorizesMcpToolWorkspace('owner');
+    $foreign = Post::factory()->create(['workspace_id' => Workspace::factory()->create()->id]);
 
-        public function probe(Request $request): Workspace|Response|ResponseFactory
-        {
-            return $this->authorizeCurrentWorkspace($request, 'createPost', 'Not authorized to create posts.');
-        }
-    };
+    $denied = authorizesMcpToolProbe()->can(authorizesMcpToolRequest($owner), 'view', $foreign, 'Post not found.');
 
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->twice()->andReturn(null);
-
-    $denied = $tool->probe($request);
-
-    expect($denied)->not->toBeInstanceOf(Workspace::class)
-        ->and($denied)->toBeInstanceOf(Response::class)
-        ->and($denied->isError())->toBeTrue()
-        ->and((string) $denied->content())->toBe('Not authorized to create posts.');
-});
-
-it('authorizeCurrentWorkspace denies when the user has no current workspace', function () {
-    $owner = User::factory()->create(['current_workspace_id' => null]);
-
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
-
-        public function probe(Request $request): Workspace|Response|ResponseFactory
-        {
-            return $this->authorizeCurrentWorkspace($request, 'createPost', 'Not authorized to create posts.');
-        }
-    };
-
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->twice()->andReturn($owner->fresh());
-
-    $denied = $tool->probe($request);
-
-    expect($denied)->not->toBeInstanceOf(Workspace::class)
-        ->and($denied)->toBeInstanceOf(Response::class)
-        ->and($denied->isError())->toBeTrue()
-        ->and((string) $denied->content())->toBe('Not authorized to create posts.');
-});
-
-it('denies when the user lacks the ability', function () {
-    $owner = User::factory()->create();
-    $workspace = Workspace::factory()->create(['user_id' => $owner->id]);
-    $workspace->members()->attach($owner->id, ['role' => Role::Admin->value]);
-
-    $viewer = User::factory()->create(['account_id' => $owner->account_id]);
-    $workspace->members()->attach($viewer->id, ['role' => Role::Viewer->value]);
-    $viewer->update(['current_workspace_id' => $workspace->id]);
-
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
-
-        public function probe(Request $request, Workspace $workspace): Response|ResponseFactory|null
-        {
-            return $this->denyUnlessCan($request, 'createPost', $workspace, 'Not authorized to create posts.');
-        }
-    };
-
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->once()->andReturn($viewer->fresh());
-
-    $denied = $tool->probe($request, $workspace);
-
-    expect($denied)->toBeInstanceOf(Response::class)
-        ->and($denied->isError())->toBeTrue()
-        ->and((string) $denied->content())->toBe('Not authorized to create posts.');
+    expect((string) $denied->content())->toBe('Post not found.');
 });
 
 it('allows when the user has the ability', function () {
-    $owner = User::factory()->create();
-    $workspace = Workspace::factory()->create(['user_id' => $owner->id]);
-    $workspace->members()->attach($owner->id, ['role' => Role::Admin->value]);
-    $owner->update(['current_workspace_id' => $workspace->id]);
+    [$owner, $workspace] = authorizesMcpToolWorkspace('owner');
 
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
+    expect(authorizesMcpToolProbe()->can(authorizesMcpToolRequest($owner), 'createPost', $workspace))->toBeNull();
+});
 
-        public function probe(Request $request, Workspace $workspace): Response|ResponseFactory|null
-        {
-            return $this->denyUnlessCan($request, 'createPost', $workspace, 'Not authorized to create posts.');
-        }
-    };
+it('authorizeCurrentWorkspace fails closed without a user', function () {
+    $denied = authorizesMcpToolProbe()->workspace(authorizesMcpToolRequest(null), 'createPost');
 
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->once()->andReturn($owner->fresh());
+    expect($denied)->toBeInstanceOf(Response::class)
+        ->and($denied->isError())->toBeTrue()
+        ->and((string) $denied->content())->toBe('This action is unauthorized.');
+});
 
-    expect($tool->probe($request, $workspace))->toBeNull();
+it('authorizeCurrentWorkspace denies when the user has no current workspace', function () {
+    $user = User::factory()->create(['current_workspace_id' => null]);
+
+    $denied = authorizesMcpToolProbe()->workspace(authorizesMcpToolRequest($user->fresh()), 'createPost');
+
+    expect($denied)->toBeInstanceOf(Response::class)
+        ->and((string) $denied->content())->toBe('This action is unauthorized.');
 });
 
 it('authorizeCurrentWorkspace denies when the user lacks the ability', function () {
-    $owner = User::factory()->create();
-    $workspace = Workspace::factory()->create(['user_id' => $owner->id]);
-    $workspace->members()->attach($owner->id, ['role' => Role::Admin->value]);
+    [$requester] = authorizesMcpToolWorkspace('approval');
 
-    $viewer = User::factory()->create(['account_id' => $owner->account_id]);
-    $workspace->members()->attach($viewer->id, ['role' => Role::Viewer->value]);
-    $viewer->update(['current_workspace_id' => $workspace->id]);
+    $denied = authorizesMcpToolProbe()->workspace(authorizesMcpToolRequest($requester), 'publishDirectly');
 
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
+    expect($denied)->toBeInstanceOf(Response::class)
+        ->and((string) $denied->content())->toBe('This action is unauthorized.');
+});
 
-        public function probe(Request $request): Workspace|Response|ResponseFactory
-        {
-            return $this->authorizeCurrentWorkspace($request, 'createPost', 'Not authorized to create posts.');
-        }
-    };
+it('authorizeCurrentWorkspace checks a class-level ability when given one', function () {
+    [$admin, $workspace] = authorizesMcpToolWorkspace('admin');
+    $member = workspaceMember($workspace, 'member');
 
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->twice()->andReturn($viewer->fresh());
-
-    $denied = $tool->probe($request);
-
-    expect($denied)->not->toBeInstanceOf(Workspace::class)
-        ->and($denied)->toBeInstanceOf(Response::class)
-        ->and($denied->isError())->toBeTrue()
-        ->and((string) $denied->content())->toBe('Not authorized to create posts.');
+    expect((string) authorizesMcpToolProbe()->workspace(authorizesMcpToolRequest($member), 'viewAny', Webhook::class)->content())->toBe('This action is unauthorized.')
+        ->and(authorizesMcpToolProbe()->workspace(authorizesMcpToolRequest($admin), 'viewAny', Webhook::class)->is($workspace))->toBeTrue();
 });
 
 it('authorizeCurrentWorkspace returns the current workspace when allowed', function () {
-    $owner = User::factory()->create();
-    $workspace = Workspace::factory()->create(['user_id' => $owner->id]);
-    $workspace->members()->attach($owner->id, ['role' => Role::Admin->value]);
-    $owner->update(['current_workspace_id' => $workspace->id]);
+    [$owner, $workspace] = authorizesMcpToolWorkspace('owner');
 
-    $tool = new class
-    {
-        use AuthorizesMcpTool;
-
-        public function probe(Request $request): Workspace|Response|ResponseFactory
-        {
-            return $this->authorizeCurrentWorkspace($request, 'createPost', 'Not authorized to create posts.');
-        }
-    };
-
-    $request = Mockery::mock(Request::class);
-    $request->shouldReceive('user')->twice()->andReturn($owner->fresh());
-
-    $result = $tool->probe($request);
+    $result = authorizesMcpToolProbe()->workspace(authorizesMcpToolRequest($owner), 'createPost');
 
     expect($result)->toBeInstanceOf(Workspace::class)
         ->and($result->is($workspace))->toBeTrue();

@@ -11,13 +11,15 @@ use App\Enums\TikTok\PublishStatus;
 use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\TikTokPublishException;
-use App\Models\PostPlatform;
+use App\Exceptions\TokenExpiredException;
+use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Services\Media\MediaOptimizer;
 use App\Services\Social\Concerns\HasSocialHttpClient;
 use App\Support\PostPlatformMetaRules;
 use App\Support\Social\PublishCheckpoint;
 use App\Support\Social\TikTokPhotoDerivativeCleaner;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -43,13 +45,13 @@ class TikTokPublisher
         $this->baseUrl = config('trypost.platforms.tiktok.api');
     }
 
-    public function publish(PostPlatform $postPlatform): array
+    public function publish(Post $post): array
     {
-        $this->validateContentLength($postPlatform);
+        $this->validateContentLength($post);
 
-        $content = $postPlatform->post->content ? app(ContentSanitizer::class)->sanitize($postPlatform->post->content, $postPlatform->platform) : null;
+        $content = app(ContentSanitizer::class)->forPost($post);
 
-        $account = $postPlatform->socialAccount;
+        $account = $post->socialAccount;
 
         if ($account->needsProactiveTokenRefresh()) {
             app(ConnectionVerifier::class)->refreshToken($account);
@@ -57,17 +59,17 @@ class TikTokPublisher
 
         $this->accessToken = $account->access_token;
 
-        $pendingPublishId = PublishCheckpoint::tiktokPublishId($postPlatform->error_context);
+        $pendingPublishId = PublishCheckpoint::tiktokPublishId($post->error_context);
 
         if ($pendingPublishId !== null) {
             return $this->completePublishWithCleanup(
-                $postPlatform,
+                $post,
                 $pendingPublishId,
-                PublishCheckpoint::tiktokDerivativePaths($postPlatform->error_context),
+                PublishCheckpoint::tiktokDerivativePaths($post->error_context),
             );
         }
 
-        $media = $postPlatform->post->mediaItems;
+        $media = $post->mediaItems;
 
         if ($media->isEmpty()) {
             throw new TikTokPublishException(
@@ -81,17 +83,51 @@ class TikTokPublisher
         $isImage = $firstMedia->isImage();
 
         if ($isVideo) {
-            return $this->publishVideo($postPlatform, $firstMedia, $content);
+            return $this->publishVideo($post, $firstMedia, $content);
         }
 
         if ($isImage) {
-            return $this->publishPhotos($postPlatform, $media, $content);
+            return $this->publishPhotos($post, $media, $content);
         }
 
         throw new TikTokPublishException(
             userMessage: 'TikTok only supports video or image content.',
             category: ErrorCategory::MediaFormat,
         );
+    }
+
+    /**
+     * The public video id TikTok reports for a published post's `publish_id`.
+     * TikTok sends it only once the post clears moderation, which can take hours.
+     */
+    public function publicVideoId(Post $post): ?string
+    {
+        $account = $post->socialAccount;
+
+        if (blank($account) || blank($post->platform_post_id)) {
+            return null;
+        }
+
+        try {
+            if ($account->needsProactiveTokenRefresh()) {
+                app(ConnectionVerifier::class)->refreshToken($account);
+            }
+        } catch (TokenExpiredException|PlatformUnavailableException) {
+            return null;
+        }
+
+        $this->accessToken = $account->access_token;
+
+        try {
+            $response = $this->getHttpClient()
+                ->post("{$this->baseUrl}/post/publish/status/fetch/", [
+                    'publish_id' => $post->platform_post_id,
+                ]);
+        } catch (ConnectionException) {
+            return null;
+        }
+
+        return $response->successful() ? $this->videoIdFrom((array) $response->json('data', [])) : null;
     }
 
     private function getHttpClient(): PendingRequest
@@ -105,9 +141,9 @@ class TikTokPublisher
      * FormRequest enforces the same rules upstream; this is the safety net for
      * queue/job paths that bypass the request layer.
      */
-    private function resolveRequiredPrivacyLevel(PostPlatform $postPlatform): PrivacyLevel
+    private function resolveRequiredPrivacyLevel(Post $post): PrivacyLevel
     {
-        $violation = PostPlatformMetaRules::requiredMetaViolation(Platform::TikTok, $postPlatform->meta);
+        $violation = PostPlatformMetaRules::requiredMetaViolation(Platform::TikTok, $post->meta);
 
         if ($violation !== null) {
             throw new TikTokPublishException(
@@ -116,7 +152,7 @@ class TikTokPublisher
             );
         }
 
-        return PrivacyLevel::from((string) data_get($postPlatform->meta, 'privacy_level'));
+        return PrivacyLevel::from((string) data_get($post->meta, 'privacy_level'));
     }
 
     /**
@@ -126,13 +162,13 @@ class TikTokPublisher
      *
      * @return array<string, mixed>
      */
-    private function buildVideoPostInfo(PostPlatform $postPlatform, ?string $content): array
+    private function buildVideoPostInfo(Post $post, ?string $content, ?int $coverOffsetMs = null): array
     {
-        $meta = $postPlatform->meta ?? [];
+        $meta = $post->meta ?? [];
 
         $postInfo = [
             'title' => $content ?? '',
-            'privacy_level' => $this->resolveRequiredPrivacyLevel($postPlatform)->value,
+            'privacy_level' => $this->resolveRequiredPrivacyLevel($post)->value,
             'disable_duet' => ! data_get($meta, 'allow_duet', false),
             'disable_comment' => ! data_get($meta, 'allow_comments', false),
             'disable_stitch' => ! data_get($meta, 'allow_stitch', false),
@@ -150,6 +186,10 @@ class TikTokPublisher
             $postInfo['brand_organic_toggle'] = true;
         }
 
+        if ($coverOffsetMs !== null) {
+            $postInfo['video_cover_timestamp_ms'] = $coverOffsetMs;
+        }
+
         return $postInfo;
     }
 
@@ -161,13 +201,13 @@ class TikTokPublisher
      *
      * @return array<string, mixed>
      */
-    private function buildPhotoPostInfo(PostPlatform $postPlatform, ?string $content): array
+    private function buildPhotoPostInfo(Post $post, ?string $content): array
     {
-        $meta = $postPlatform->meta ?? [];
+        $meta = $post->meta ?? [];
 
         $postInfo = [
             'description' => $content ?? '',
-            'privacy_level' => $this->resolveRequiredPrivacyLevel($postPlatform)->value,
+            'privacy_level' => $this->resolveRequiredPrivacyLevel($post)->value,
             'disable_comment' => ! data_get($meta, 'allow_comments', false),
         ];
 
@@ -182,11 +222,11 @@ class TikTokPublisher
         return $postInfo;
     }
 
-    private function publishVideo(PostPlatform $postPlatform, $media, ?string $content): array
+    private function publishVideo(Post $post, $media, ?string $content): array
     {
         $response = $this->getHttpClient()
             ->post("{$this->baseUrl}/post/publish/video/init/", [
-                'post_info' => $this->buildVideoPostInfo($postPlatform, $content),
+                'post_info' => $this->buildVideoPostInfo($post, $content, $media->coverOffsetMs()),
                 'source_info' => [
                     'source' => 'PULL_FROM_URL',
                     'video_url' => $media->url,
@@ -205,12 +245,12 @@ class TikTokPublisher
 
         $publishId = $this->requirePublishId(data_get($data, 'data.publish_id'));
 
-        $this->rememberPublishId($postPlatform, $publishId);
+        $this->rememberPublishId($post, $publishId);
 
-        return $this->completePublish($postPlatform, $publishId);
+        return $this->completePublish($post, $publishId);
     }
 
-    private function publishPhotos(PostPlatform $postPlatform, $mediaCollection, ?string $content): array
+    private function publishPhotos(Post $post, $mediaCollection, ?string $content): array
     {
         $images = $mediaCollection->filter(fn ($m) => $m->isImage())->values();
 
@@ -235,10 +275,10 @@ class TikTokPublisher
                 }
             }
 
-            $postInfo = $this->buildPhotoPostInfo($postPlatform, $content);
+            $postInfo = $this->buildPhotoPostInfo($post, $content);
 
             // Auto add music is only for photos.
-            $meta = $postPlatform->meta ?? [];
+            $meta = $post->meta ?? [];
             if (data_get($meta, 'auto_add_music', false)) {
                 $postInfo['auto_add_music'] = true;
             }
@@ -265,14 +305,14 @@ class TikTokPublisher
 
             $publishId = $this->requirePublishId(data_get($response->json(), 'data.publish_id'));
 
-            $this->rememberPublishId($postPlatform, $publishId, $derivatives);
+            $this->rememberPublishId($post, $publishId, $derivatives);
         } catch (Throwable $e) {
             app(TikTokPhotoDerivativeCleaner::class)->cleanupPaths($derivatives);
 
             throw $e;
         }
 
-        return $this->completePublishWithCleanup($postPlatform, $publishId, $derivatives);
+        return $this->completePublishWithCleanup($post, $publishId, $derivatives);
     }
 
     /**
@@ -410,10 +450,10 @@ class TikTokPublisher
      *
      * @param  list<string>  $derivatives
      */
-    private function rememberPublishId(PostPlatform $postPlatform, string $publishId, array $derivatives = []): void
+    private function rememberPublishId(Post $post, string $publishId, array $derivatives = []): void
     {
         $context = [
-            ...($postPlatform->error_context ?? []),
+            ...($post->error_context ?? []),
             PublishCheckpoint::TIKTOK_PUBLISH_ID => $publishId,
         ];
 
@@ -421,7 +461,7 @@ class TikTokPublisher
             $context[PublishCheckpoint::TIKTOK_DERIVATIVE_PATHS] = $derivatives;
         }
 
-        $postPlatform->update([
+        $post->writePublication([
             'error_context' => $context,
         ]);
     }
@@ -452,12 +492,12 @@ class TikTokPublisher
      * @param  array<array-key, mixed>  $derivatives
      * @return array<string, mixed>
      */
-    private function completePublishWithCleanup(PostPlatform $postPlatform, string $publishId, array $derivatives): array
+    private function completePublishWithCleanup(Post $post, string $publishId, array $derivatives): array
     {
         $retainDerivatives = true;
 
         try {
-            $result = $this->completePublish($postPlatform, $publishId);
+            $result = $this->completePublish($post, $publishId);
             $retainDerivatives = false;
 
             return $result;
@@ -476,23 +516,28 @@ class TikTokPublisher
         }
     }
 
-    private function completePublish(PostPlatform $postPlatform, string $publishId): array
+    private function completePublish(Post $post, string $publishId): array
     {
         $statusData = $this->waitForPublishStatus($publishId);
-        $postId = data_get($statusData, 'publicaly_available_post_id.0');
-        $postId = is_string($postId) && $postId !== '' ? $postId : null;
-
-        if ($postId === null) {
-            $postId = app(TikTokAnalytics::class)->findVideoIdByCaption($postPlatform);
-        }
+        $postId = $this->videoIdFrom($statusData);
 
         return [
             'id' => $postId ?? $publishId,
-            'url' => $this->buildTikTokUrl($postPlatform->socialAccount, $postId),
+            'url' => self::postUrl($post->socialAccount, $postId),
         ];
     }
 
-    private function buildTikTokUrl(SocialAccount $account, ?string $postId = null): ?string
+    /**
+     * @param  array<string, mixed>  $statusData
+     */
+    private function videoIdFrom(array $statusData): ?string
+    {
+        $videoId = (string) data_get($statusData, 'publicaly_available_post_id.0');
+
+        return ctype_digit($videoId) ? $videoId : null;
+    }
+
+    public static function postUrl(SocialAccount $account, ?string $postId = null): ?string
     {
         $username = $account->username;
 

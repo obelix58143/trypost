@@ -19,6 +19,10 @@
         "nightwatch": {
             "type": "http",
             "url": "https://nightwatch.laravel.com/mcp"
+        },
+        "chrome-devtools": {
+            "command": "npx",
+            "args": ["-y", "chrome-devtools-mcp@latest"]
         }
     }
 }

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Enums\PostPlatform;
 
+use App\Dto\MediaItem;
+use App\Enums\Analytics\PublicationContentType;
 use App\Enums\Media\Type as MediaType;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
+use App\Support\ThreadReplies;
 
 enum ContentType: string
 {
@@ -38,6 +41,7 @@ enum ContentType: string
 
     // Threads
     case ThreadsPost = 'threads_post';
+    case ThreadsGhostPost = 'threads_ghost_post';
 
     // Pinterest
     case PinterestPin = 'pinterest_pin';
@@ -65,6 +69,15 @@ enum ContentType: string
      */
     public const CAROUSEL_FORMAT = 'instagram_carousel';
 
+    /**
+     * Published without a caption, so the text is neither counted nor sent.
+     * Mirrored by `CAPTIONLESS_CONTENT_TYPES` in `resources/js/types/content-type.ts`.
+     */
+    public function isCaptionless(): bool
+    {
+        return in_array($this, [self::FacebookStory, self::InstagramStory], true);
+    }
+
     public function label(): string
     {
         return match ($this) {
@@ -79,7 +92,8 @@ enum ContentType: string
             self::TikTokPhoto => 'Photo carousel',
             self::YouTubeShort => 'Short',
             self::XPost => 'Post',
-            self::ThreadsPost => 'Post',
+            self::ThreadsPost => 'Thread',
+            self::ThreadsGhostPost => 'Ghost post',
             self::PinterestPin => 'Pin',
             self::PinterestVideoPin => 'Video Pin',
             self::PinterestCarousel => 'Carousel',
@@ -106,7 +120,7 @@ enum ContentType: string
             self::TikTokVideo, self::TikTokPhoto => SocialPlatform::TikTok,
             self::YouTubeShort => SocialPlatform::YouTube,
             self::XPost => SocialPlatform::X,
-            self::ThreadsPost => SocialPlatform::Threads,
+            self::ThreadsPost, self::ThreadsGhostPost => SocialPlatform::Threads,
             self::PinterestPin, self::PinterestVideoPin, self::PinterestCarousel => SocialPlatform::Pinterest,
             self::BlueskyPost => SocialPlatform::Bluesky,
             self::MastodonPost => SocialPlatform::Mastodon,
@@ -117,12 +131,11 @@ enum ContentType: string
     }
 
     /**
-     * Image dimensions used by the AI generator for this format.
-     * Single source of truth — `TemplateImageGenerator` reads from here.
+     * Image dimensions for this format.
      *
      * @return array{width: int, height: int}
      */
-    public function aiImageDimensions(): array
+    public function preferredImageDimensions(): array
     {
         return match ($this) {
             // Vertical 4:5 (Instagram preferred portrait, Threads mirrors it)
@@ -176,6 +189,7 @@ enum ContentType: string
             self::YouTubeShort => 1,
             self::XPost => 4,
             self::ThreadsPost => 10,
+            self::ThreadsGhostPost => 0,
             self::PinterestPin, self::PinterestVideoPin => 1,
             self::PinterestCarousel => 5,
             self::BlueskyPost => 4,
@@ -263,6 +277,7 @@ enum ContentType: string
         $bytes = match ($this) {
             self::InstagramFeed, self::InstagramStory => self::bytesFromMb(8),
             self::FacebookPost => self::bytesFromMb(4),
+            self::FacebookStory => self::bytesFromMb(10),
             self::LinkedInPost, self::LinkedInPagePost => self::bytesFromMb(5),
             self::PinterestPin, self::PinterestCarousel => self::bytesFromMb(20),
             self::XPost => self::bytesFromMb(5),
@@ -322,19 +337,159 @@ enum ContentType: string
     }
 
     /**
-     * Soft aspect-ratio window used by the Vue cropper / media picker.
+     * Aspect-ratio window (width / height) enforced by the editor and by
+     * ContentTypeCompatibleWithMedia at save and publish, per kind of media. Only
+     * the ratios each network documents as accepted are enforced; a ratio it only
+     * recommends (9:16 for Reels, Stories and Shorts) is not. GIFs and still
+     * images the publisher fits into the story frame (autoFitsImage) are never
+     * checked. Sources (checked 2026-10-06):
+     *
+     * - Instagram (https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media):
+     *   images 4:5 to 1.91:1 (3:4 accepted live, see .ai/rules/post-platform.md);
+     *   Reels 0.01:1 to 10:1, and a single feed video is published as a Reel;
+     *   story videos 0.1:1 to 10:1.
+     * - Facebook Reels (https://developers.facebook.com/docs/video-api/guides/reels-publishing) and
+     *   Page Stories (https://developers.facebook.com/docs/page-stories-api): video 9 x 16.
+     * - YouTube publishes a wider video as a regular video, not a Short
+     *   (https://support.google.com/youtube/answer/15424877), so no limit.
+     * - Threads images 10:1 (https://developers.facebook.com/docs/threads/overview) and Telegram
+     *   sendPhoto at most 20 (https://core.telegram.org/bots/api#sendphoto).
      *
      * @return array{min: float, max: float}|null
      */
-    public function aspectRatioBounds(): ?array
+    public function aspectRatioBounds(MediaType $type, bool $isGif = false): ?array
     {
-        return match ($this) {
-            self::InstagramFeed => ['min' => 0.8, 'max' => 1.91],
-            self::InstagramReel, self::InstagramStory,
-            self::FacebookReel, self::FacebookStory,
-            self::YouTubeShort => ['min' => 0.5, 'max' => 0.6],
+        if ($isGif) {
+            return null;
+        }
+
+        return match ($type) {
+            MediaType::Image => $this->imageAspectRatioBounds(),
+            MediaType::Video => $this->videoAspectRatioBounds(),
             default => null,
         };
+    }
+
+    /**
+     * @return array{min: float, max: float}|null
+     */
+    private function imageAspectRatioBounds(): ?array
+    {
+        return match ($this) {
+            self::InstagramFeed => ['min' => 0.75, 'max' => 1.91],
+            self::ThreadsPost => ['min' => 0.1, 'max' => 10.0],
+            self::TelegramPost => ['min' => 0.05, 'max' => 20.0],
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{min: float, max: float}|null
+     */
+    private function videoAspectRatioBounds(): ?array
+    {
+        return match ($this) {
+            self::InstagramFeed, self::InstagramReel => ['min' => 0.01, 'max' => 10.0],
+            self::InstagramStory => ['min' => 0.1, 'max' => 10.0],
+            self::FacebookReel, self::FacebookStory => ['min' => 0.5, 'max' => 0.6],
+            default => null,
+        };
+    }
+
+    /**
+     * Hard pixel limits for still images, only where the network's official
+     * docs state them (checked 2026-09-30). A null side is not limited.
+     *
+     * - Google Business Profile: "all photos must measure a minimum of 250px on
+     *   the short edge" (https://developers.google.com/my-business/reference/rest/v4/accounts.locations.media).
+     *   A 10,000 px maximum is sometimes cited, but it is not in Google's API docs, so it is not enforced.
+     * - X: the API docs (https://docs.x.com/x-api/media/quickstart/best-practices) state no pixel
+     *   limit for still images; the 8192x8192 cap only appears in API error reports, so none.
+     * - Threads (https://developers.facebook.com/docs/threads/overview) scales widths outside
+     *   320-1440 itself, so none; its 10:1 ratio limit lives in aspectRatioBounds().
+     * - Telegram sendPhoto (https://core.telegram.org/bots/api#sendphoto): width + height must not
+     *   exceed 10000 in total (a sum, not a per-side bound, so not expressed here) and the ratio
+     *   must be at most 20 (aspectRatioBounds()).
+     * - LinkedIn (https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/images-api)
+     *   caps the pixel count (36,152,320), not a side; TikTok photos (https://developers.tiktok.com/doc/content-posting-api-media-transfer-guide)
+     *   say "maximum 1080p" without a rejection rule. Neither is enforced.
+     *
+     * @return array{min_width: int|null, min_height: int|null, max_width: int|null, max_height: int|null}|null
+     */
+    public function imageDimensionBounds(): ?array
+    {
+        return match ($this) {
+            self::GoogleBusinessPost => ['min_width' => 250, 'min_height' => 250, 'max_width' => null, 'max_height' => null],
+            default => null,
+        };
+    }
+
+    /**
+     * Network and post type, as named in per-destination media messages
+     * ("Instagram · Feed Post").
+     */
+    public function destinationLabel(): string
+    {
+        return $this->platform()->label().' · '.trans("posts.content_types.{$this->value}.label");
+    }
+
+    /**
+     * Fixed crop presets the media editor offers after Freeform and Original,
+     * in display order for this content type. Every ratio must
+     * sit inside the image aspectRatioBounds() (CropPresetBoundsTest).
+     *
+     * @return list<string>
+     */
+    public function cropPresets(): array
+    {
+        return match ($this) {
+            self::InstagramFeed => ['3:4', '4:5', '1:1', '1.91:1'],
+            self::InstagramStory, self::InstagramReel, self::FacebookStory, self::FacebookReel,
+            self::TikTokVideo, self::YouTubeShort => ['9:16'],
+            self::XPost => ['1:1', '4:3', '16:9', '2:1'],
+            self::TikTokPhoto => ['4:3', '16:9', '9:16', '1:1'],
+            self::FacebookPost, self::LinkedInPost, self::LinkedInPagePost => ['1:1', '1.91:1'],
+            self::PinterestPin, self::PinterestCarousel => ['2:3', '1:1'],
+            self::PinterestVideoPin => ['2:3'],
+            self::ThreadsPost, self::ThreadsGhostPost => ['1:1', '4:5', '1.91:1'],
+            self::BlueskyPost, self::MastodonPost => ['1:1', '16:9'],
+            self::GoogleBusinessPost => ['4:3', '1:1'],
+            self::TelegramPost, self::DiscordMessage => self::defaultCropPresets(),
+        };
+    }
+
+    /**
+     * Crop presets when no channel is selected.
+     *
+     * @return list<string>
+     */
+    public static function defaultCropPresets(): array
+    {
+        return ['1:1', '9:16'];
+    }
+
+    /**
+     * Whether the editor offers the Alt Text tab for images of this type.
+     */
+    public function supportsAltText(): bool
+    {
+        return $this->platform()->supportsAltText();
+    }
+
+    /**
+     * Whether the editor offers Tag People (Instagram posts only, not stories or reels).
+     */
+    public function supportsUserTags(): bool
+    {
+        return $this === self::InstagramFeed;
+    }
+
+    /**
+     * Whether a video of this type gets a Thumbnail (cover frame) tab.
+     */
+    public function supportsVideoCover(): bool
+    {
+        return in_array($this, [self::InstagramFeed, self::InstagramReel, self::TikTokVideo, self::PinterestVideoPin], true);
     }
 
     /**
@@ -342,7 +497,7 @@ enum ContentType: string
      */
     public function autoFitsImage(): bool
     {
-        return $this === self::InstagramStory;
+        return in_array($this, [self::InstagramStory, self::FacebookStory], true);
     }
 
     /**
@@ -365,12 +520,25 @@ enum ContentType: string
      *     max_video_duration_sec: int|null,
      *     aspect_ratio_min: float|null,
      *     aspect_ratio_max: float|null,
-     *     auto_fits_image: bool
+     *     video_aspect_ratio_min: float|null,
+     *     video_aspect_ratio_max: float|null,
+     *     auto_fits_image: bool,
+     *     crop_presets: list<string>,
+     *     supports_alt_text: bool,
+     *     supports_user_tags: bool,
+     *     supports_video_cover: bool,
+     *     platform_label: string,
+     *     image_min_width: int|null,
+     *     image_min_height: int|null,
+     *     image_max_width: int|null,
+     *     image_max_height: int|null
      * }
      */
     public function mediaRules(): array
     {
-        $bounds = $this->aspectRatioBounds();
+        $imageBounds = $this->aspectRatioBounds(MediaType::Image);
+        $videoBounds = $this->aspectRatioBounds(MediaType::Video);
+        $dimensions = $this->imageDimensionBounds();
         $minFiles = $this->minMediaCount();
 
         return [
@@ -387,9 +555,20 @@ enum ContentType: string
             'max_video_bytes' => $this->maxVideoBytes(),
             'max_document_bytes' => $this->maxDocumentBytes(),
             'max_video_duration_sec' => $this->maxVideoDurationSec(),
-            'aspect_ratio_min' => $bounds['min'] ?? null,
-            'aspect_ratio_max' => $bounds['max'] ?? null,
+            'aspect_ratio_min' => $imageBounds['min'] ?? null,
+            'aspect_ratio_max' => $imageBounds['max'] ?? null,
+            'video_aspect_ratio_min' => $videoBounds['min'] ?? null,
+            'video_aspect_ratio_max' => $videoBounds['max'] ?? null,
             'auto_fits_image' => $this->autoFitsImage(),
+            'crop_presets' => $this->cropPresets(),
+            'supports_alt_text' => $this->supportsAltText(),
+            'supports_user_tags' => $this->supportsUserTags(),
+            'supports_video_cover' => $this->supportsVideoCover(),
+            'platform_label' => $this->platform()->label(),
+            'image_min_width' => $dimensions['min_width'] ?? null,
+            'image_min_height' => $dimensions['min_height'] ?? null,
+            'image_max_width' => $dimensions['max_width'] ?? null,
+            'image_max_height' => $dimensions['max_height'] ?? null,
         ];
     }
 
@@ -413,11 +592,29 @@ enum ContentType: string
      *     max_video_duration_sec: int|null,
      *     max_image_bytes: int|null,
      *     max_video_bytes: int|null,
-     *     max_document_bytes: int|null
+     *     max_document_bytes: int|null,
+     *     aspect_ratio_min: float|null,
+     *     aspect_ratio_max: float|null,
+     *     video_aspect_ratio_min: float|null,
+     *     video_aspect_ratio_max: float|null,
+     *     auto_fits_image: bool,
+     *     image_min_width: int|null,
+     *     image_min_height: int|null,
+     *     image_max_width: int|null,
+     *     image_max_height: int|null,
+     *     supports_alt_text: bool,
+     *     supports_user_tags: bool,
+     *     supports_video_cover: bool,
+     *     captionless: bool,
+     *     document_must_be_alone: bool,
+     *     supports_thread_replies: bool,
+     *     max_thread_replies: int|null
      * }
      */
     public function toListingArray(): array
     {
+        $rules = $this->mediaRules();
+
         return [
             'value' => $this->value,
             'label' => $this->label(),
@@ -435,6 +632,24 @@ enum ContentType: string
             'max_image_bytes' => $this->maxImageBytes(),
             'max_video_bytes' => $this->maxVideoBytes(),
             'max_document_bytes' => $this->maxDocumentBytes(),
+            ...array_intersect_key($rules, array_flip([
+                'aspect_ratio_min',
+                'aspect_ratio_max',
+                'video_aspect_ratio_min',
+                'video_aspect_ratio_max',
+                'auto_fits_image',
+                'image_min_width',
+                'image_min_height',
+                'image_max_width',
+                'image_max_height',
+                'supports_alt_text',
+                'supports_user_tags',
+                'supports_video_cover',
+            ])),
+            'captionless' => $this->isCaptionless(),
+            'document_must_be_alone' => $this->supportsDocument(),
+            'supports_thread_replies' => ThreadReplies::supports($this->platform()),
+            'max_thread_replies' => ThreadReplies::supports($this->platform()) ? ThreadReplies::MAX_REPLIES : null,
         ];
     }
 
@@ -490,6 +705,7 @@ enum ContentType: string
             self::YouTubeShort => true,
             self::XPost => true,
             self::ThreadsPost => true,
+            self::ThreadsGhostPost => false,
             self::PinterestVideoPin => true,
             self::PinterestPin, self::PinterestCarousel => false,
             self::BlueskyPost => true,
@@ -504,10 +720,11 @@ enum ContentType: string
     {
         return match ($this) {
             self::InstagramReel => false,
-            self::FacebookReel, self::FacebookStory => false,
+            self::FacebookReel => false,
             self::TikTokVideo => false,
             self::TikTokPhoto => true,
             self::YouTubeShort => false,
+            self::ThreadsGhostPost => false,
             self::PinterestVideoPin => false,
             default => true,
         };
@@ -538,6 +755,8 @@ enum ContentType: string
             self::BlueskyPost => false,
             // LinkedIn publishes images XOR one video XOR one document — never mixed.
             self::LinkedInPost, self::LinkedInPagePost => false,
+            // TikTok publishes photos (up to 35) XOR one video.
+            self::TikTokVideo, self::TikTokPhoto => false,
             default => true,
         };
     }
@@ -559,7 +778,7 @@ enum ContentType: string
         return match ($this) {
             self::LinkedInPost, self::LinkedInPagePost => false,
             self::XPost => false,
-            self::ThreadsPost => false,
+            self::ThreadsPost, self::ThreadsGhostPost => false,
             self::BlueskyPost => false,
             self::MastodonPost => false,
             self::TelegramPost => false,
@@ -568,29 +787,6 @@ enum ContentType: string
             self::GoogleBusinessPost => false,
             default => true,
         };
-    }
-
-    /**
-     * Content types that the AI generator currently supports. Reels/stories/
-     * videos are excluded because the AI flow only produces text + images.
-     *
-     * @return array<self>
-     */
-    public static function aiSupported(): array
-    {
-        return [
-            self::InstagramFeed,
-            self::InstagramStory,
-            self::LinkedInPost,
-            self::LinkedInPagePost,
-            self::XPost,
-            self::ThreadsPost,
-            self::BlueskyPost,
-            self::MastodonPost,
-            self::FacebookPost,
-            self::PinterestPin,
-            self::PinterestCarousel,
-        ];
     }
 
     /**
@@ -650,6 +846,71 @@ enum ContentType: string
             SocialPlatform::Telegram => self::TelegramPost,
             SocialPlatform::Discord => self::DiscordMessage,
             SocialPlatform::GoogleBusiness => self::GoogleBusinessPost,
+        };
+    }
+
+    /**
+     * Networks with no post-type choice: the attached media decides the type,
+     * as `derivedContentType.ts` does in the composer.
+     */
+    public static function derivesFromMedia(SocialPlatform $platform): bool
+    {
+        return in_array($platform, [SocialPlatform::Pinterest, SocialPlatform::TikTok], true);
+    }
+
+    /**
+     * The type the composer sends for a destination that names none: on Pinterest
+     * and TikTok the media decides it (a video makes a video pin or video, several
+     * images a carousel, images alone TikTok photos), every other network takes
+     * its default type.
+     *
+     * @param  array<int, mixed>  $media
+     */
+    public static function forMedia(SocialPlatform $platform, array $media): self
+    {
+        $items = collect($media)
+            ->filter(fn (mixed $item): bool => is_array($item))
+            ->map(fn (array $item): MediaItem => MediaItem::fromArray($item));
+        $hasVideo = $items->contains(fn (MediaItem $item): bool => $item->isVideo());
+
+        return match ($platform) {
+            SocialPlatform::Pinterest => match (true) {
+                $hasVideo => self::PinterestVideoPin,
+                $items->count() > 1 => self::PinterestCarousel,
+                default => self::PinterestPin,
+            },
+            SocialPlatform::TikTok => $items->isNotEmpty() && ! $hasVideo ? self::TikTokPhoto : self::TikTokVideo,
+            default => self::defaultFor($platform),
+        };
+    }
+
+    /**
+     * The content type an imported publication is shown as. One place for every
+     * platform and publication type pair.
+     */
+    public static function fromPublication(SocialPlatform $platform, PublicationContentType $type): self
+    {
+        return match ($platform) {
+            SocialPlatform::Instagram, SocialPlatform::InstagramFacebook => match ($type) {
+                PublicationContentType::Reel => self::InstagramReel,
+                PublicationContentType::Story => self::InstagramStory,
+                default => self::InstagramFeed,
+            },
+            SocialPlatform::Facebook => match ($type) {
+                PublicationContentType::Reel => self::FacebookReel,
+                PublicationContentType::Story => self::FacebookStory,
+                default => self::FacebookPost,
+            },
+            SocialPlatform::TikTok => match ($type) {
+                PublicationContentType::Image, PublicationContentType::Carousel => self::TikTokPhoto,
+                default => self::TikTokVideo,
+            },
+            SocialPlatform::Pinterest => match ($type) {
+                PublicationContentType::Video => self::PinterestVideoPin,
+                PublicationContentType::Carousel => self::PinterestCarousel,
+                default => self::PinterestPin,
+            },
+            default => self::defaultFor($platform),
         };
     }
 }

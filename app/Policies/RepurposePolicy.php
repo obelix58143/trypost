@@ -6,6 +6,7 @@ namespace App\Policies;
 
 use App\Models\Repurpose;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 
 class RepurposePolicy
 {
@@ -15,10 +16,17 @@ class RepurposePolicy
             && $user->can('manageRepurposes', $user->currentWorkspace);
     }
 
-    public function view(User $user, Repurpose $repurpose): bool
+    /**
+     * A repurpose of another workspace is denied as not found, so its
+     * existence does not leak across tenants.
+     */
+    public function view(User $user, Repurpose $repurpose): bool|Response
     {
-        return $repurpose->workspace_id === $user->current_workspace_id
-            && $user->can('manageRepurposes', $user->currentWorkspace);
+        if ($repurpose->workspace_id !== $user->current_workspace_id) {
+            return Response::denyAsNotFound();
+        }
+
+        return $user->can('manageRepurposes', $user->currentWorkspace);
     }
 
     public function create(User $user): bool
@@ -26,12 +34,12 @@ class RepurposePolicy
         return $this->viewAny($user);
     }
 
-    public function update(User $user, Repurpose $repurpose): bool
+    public function update(User $user, Repurpose $repurpose): bool|Response
     {
         return $this->view($user, $repurpose);
     }
 
-    public function delete(User $user, Repurpose $repurpose): bool
+    public function delete(User $user, Repurpose $repurpose): bool|Response
     {
         return $this->view($user, $repurpose);
     }

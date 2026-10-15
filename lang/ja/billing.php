@@ -19,7 +19,6 @@ return [
     ],
 
     'plans' => [
-        'title' => 'プラン',
         'description' => 'いつでもアップグレードまたはダウングレードできます。',
         'monthly' => '月額',
         'yearly' => '年額',
@@ -46,8 +45,8 @@ return [
             'networks_all_tooltip' => 'これらすべてのSNSに投稿できます。',
             'accounts_unlimited' => 'ソーシャルアカウント数無制限',
             'accounts_unlimited_tooltip' => 'アカウントはいくつでも接続できます。同じSNSの複数アカウントも可能です。例えばInstagramを3つ。',
-            'calendar' => 'カレンダー：月・週・日表示',
-            'calendar_tooltip' => '1か月をひと目で把握：予定中、予約済み、公開済みの投稿がすべて見えます。詳しく見たいときは週や日に切り替え。',
+            'calendar' => 'カレンダー：月・週表示',
+            'calendar_tooltip' => '1か月をひと目で把握：予定中、予約済み、公開済みの投稿がすべて見えます。詳しく見たいときは週表示に切り替え。',
             'ai' => 'TryPost Copilot',
             'ai_tooltip' => '投稿の作成と見直しを手伝うAIアシスタント。',
             'mcp' => 'MCP：Claude、ChatGPT、Grokから投稿',
@@ -61,10 +60,14 @@ return [
         ],
     ],
 
-    'plan' => [
-        'trial' => 'トライアル',
-        'cancelling' => '解約手続き中',
-        'trial_ends' => 'トライアル終了',
+    'current_plan' => [
+        'change' => 'プランを変更',
+        'price_monthly' => ':price/月',
+        'price_yearly' => ':price/年',
+        'trial_until' => ':dateまでトライアル',
+        'renews' => '自動更新',
+        'cancelled' => '解約済み、:dateに終了',
+        'workspaces_usage' => 'ワークスペース: :count / :limit',
     ],
 
     'subscription' => [
@@ -79,6 +82,7 @@ return [
         'title' => '請求書',
         'description' => '過去の請求書をダウンロードできます。',
         'paid' => '支払い済み',
+        'download' => '請求書をダウンロード',
     ],
 
     'flash' => [

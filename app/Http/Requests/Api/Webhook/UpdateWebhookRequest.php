@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\Webhook;
 
-use App\Enums\Webhook\EventType;
-use App\Enums\Webhook\Status;
+use App\Support\Requests\Webhook\WebhookRequestRules;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class UpdateWebhookRequest extends FormRequest
 {
@@ -21,11 +19,6 @@ class UpdateWebhookRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'endpoint' => ['sometimes', 'url', 'max:255'],
-            'events' => ['sometimes', 'array', 'min:1'],
-            'events.*' => ['string', Rule::enum(EventType::class)],
-            'status' => ['sometimes', 'string', Rule::enum(Status::class)->only([Status::Enabled, Status::Disabled])],
-        ];
+        return WebhookRequestRules::update();
     }
 }

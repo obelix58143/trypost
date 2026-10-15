@@ -8,11 +8,10 @@ return [
     'back' => 'Volver',
 
     'confirm_modal' => [
-        'cannot_be_undone' => 'Esta acción no se puede deshacer.',
         'type' => 'Escribe',
         'to_confirm' => 'para confirmar.',
         'copy_to_clipboard' => 'Copiar al portapapeles',
-        'delete_keyword' => 'eliminar',
+        'delete_keyword' => 'ELIMINAR',
     ],
 
     'photo_upload' => [
@@ -59,11 +58,25 @@ return [
     'cancel' => 'Cancelar',
     'clear' => 'Limpiar',
     'close' => 'Cerrar',
+    'more' => 'Más',
+    'play' => 'Reproducir',
+    'loading' => 'Cargando...',
     'loading_more' => 'Cargando más...',
 
     'actions' => [
         'copy' => 'Copiar',
         'copied' => 'Copiado',
         'copy_failed' => 'No se pudo copiar al portapapeles',
+    ],
+
+    'media_lightbox' => [
+        'title' => 'Vista previa del archivo',
+        'previous' => 'Anterior',
+        'next' => 'Siguiente',
+        'zoom_in' => 'Acercar',
+        'zoom_out' => 'Alejar',
+        'counter' => ':current / :total',
+        'go_to' => 'Mostrar elemento :number',
+        'open' => 'Abrir vista previa',
     ],
 ];

@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Log;
 const MANAGED_PAGES_FIELDS = 'id,name,access_token';
 
 beforeEach(function () {
-    Http::preventStrayRequests();
     Log::spy();
 });
 

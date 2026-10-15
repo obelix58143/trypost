@@ -35,7 +35,7 @@ const { orientation, canScrollNext, scrollNext } = useCarousel()
   >
     <slot>
       <IconArrowRight />
-      <span class="sr-only">Next Slide</span>
+      <span class="sr-only">{{ $t('common.media_lightbox.next') }}</span>
     </slot>
   </Button>
 </template>

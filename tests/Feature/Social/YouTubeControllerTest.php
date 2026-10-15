@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
-use App\Enums\UserWorkspace\Role;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Social\PendingConnection;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Inertia\Testing\AssertableInertia;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
@@ -18,7 +16,7 @@ beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
 });
 
 test('youtube authorize url offers the account chooser', function () {
@@ -50,13 +48,11 @@ test('youtube connect redirects to oauth provider', function () {
 
     $response->assertRedirect('https://accounts.google.com/o/oauth2/v2/auth?test=1');
 
-    expect(session('social_connect_workspace'))->toBe($this->workspace->id);
+    expect(PendingConnection::current()?->workspaceId())->toBe($this->workspace->id);
 });
 
 test('youtube oauth callback creates account with single channel', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -93,9 +89,9 @@ test('youtube oauth callback creates account with single channel', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.youtube.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->component('accounts/PopupCallback'));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    finishSocialConnect(Platform::YouTube)->assertRedirect();
 
     $this->assertDatabaseHas('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -107,11 +103,8 @@ test('youtube oauth callback creates account with single channel', function () {
     ]);
 });
 
-test('youtube callback connects the first channel and warns when google returns more than one', function () {
-    Log::spy();
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+test('youtube offers every channel google returns and connects the one picked', function () {
+    startSocialConnect($this->workspace->id, Platform::YouTube);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -152,28 +145,17 @@ test('youtube callback connects the first channel and warns when google returns 
 
     $this->actingAs($this->user)
         ->get(route('app.social.youtube.callback'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', true)
-            ->where('message', __('accounts.popup_callback.connected'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::YouTube));
 
-    $this->assertDatabaseHas('social_accounts', [
-        'workspace_id' => $this->workspace->id,
-        'platform' => Platform::YouTube->value,
-        'platform_user_id' => 'UC_channel_1',
-    ]);
+    expect(PendingConnection::current()->identityKeys())->toBe(['youtube:UC_channel_1', 'youtube:UC_channel_2']);
 
-    expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->count())->toBe(1);
+    finishSocialConnect(Platform::YouTube, ['youtube:UC_channel_2'])->assertRedirect();
 
-    Log::shouldHaveReceived('warning')
-        ->withArgs(fn (string $message): bool => str_contains($message, 'more than one channel'));
+    expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->pluck('platform_user_id')->all())->toBe(['UC_channel_2']);
 });
 
 test('youtube callback fails when no channels found', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -195,9 +177,9 @@ test('youtube callback fails when no channels found', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.youtube.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'No YouTube channels found. Please create a channel first.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    expect(socialConnectFailure())->toBe('no_youtube_channels');
 });
 
 test('youtube callback fails with expired session', function () {
@@ -205,9 +187,9 @@ test('youtube callback fails with expired session', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.youtube.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    expect(socialConnectFailure())->toBeNull();
 });
 
 test('user can connect multiple youtube accounts', function () {
@@ -217,9 +199,7 @@ test('user can connect multiple youtube accounts', function () {
         'platform_user_id' => 'UC_channel_123',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_456');
@@ -251,16 +231,14 @@ test('user can connect multiple youtube accounts', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.youtube.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+    finishSocialConnect(Platform::YouTube)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->count())->toBe(2);
 });
 
 test('youtube callback handles oauth errors gracefully', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube);
 
     $mock = Mockery::mock();
     $mock->shouldReceive('user')->andThrow(new Exception('OAuth error'));
@@ -271,9 +249,9 @@ test('youtube callback handles oauth errors gracefully', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.youtube.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    expect(socialConnectFailure())->toBe('error_connecting');
 });
 
 test('youtube reconnect keeps the original card for a single channel', function () {
@@ -284,10 +262,7 @@ test('youtube reconnect keeps the original card for a single channel', function 
         'access_token' => 'expired-token',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube, $account->id);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -317,11 +292,9 @@ test('youtube reconnect keeps the original card for a single channel', function 
 
     $this->actingAs($this->user)
         ->get(route('app.social.youtube.callback'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', true)
-            ->where('message', __('accounts.popup_callback.reconnected'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    finishSocialConnect(Platform::YouTube)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->count())->toBe(1)
         ->and($account->fresh()->access_token)->toBe('fresh-access-token')
@@ -334,10 +307,7 @@ test('youtube reconnect shows channel_not_found when the channel is missing', fu
         'platform_user_id' => 'UC_missing',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube, $account->id);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -367,11 +337,9 @@ test('youtube reconnect shows channel_not_found when the channel is missing', fu
 
     $this->actingAs($this->user)
         ->get(route('app.social.youtube.callback'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.channel_not_found'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    expect(socialConnectFailure())->toBe('channel_not_found');
 });
 
 test('youtube reconnect narrows a multi channel response to its own card', function () {
@@ -382,10 +350,7 @@ test('youtube reconnect narrows a multi channel response to its own card', funct
         'access_token' => 'expired-token',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::YouTube, $account->id);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -418,11 +383,9 @@ test('youtube reconnect narrows a multi channel response to its own card', funct
 
     $this->actingAs($this->user)
         ->get(route('app.social.youtube.callback'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', true)
-            ->where('message', __('accounts.popup_callback.reconnected'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    finishSocialConnect(Platform::YouTube)->assertRedirect();
 
     expect($account->fresh()->platform_user_id)->toBe('UC_target')
         ->and($account->fresh()->access_token)->toBe('fresh-access-token')
@@ -436,7 +399,7 @@ test('youtube skips an already connected channel and takes the next one', functi
         'platform_user_id' => 'UC_taken',
     ]);
 
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::YouTube);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
@@ -467,8 +430,9 @@ test('youtube skips an already connected channel and takes the next one', functi
 
     $this->actingAs($this->user)
         ->get(route('app.social.youtube.callback'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+        ->assertRedirect(route('app.social.connect.show', Platform::YouTube));
+
+    finishSocialConnect(Platform::YouTube)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->pluck('platform_user_id')->sort()->values()->all())
         ->toBe(['UC_free', 'UC_taken']);

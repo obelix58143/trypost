@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Observers\ComposerVersionObserver;
 use Database\Factories\WorkspaceSignatureFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+#[ObservedBy(ComposerVersionObserver::class)]
 class WorkspaceSignature extends Model
 {
     /** @use HasFactory<WorkspaceSignatureFactory> */

@@ -4,19 +4,28 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\App\Invite;
 
-use App\Enums\UserWorkspace\Role as WorkspaceRole;
+use App\Http\Requests\App\Invite\Concerns\ValidatesMemberAccess;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 
 class StoreWorkspaceInviteRequest extends FormRequest
 {
+    use ValidatesMemberAccess;
+
     /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('email'))) {
+            $this->merge(['email' => Str::lower(trim($this->input('email')))]);
+        }
     }
 
     /**
@@ -28,7 +37,7 @@ class StoreWorkspaceInviteRequest extends FormRequest
     {
         return [
             'email' => ['required', 'email', 'max:255'],
-            'role' => ['required', Rule::in(array_column(WorkspaceRole::cases(), 'value'))],
+            ...$this->memberAccessRules(),
         ];
     }
 

@@ -10,13 +10,13 @@ use App\Actions\Auth\SyncOidcWorkspaceRole;
 use App\Actions\User\CreateUser;
 use App\Actions\Workspace\CreateWorkspace;
 use App\Enums\Auth\SocialAuthProvider;
-use App\Enums\UserWorkspace\Role as WorkspaceRole;
 use App\Http\Controllers\Auth\Concerns\PreservesAttributionParameters;
 use App\Http\Controllers\Auth\Concerns\PreservesInvite;
 use App\Http\Controllers\Controller;
 use App\Models\Invite;
 use App\Models\User;
 use App\Socialite\OidcProvider;
+use App\Support\Auth\OidcWorkspaceAccess;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -252,9 +252,7 @@ class OidcController extends Controller
         }
 
         if ($this->autoJoinEnabled()) {
-            $role = WorkspaceRole::tryFrom((string) config('trypost.oidc_auto_join_role')) ?? WorkspaceRole::Member;
-
-            if (JoinOidcUserToAccount::execute($user, $role)) {
+            if (JoinOidcUserToAccount::execute($user, OidcWorkspaceAccess::configuredDefault())) {
                 SyncOidcWorkspaceRole::execute($user->fresh(), $groups);
 
                 return redirect()->route('app.home');

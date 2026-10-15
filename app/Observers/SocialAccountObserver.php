@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
+use App\Actions\Analytics\DispatchAccountAnalytics;
+use App\Actions\SocialAccount\ListPinterestBoards;
+use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
 use App\Jobs\PostHog\IdentifyConnectedPlatforms;
 use App\Jobs\PostHog\SyncAccountUsage;
@@ -13,14 +16,29 @@ use App\Services\Repurpose\RepurposeAccountSync;
 
 class SocialAccountObserver
 {
+    public function creating(SocialAccount $socialAccount): void
+    {
+        if ($socialAccount->position !== null) {
+            return;
+        }
+
+        $last = SocialAccount::withoutGlobalScopes()
+            ->where('workspace_id', $socialAccount->workspace_id)
+            ->max('position');
+
+        $socialAccount->position = $last === null ? 0 : ((int) $last) + 1;
+    }
+
     public function created(SocialAccount $socialAccount): void
     {
         $this->syncUsageAndIdentify($socialAccount);
+        app(DispatchAccountAnalytics::class)->handle($socialAccount);
     }
 
     public function deleted(SocialAccount $socialAccount): void
     {
         $this->syncUsageAndIdentify($socialAccount);
+        $this->forgetPinterestBoards($socialAccount);
     }
 
     public function deleting(SocialAccount $socialAccount): void
@@ -32,15 +50,27 @@ class SocialAccountObserver
     {
         app(RepurposeAccountSync::class)->accountChanged($socialAccount);
 
-        if (! $socialAccount->wasChanged('status')) {
-            return;
+        if ($socialAccount->wasChanged('access_token')) {
+            $this->forgetPinterestBoards($socialAccount);
         }
 
         $wasConnected = $socialAccount->getRawOriginal('status') === Status::Connected->value;
         $isConnected = $socialAccount->status === Status::Connected;
+        $connectionChanged = $socialAccount->wasChanged('status') && $wasConnected !== $isConnected;
 
-        if ($wasConnected !== $isConnected) {
+        if ($connectionChanged) {
             $this->identifyConnectedPlatforms($socialAccount);
+        }
+
+        if ($connectionChanged && $isConnected) {
+            app(DispatchAccountAnalytics::class)->handle($socialAccount);
+        }
+    }
+
+    private function forgetPinterestBoards(SocialAccount $socialAccount): void
+    {
+        if ($socialAccount->platform === Platform::Pinterest) {
+            ListPinterestBoards::forget($socialAccount->id);
         }
     }
 

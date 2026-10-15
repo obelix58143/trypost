@@ -60,6 +60,7 @@ class BillingController extends Controller
             ]),
             'plan' => $account->plan ? PlanResource::make($account->plan)->resolve() : null,
             'workspaceCount' => $account->workspaces()->count(),
+            'workspaceLimit' => $account->workspaceLimit(),
             'invoices' => $account->invoices()->map(fn ($invoice) => [
                 'id' => $invoice->id,
                 'date' => $invoice->date(),

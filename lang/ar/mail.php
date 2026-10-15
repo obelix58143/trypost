@@ -5,7 +5,7 @@ declare(strict_types=1);
 return [
 
     'layout' => [
-        'tagline' => 'أداة مفتوحة المصدر لجدولة منشورات التواصل الاجتماعي',
+        'tagline' => 'أُرسل بواسطة فريق :brand',
         'manage_notifications' => 'إدارة الإشعارات',
         'signoff' => 'مع التحية،',
         'team' => 'فريق TryPost',
@@ -16,7 +16,7 @@ return [
         'title' => 'حساب :platform يحتاج إلى إعادة ربط',
         'preview' => 'أعد ربط حساب :platform في :workspace لمتابعة جدولة المنشورات.',
         'heading' => 'تم فصل الحساب',
-        'intro' => 'تم فصل حساب <strong>:platform</strong> الخاص بك <strong>:account</strong> عن مساحة العمل <strong>:workspace</strong>.',
+        'intro' => 'تم فصل الحساب التالي عن مساحة العمل :workspace.',
         'reasons_title' => 'قد يكون هذا حدث للأسباب التالية:',
         'reason_expired' => 'انتهت صلاحية رمز الوصول',
         'reason_revoked' => 'قمت بإلغاء وصول TryPost',
@@ -34,13 +34,6 @@ return [
         'ignore' => 'إذا لم تنشئ حسابًا، يمكنك تجاهل هذه الرسالة.',
     ],
 
-    'mentioned_in_comment' => [
-        'subject' => 'أشار إليك :name على TryPost',
-        'title' => 'أشار إليك :name',
-        'intro' => 'أشار إليك :name في تعليق على منشور.',
-        'button' => 'عرض التعليق',
-    ],
-
     'password_reset' => [
         'subject' => 'أعد تعيين كلمة المرور',
         'preview' => 'أعد تعيين كلمة المرور.',
@@ -55,18 +48,68 @@ return [
         'title' => 'قد يفشل نشر المنشورات',
         'heading' => 'قد يفشل نشر المنشورات',
         'intro' => 'يجب إعادة ربط الحسابات التالية في مساحة العمل :workspace قبل أن يمكن نشر هذه المنشورات المجدولة:',
-        'posts_label' => '{1} منشور واحد مجدول: :times UTC|[0,*] :count منشورات مجدولة: :times UTC',
+        'posts_label' => '{1} منشور واحد مجدول: :times (:timezone)|[0,*] :count منشورات مجدولة: :times (:timezone)',
         'reconnect_cta' => 'أعد ربط هذه الحسابات الآن حتى لا تفوتك منشوراتك المجدولة.',
         'button' => 'إعادة ربط الحسابات',
+    ],
+
+    'post_note_added' => [
+        'subject' => 'أضاف :author ملاحظة إلى منشور',
+        'title' => 'ملاحظة جديدة من :author',
+        'heading' => 'ملاحظة جديدة على منشور',
+        'body' => 'أضاف :author ملاحظة إلى منشور في مساحة العمل :workspace.',
+        'post_title' => 'المنشور',
+        'post_without_text' => 'لا يحتوي هذا المنشور على نص بعد.',
+        'button' => 'عرض الملاحظة',
+    ],
+    'post_approval_requested' => [
+        'subject' => ':name طلب منك الموافقة على منشور',
+        'title' => 'منشور يحتاج إلى موافقتك',
+        'preview' => ':name طلب الموافقة في :workspace.',
+        'heading' => 'منشور يحتاج إلى موافقتك',
+        'body' => ':name (:email) طلب الموافقة في مساحة العمل :workspace.',
+        'channel' => 'القناة',
+        'requested_time' => 'الوقت المطلوب',
+        'next_queue_slot' => 'الموعد التالي في قائمة الانتظار',
+        'as_soon_as_approved' => 'فور الموافقة عليه',
+        'post_without_text' => 'لا يحتوي هذا المنشور على نص بعد.',
+        'button' => 'عرض المنشورات بانتظار الموافقة',
+    ],
+
+    'post_approved' => [
+        'subject' => ':name وافق على منشورك',
+        'title' => 'تمت الموافقة على منشورك',
+        'preview' => ':name وافق على منشورك في :workspace.',
+        'heading' => 'تمت الموافقة على منشورك',
+        'body' => ':name وافق على منشورك في مساحة العمل :workspace.',
+        'channel' => 'القناة',
+        'goes_out' => 'موعد النشر',
+        'channel_time' => ':channel: :time',
+        'publishing_now' => 'يُنشر الآن',
+        'button' => 'عرض في قائمة الانتظار',
+    ],
+
+    'post_rejected' => [
+        'subject' => ':name لم يوافق على منشورك',
+        'title' => 'لم تتم الموافقة على منشورك',
+        'preview' => ':name أعاد منشورك إلى المسودات.',
+        'heading' => 'لم تتم الموافقة على منشورك',
+        'body' => ':name أعاد منشورك في مساحة العمل :workspace إلى المسودات.',
+        'channel' => 'القناة',
+        'button' => 'عرض في المسودات',
+    ],
+
+    'post_preview' => [
+        'no_text' => 'منشور بدون نص',
+        'error' => 'ما الذي حدث',
     ],
 
     'post_publish_failed' => [
         'subject' => 'فشل نشر منشورك في :workspace',
         'title' => 'فشل نشر منشورك',
-        'preview' => 'فشلت منصة واحدة أو أكثر في النشر.',
+        'preview' => 'فشل نشر منشورك',
         'heading' => 'فشل نشر منشورك',
-        'body' => 'فشل نشر منشورك المجدول في مساحة العمل :workspace على منصة واحدة أو أكثر.',
-        'platforms_title' => 'المنصات التي فشلت:',
+        'body' => 'تعذر نشر منشورك في :workspace.',
         'button' => 'عرض المنشور',
     ],
 
@@ -76,9 +119,8 @@ return [
         'preview' => 'تم نشر منشورك بنجاح.',
         'heading' => 'تم نشر منشورك',
         'body' => 'تم نشر منشورك في مساحة العمل :workspace بنجاح.',
-        'platforms_title' => 'تم النشر على:',
-        'view_post' => 'عرض المنشور',
-        'button' => 'عرض المنشور',
+        'button' => 'عرض على الشبكة',
+        'open_in_app' => 'فتح في TryPost',
     ],
 
     'webhook_paused' => [
@@ -86,7 +128,8 @@ return [
         'title' => 'أُوقف الويب هوك مؤقتًا بعد إخفاقات متكررة',
         'preview' => 'أوقفنا ويب هوكًا مؤقتًا بعد 5 إخفاقات تسليم متتالية.',
         'heading' => 'أُوقف الويب هوك مؤقتًا بعد إخفاقات متكررة',
-        'body' => 'أوقفنا الويب هوك على :endpoint مؤقتًا بعد 5 إخفاقات تسليم متتالية. راجع الـ endpoint وأعد تفعيله من صفحة تفاصيل الويب هوك.',
+        'body' => 'أوقفنا ويب هوكًا مؤقتًا بعد 5 إخفاقات تسليم متتالية.',
+        'next_steps' => 'راجع الـ endpoint وأعد تفعيله من صفحة تفاصيل الويب هوك.',
         'button' => 'عرض الويب هوك',
     ],
 
@@ -104,12 +147,13 @@ return [
     ],
 
     'workspace_invite' => [
-        'subject' => 'تمت دعوتك للانضمام إلى :account',
-        'title' => 'تمت دعوتك للانضمام إلى :account',
-        'preview' => 'تمت دعوتك للانضمام إلى :account',
+        'subject' => 'تمت دعوتك للانضمام إلى :workspace',
+        'title' => 'تمت دعوتك للانضمام إلى :workspace',
+        'preview' => 'تمت دعوتك للانضمام إلى :workspace',
         'heading' => 'تمت دعوتك!',
-        'intro' => 'تمت دعوتك للتعاون في مساحة العمل <strong>:account</strong>.',
+        'intro' => 'تمت دعوتك للتعاون في مساحة العمل <strong>:workspace</strong>.',
         'role' => 'تمت دعوتك بصفة <strong>:role</strong>.',
+        'roles' => ['admin' => 'مشرف', 'member' => 'عضو', 'needs_approval' => 'عضو (منشوراته تحتاج إلى موافقة)'],
         'button' => 'قبول الدعوة',
         'expiry' => 'تنتهي صلاحية هذه الدعوة خلال 7 أيام.',
     ],

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Mcp\Servers\TryPostServer;
 use App\Mcp\Tools\ApiKey\CreateApiKeyTool;
 use App\Mcp\Tools\ApiKey\DeleteApiKeyTool;
@@ -18,7 +17,7 @@ beforeEach(function () {
         'account_id' => $this->user->account_id,
         'user_id' => $this->user->id,
     ]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Admin->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('admin'));
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
     $this->user->refresh();
 });
@@ -41,7 +40,7 @@ test('list api keys returns wrapped api_keys array with ApiKeyResource shape', f
 
     $response->assertOk()
         ->assertStructuredContent(function (AssertableJson $json) {
-            $json->has('api_keys', 2, function (AssertableJson $key) {
+            $json->where('current_page', 1)->where('per_page', (int) config('app.pagination.default'))->etc()->has('api_keys', 2, function (AssertableJson $key) {
                 $key->hasAll(['id', 'name', 'last_used_at', 'expires_at', 'created_at'])
                     ->missing('token')
                     ->missing('user_id')
@@ -71,9 +70,11 @@ test('create api key returns plain token only at creation', function () {
 
     $response->assertOk()
         ->assertStructuredContent(function (AssertableJson $json) {
-            $json->where('name', 'My Key')
-                ->has('token')
-                ->hasAll(['id', 'last_used_at', 'expires_at', 'created_at'])
+            $json->has('plain_token')
+                ->has('token', fn (AssertableJson $token) => $token->where('name', 'My Key')
+                    ->hasAll(['id', 'last_used_at', 'expires_at', 'created_at'])
+                    ->missing('token')
+                    ->etc())
                 ->etc();
         });
 
@@ -84,7 +85,7 @@ test('create api key returns plain token only at creation', function () {
 
 test('workspace members cannot manage api keys through mcp', function () {
     $member = User::factory()->create(['account_id' => $this->user->account_id]);
-    $this->workspace->members()->attach($member->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($member->id, membershipPivot('member'));
     $member->update(['current_workspace_id' => $this->workspace->id]);
     $token = attachToken($member, $this->workspace);
 
@@ -129,8 +130,9 @@ test('create api key omits expiration when not provided', function () {
 
     $response->assertOk()
         ->assertStructuredContent(function (AssertableJson $json) {
-            $json->where('name', 'Never Expires')
+            $json->has('token', fn (AssertableJson $token) => $token->where('name', 'Never Expires')
                 ->where('expires_at', null)
+                ->etc())
                 ->etc();
         });
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Social;
 
+use App\Dto\MediaItem;
 use App\Enums\Instagram\ContainerStatus;
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
@@ -11,8 +12,8 @@ use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\InstagramPublishException;
 use App\Exceptions\Social\SocialPublishException;
-use App\Models\PostPlatform;
-use App\Services\Social\Concerns\CropsImageForAspectRatio;
+use App\Models\Post;
+use App\Services\Social\Concerns\FitsImageToCanvas;
 use App\Services\Social\Concerns\HasSocialHttpClient;
 use App\Services\Social\Meta\GraphError;
 use App\Support\Social\PublishCheckpoint;
@@ -23,27 +24,28 @@ use Illuminate\Support\Facades\Log;
 
 class InstagramPublisher
 {
-    use CropsImageForAspectRatio;
+    use FitsImageToCanvas;
     use HasSocialHttpClient;
 
     private string $baseUrl;
 
-    private PostPlatform $postPlatform;
+    private Post $post;
 
-    private const int STATUS_RETRY_DELAY_SECONDS = 10;
+    private const int STATUS_RETRY_DELAY_SECONDS = 60;
 
-    private const int STATUS_MAX_RETRIES = 90;
+    /** Two hours of delayed retries for processing and transient Graph failures. */
+    private const int STATUS_MAX_RETRIES = 120;
 
     private const string WORKFLOW_CAROUSEL_CHILDREN = 'carousel_children';
 
     private const string WORKFLOW_FINAL_CONTAINER = 'final_container';
 
-    public function publish(PostPlatform $postPlatform): array
+    public function publish(Post $post): array
     {
-        $this->postPlatform = $postPlatform;
-        $this->validateContentLength($postPlatform);
+        $this->post = $post;
+        $this->validateContentLength($post);
 
-        $account = $postPlatform->socialAccount;
+        $account = $post->socialAccount;
         $this->baseUrl = $account->platform->instagramGraphBaseUrl();
 
         if ($account->needsProactiveTokenRefresh()) {
@@ -53,15 +55,15 @@ class InstagramPublisher
         $instagramId = $account->platform_user_id;
         $accessToken = $account->access_token;
 
-        $content = $postPlatform->post->content ? app(ContentSanitizer::class)->sanitize($postPlatform->post->content, $postPlatform->platform) : null;
+        $content = app(ContentSanitizer::class)->forPost($post);
 
-        $pendingWorkflow = PublishCheckpoint::instagramWorkflow($postPlatform->error_context);
+        $pendingWorkflow = PublishCheckpoint::instagramWorkflow($post->error_context);
 
         if ($pendingWorkflow !== null) {
             return $this->resumeWorkflow($instagramId, $accessToken, $content, $pendingWorkflow);
         }
 
-        $media = $postPlatform->post->mediaItems;
+        $media = $post->mediaItems;
 
         if ($media->isEmpty()) {
             throw new InstagramPublishException(
@@ -71,14 +73,12 @@ class InstagramPublisher
         }
 
         $firstMedia = $media->first();
-        $contentType = $postPlatform->content_type;
-
-        $aspectRatio = data_get($postPlatform->meta, 'aspect_ratio');
+        $contentType = $post->content_type;
 
         return match ($contentType) {
             ContentType::InstagramReel => $this->publishReel($instagramId, $accessToken, $content, $firstMedia),
             ContentType::InstagramStory => $this->publishStory($instagramId, $accessToken, $firstMedia),
-            ContentType::InstagramFeed => $this->publishFeed($instagramId, $accessToken, $content, $media, $aspectRatio),
+            ContentType::InstagramFeed => $this->publishFeed($instagramId, $accessToken, $content, $media),
             default => throw new InstagramPublishException(
                 userMessage: "Unsupported Instagram content type: {$contentType?->value}",
                 category: ErrorCategory::ContentPolicy,
@@ -86,10 +86,10 @@ class InstagramPublisher
         };
     }
 
-    private function publishFeed(string $instagramId, string $accessToken, ?string $content, $media, ?string $aspectRatio): array
+    private function publishFeed(string $instagramId, string $accessToken, ?string $content, $media): array
     {
         if ($media->count() > 1) {
-            return $this->publishCarousel($instagramId, $accessToken, $content, $media, $aspectRatio);
+            return $this->publishCarousel($instagramId, $accessToken, $content, $media);
         }
 
         $firstMedia = $media->first();
@@ -98,15 +98,13 @@ class InstagramPublisher
             return $this->publishReel($instagramId, $accessToken, $content, $firstMedia);
         }
 
-        return $this->publishSingleImage($instagramId, $accessToken, $content, $firstMedia, $aspectRatio);
+        return $this->publishSingleImage($instagramId, $accessToken, $content, $firstMedia);
     }
 
-    private function publishSingleImage(string $instagramId, string $accessToken, ?string $content, $media, ?string $aspectRatio): array
+    private function publishSingleImage(string $instagramId, string $accessToken, ?string $content, $media): array
     {
-        $imageUrl = $this->cropImageForAspectRatio($media->url, $aspectRatio);
-
         $params = [
-            'image_url' => $imageUrl,
+            'image_url' => $media->url,
             'caption' => $content,
             'access_token' => $accessToken,
         ];
@@ -116,6 +114,8 @@ class InstagramPublisher
         if ($alt !== null) {
             $params['alt_text'] = $alt;
         }
+
+        $params = [...$params, ...$this->userTagsParam($media->userTags()), ...$this->sharedOptions()];
 
         $containerId = $this->createContainer($instagramId, $params, 'container');
 
@@ -129,6 +129,9 @@ class InstagramPublisher
             'caption' => $content,
             'media_type' => 'REELS',
             'access_token' => $accessToken,
+            ...$this->thumbOffsetParam($media),
+            ...$this->sharedOptions(),
+            ...$this->reelOptions(),
         ], 'reel container');
 
         return $this->finishContainer($instagramId, $accessToken, $containerId);
@@ -141,13 +144,18 @@ class InstagramPublisher
         $params = [
             'media_type' => 'STORIES',
             'access_token' => $accessToken,
+            ...$this->sharedOptions(),
         ];
 
         if ($isVideo) {
             $params['video_url'] = $media->url;
         } else {
-            $dimensions = ContentType::InstagramStory->aiImageDimensions();
+            $dimensions = ContentType::InstagramStory->preferredImageDimensions();
             $params['image_url'] = $this->fitImageToCanvas($media->url, data_get($dimensions, 'width'), data_get($dimensions, 'height'));
+            $params = [...$params, ...$this->userTagsParam(array_map(
+                fn (array $tag): array => ['username' => $tag['username']],
+                $media->userTags(),
+            ))];
         }
 
         $containerId = $this->createContainer($instagramId, $params, 'story container');
@@ -155,7 +163,7 @@ class InstagramPublisher
         return $this->finishContainer($instagramId, $accessToken, $containerId);
     }
 
-    private function publishCarousel(string $instagramId, string $accessToken, ?string $content, $mediaCollection, ?string $aspectRatio): array
+    private function publishCarousel(string $instagramId, string $accessToken, ?string $content, $mediaCollection): array
     {
         // Step 1: Create containers for each media item
         $childContainers = [];
@@ -172,14 +180,17 @@ class InstagramPublisher
             if ($isVideo) {
                 $params['video_url'] = $media->url;
                 $params['media_type'] = 'VIDEO';
+                $params = [...$params, ...$this->thumbOffsetParam($media)];
             } else {
-                $params['image_url'] = $this->cropImageForAspectRatio($media->url, $aspectRatio);
+                $params['image_url'] = $media->url;
 
                 $alt = $media->altTextFor(Platform::Instagram);
 
                 if ($alt !== null) {
                     $params['alt_text'] = $alt;
                 }
+
+                $params = [...$params, ...$this->userTagsParam($media->userTags())];
             }
 
             $containerResponse = $this->socialHttp()->post("{$this->baseUrl}/{$instagramId}/media", $params);
@@ -218,6 +229,58 @@ class InstagramPublisher
     }
 
     /**
+     * Instagram reads `user_tags` as a JSON array. Stories place the mention
+     * without a sticker, so their entries carry only the username.
+     *
+     * @param  list<array<string, string|float>>  $tags
+     * @return array<string, string>
+     */
+    private function userTagsParam(array $tags): array
+    {
+        return $tags === [] ? [] : ['user_tags' => (string) json_encode($tags)];
+    }
+
+    /**
+     * Options Instagram accepts on every container except carousel children,
+     * which never get the AI label.
+     *
+     * @return array<string, string>
+     */
+    private function sharedOptions(): array
+    {
+        return array_filter([
+            'is_ai_generated' => data_get($this->post->meta, 'is_ai_generated') === true ? 'true' : null,
+        ], fn (?string $value): bool => $value !== null);
+    }
+
+    /**
+     * Reel-only options. A feed video is also sent as REELS, so these apply only
+     * when the user picked the Reel content type.
+     *
+     * @return array<string, string>
+     */
+    private function reelOptions(): array
+    {
+        if ($this->post->content_type !== ContentType::InstagramReel) {
+            return [];
+        }
+
+        return [
+            'share_to_feed' => data_get($this->post->meta, 'share_to_feed', true) ? 'true' : 'false',
+        ];
+    }
+
+    /**
+     * @return array{thumb_offset?: int}
+     */
+    private function thumbOffsetParam(MediaItem $media): array
+    {
+        $offset = $media->coverOffsetMs();
+
+        return $offset === null ? [] : ['thumb_offset' => $offset];
+    }
+
+    /**
      * @param  list<string>  $childContainers
      * @param  list<string>  $processingChildContainers
      */
@@ -238,6 +301,7 @@ class InstagramPublisher
             'caption' => $content,
             'children' => implode(',', $childContainers),
             'access_token' => $accessToken,
+            ...$this->sharedOptions(),
         ], 'carousel container');
 
         return $this->finishContainer($instagramId, $accessToken, $carouselId);
@@ -321,7 +385,8 @@ class InstagramPublisher
                 'body' => $this->redactResponseBody($publishResponse->body()),
             ]);
 
-            if (GraphError::isTransientFailure($publishResponse)) {
+            if (! InstagramPublishException::isDocumentedRejection($publishResponse)
+                && (GraphError::isTransientFailure($publishResponse) || InstagramPublishException::isMediaNotReady($publishResponse))) {
                 throw $this->pendingContainerException($containerId, $workflow, $publishResponse->status());
             }
 
@@ -393,9 +458,9 @@ class InstagramPublisher
      */
     private function rememberPublishedMedia(string $containerId, string $mediaId): void
     {
-        $this->postPlatform->update([
+        $this->post->writePublication([
             'error_context' => [
-                ...($this->postPlatform->error_context ?? []),
+                ...($this->post->error_context ?? []),
                 PublishCheckpoint::INSTAGRAM_WORKFLOW => [
                     'stage' => self::WORKFLOW_FINAL_CONTAINER,
                     'container_id' => $containerId,
@@ -496,11 +561,7 @@ class InstagramPublisher
             'body' => $body,
         ]);
 
-        return new InstagramPublishException(
-            userMessage: 'Instagram media processing failed',
-            category: ErrorCategory::ServerError,
-            rawResponse: $body,
-        );
+        return InstagramPublishException::fromContainerStatus(data_get($response->json(), 'status'), $body);
     }
 
     /**
@@ -518,7 +579,7 @@ class InstagramPublisher
                 'body' => $this->redactResponseBody($response->body()),
             ]);
 
-            if (GraphError::isTransientFailure($response)) {
+            if (! InstagramPublishException::isDocumentedRejection($response) && GraphError::isTransientFailure($response)) {
                 throw new PlatformUnavailableException(
                     message: "Instagram {$label} creation failed transiently",
                     httpStatus: $response->status(),

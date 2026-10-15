@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
+use App\Enums\Post\Status;
 use App\Models\Post;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
@@ -17,7 +18,7 @@ class PostPolicy
      */
     public function view(User $user, Post $post): bool|Response
     {
-        if ($post->workspace_id !== $user->current_workspace_id) {
+        if ($this->isHidden($user, $post)) {
             return Response::denyAsNotFound();
         }
 
@@ -26,11 +27,12 @@ class PostPolicy
 
     /**
      * Authorize updating a post: tenancy guard (404 across tenants) then the
-     * role gate — viewers are read-only (403).
+     * `createPost` gate (any member). Whether the change needs approval is
+     * decided by PostApproval when it is saved.
      */
     public function update(User $user, Post $post): bool|Response
     {
-        if ($post->workspace_id !== $user->current_workspace_id) {
+        if ($this->isHidden($user, $post)) {
             return Response::denyAsNotFound();
         }
 
@@ -38,16 +40,23 @@ class PostPolicy
     }
 
     /**
-     * Authorize deleting a post: tenancy guard (404 across tenants) then the
-     * same role gate as `update` — viewers are read-only (403).
+     * Authorize deleting a post: tenancy guard (404 across tenants), the
+     * `createPost` gate, and a member who needs approval may delete only the
+     * posts they wrote, or another member's request they made while it is still pending approval.
      */
     public function delete(User $user, Post $post): bool|Response
     {
-        if ($post->workspace_id !== $user->current_workspace_id) {
+        if ($this->isHidden($user, $post)) {
             return Response::denyAsNotFound();
         }
 
-        return $user->can('createPost', $user->currentWorkspace);
+        if (! $user->can('createPost', $user->currentWorkspace)) {
+            return false;
+        }
+
+        return ! $user->requiresApprovalIn($user->currentWorkspace)
+            || $post->user_id === $user->id
+            || ($post->status === Status::PendingApproval && $post->approval_requested_by === $user->id);
     }
 
     /**
@@ -58,10 +67,40 @@ class PostPolicy
      */
     public function duplicate(User $user, Post $post): bool|Response
     {
-        if ($post->workspace_id !== $user->current_workspace_id) {
+        if ($this->isHidden($user, $post)) {
             return Response::denyAsNotFound();
         }
 
         return $user->can('createPost', $user->currentWorkspace);
+    }
+
+    /**
+     * Authorize approving or rejecting a pending post: tenancy guard (404 across
+     * tenants) then the approver gate (members who publish directly).
+     */
+    public function approve(User $user, Post $post): bool|Response
+    {
+        if ($post->workspace_id !== $user->current_workspace_id) {
+            return Response::denyAsNotFound();
+        }
+
+        return $user->can('approvePosts', $user->currentWorkspace);
+    }
+
+    /**
+     * A post outside the user's current workspace, or another member's pending
+     * request seen by someone who cannot approve it, is hidden as not found.
+     */
+    private function isHidden(User $user, Post $post): bool
+    {
+        if ($post->workspace_id !== $user->current_workspace_id) {
+            return true;
+        }
+
+        if ($post->status !== Status::PendingApproval || $user->can('approvePosts', $user->currentWorkspace)) {
+            return false;
+        }
+
+        return $post->approvalRequester()?->id !== $user->id;
     }
 }

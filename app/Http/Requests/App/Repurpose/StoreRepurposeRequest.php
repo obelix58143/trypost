@@ -6,6 +6,7 @@ namespace App\Http\Requests\App\Repurpose;
 
 use App\Models\Repurpose;
 use App\Support\Repurpose\RepurposeRules;
+use App\Support\Requests\Repurpose\RepurposeRequestRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreRepurposeRequest extends FormRequest
@@ -28,7 +29,7 @@ class StoreRepurposeRequest extends FormRequest
      */
     public function messages(): array
     {
-        return RepurposeRules::messages();
+        return RepurposeRequestRules::messages();
     }
 
     /**
@@ -36,6 +37,6 @@ class StoreRepurposeRequest extends FormRequest
      */
     public function attributes(): array
     {
-        return RepurposeRules::attributes();
+        return RepurposeRequestRules::attributes();
     }
 }

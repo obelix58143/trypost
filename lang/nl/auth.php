@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => 'Kan je e-mailadres niet ophalen van GitHub. Maak je GitHub-e-mailadres openbaar of verleen de e-mailscope en probeer het opnieuw.',
 
     'login' => [
-        'title' => 'Log in op je account',
-        'description' => 'Voer hieronder je e-mailadres en wachtwoord in om in te loggen',
-        'description_without_password' => 'Log in met je organisatieaccount om verder te gaan',
+        'title' => 'Inloggen bij TryPost',
         'page_title' => 'Inloggen',
         'email' => 'E-mailadres',
         'password' => 'Wachtwoord',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'Je hele social kalender, op één plek',
-        'description' => 'Maak je account aan en begin met het plannen van posts voor elk netwerk.',
+        'title' => 'Maak een TryPost-account',
         'page_title' => 'Registreren',
-        'signup_with_email' => 'Aanmelden met e-mail',
         'name' => 'Naam',
         'name_placeholder' => 'Volledige naam',
         'email' => 'E-mailadres',
@@ -93,6 +89,12 @@ return [
         'submit' => 'Account aanmaken',
         'has_account' => 'Heb je al een account?',
         'log_in' => 'Inloggen',
+        'password_requirements' => [
+            'min' => 'Minstens :count tekens',
+            'mixed_case' => 'Hoofdletters en kleine letters',
+            'number' => 'Minstens 1 cijfer',
+            'symbol' => 'Minstens 1 symbool',
+        ],
     ],
 
     'forgot_password' => [

@@ -5,15 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
-use App\Enums\SocialAccount\Status;
-use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
-use App\Models\SocialAccount;
+use App\Support\Social\PendingConnection;
+use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
-use Inertia\Response as InertiaResponse;
 use Laravel\Socialite\Facades\Socialite;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -43,72 +41,53 @@ class YouTubeController extends SocialController
         return $this->redirectToGoogle();
     }
 
-    public function callback(Request $request): InertiaResponse|RedirectResponse
+    public function callback(Request $request): RedirectResponse
     {
         $workspace = $this->connectWorkspace($request);
-
-        $reconnect = $this->reconnectAccount($workspace);
 
         try {
             $socialUser = Socialite::driver($this->driver)->user();
 
+            $scopes = $this->reportedScopes($socialUser->approvedScopes, $this->scopes);
+            $refusal = $this->refusalForMissingPublishScopes($scopes);
+
+            if ($refusal !== null) {
+                return $refusal;
+            }
+
             $channels = $this->fetchChannels($socialUser->token);
 
             if (empty($channels)) {
-                return $this->popupCallback(false, __('accounts.popup_callback.no_youtube_channels'), $this->platform->value);
+                return $this->failConnection('no_youtube_channels');
             }
 
-            $channels = $this->filterConnectableIdentities($workspace, $channels, 'id', $reconnect);
-
-            if (empty($channels)) {
-                return $this->noConnectableIdentities($reconnect, 'channel_not_found');
-            }
-
-            // Google's own delegation screen already made the user pick which
-            // channel this authorization is for, so channels?mine=true answers
-            // with that one. More than one only arrives if that ever changes.
-            if (count($channels) > 1) {
-                Log::warning('YouTube returned more than one channel for a delegated token', [
-                    'channel_ids' => array_column($channels, 'id'),
-                ]);
-            }
-
-            $channel = $channels[0];
-            $avatarPath = uploadFromUrl(data_get($channel, 'thumbnail'));
-
-            SocialAccount::connectIdentity(
-                $workspace,
+            return $this->offerIdentities($workspace, array_map(fn (array $channel): array => PendingConnection::identity(
                 $this->platform,
                 (string) data_get($channel, 'id'),
+                data_get($channel, 'title'),
+                data_get($channel, 'custom_url'),
+                data_get($channel, 'thumbnail'),
+                $this->platform->identityType()->value,
                 [
-                    'username' => ltrim(data_get($channel, 'custom_url', data_get($channel, 'id')), '@'),
+                    'username' => ltrim((string) data_get($channel, 'custom_url', data_get($channel, 'id')), '@'),
                     'display_name' => data_get($channel, 'title'),
-                    'avatar_url' => $avatarPath,
                     'access_token' => $socialUser->token,
                     'refresh_token' => $socialUser->refreshToken,
                     'token_expires_at' => $socialUser->expiresIn ? now()->addSeconds($socialUser->expiresIn) : null,
-                    'scopes' => $this->scopes,
-                    'status' => Status::Connected,
-                    'error_message' => null,
-                    'disconnected_at' => null,
+                    'scopes' => $scopes,
                     'meta' => [
                         'channel_id' => data_get($channel, 'id'),
                         'google_user_id' => $socialUser->getId(),
                     ],
                 ],
-                $reconnect,
-            );
-
-            return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException $e) {
-            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
-        } catch (\Exception $e) {
+            ), $channels), $this->reconnectAccount($workspace), 'channel_not_found');
+        } catch (Exception $e) {
             Log::error('YouTube OAuth Error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
+            return $this->failConnection('error_connecting');
         }
     }
 
@@ -155,7 +134,7 @@ class YouTubeController extends SocialController
                 'custom_url' => data_get($channel, 'snippet.customUrl'),
                 'subscriber_count' => data_get($channel, 'statistics.subscriberCount', 0),
             ])->toArray();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('YouTube channels fetch error', [
                 'error' => $e->getMessage(),
             ]);

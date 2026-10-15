@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Auth;
 
 use App\Actions\Account\CancelAccountSubscription;
-use App\Enums\UserWorkspace\Role as WorkspaceRole;
 use App\Models\Account;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +19,10 @@ use Illuminate\Support\Facades\DB;
  */
 class JoinOidcUserToAccount
 {
-    public static function execute(User $user, WorkspaceRole $role): bool
+    /**
+     * @param  array{is_admin: bool, requires_approval: bool}  $access  Pivot values for new memberships.
+     */
+    public static function execute(User $user, array $access): bool
     {
         $account = self::targetAccount();
 
@@ -37,7 +39,7 @@ class JoinOidcUserToAccount
 
         $previousAccountId = $user->account_id;
 
-        DB::transaction(function () use ($user, $account, $workspaces, $role): void {
+        DB::transaction(function () use ($user, $account, $workspaces, $access): void {
             $user->update(['account_id' => $account->id]);
             $user->refresh();
 
@@ -46,9 +48,9 @@ class JoinOidcUserToAccount
                     ->where('users.id', $user->id)
                     ->exists();
 
-                // Never overwrite an existing pivot role (avoids demoting admins).
+                // Never overwrite existing access (avoids demoting admins).
                 if (! $alreadyMember) {
-                    $workspace->members()->attach($user->id, ['role' => $role->value]);
+                    $workspace->members()->attach($user->id, $access);
                 }
             }
 

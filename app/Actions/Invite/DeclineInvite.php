@@ -13,7 +13,7 @@ class DeclineInvite
 {
     public static function execute(User $user, Invite $invite): Result
     {
-        if ($invite->email !== $user->email) {
+        if (! $invite->isFor($user->email)) {
             return Result::WrongEmail;
         }
 

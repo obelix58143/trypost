@@ -4,25 +4,23 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\Post;
 
-use App\Support\PostMediaRules;
+use App\Support\Requests\Post\PostMediaRequestRules;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 class AttachMediaFromUrlRequest extends FormRequest
 {
-    public function authorize(): bool
+    public function authorize(): Response
     {
-        return true;
+        return Gate::forUser($this->user())->inspect('update', $this->route('post'));
     }
 
     /**
-     * @return array<string, array<int, string>>
+     * @return array<string, array<int, mixed>>
      */
     public function rules(): array
     {
-        return [
-            'urls' => ['required', 'array', 'min:1', 'max:10'],
-            'urls.*.url' => ['required', 'url:http,https', 'active_url'],
-            'urls.*.alt' => ['nullable', 'string', 'max:'.PostMediaRules::ALT_TEXT_MAX_LENGTH],
-        ];
+        return PostMediaRequestRules::attachFromUrl();
     }
 }

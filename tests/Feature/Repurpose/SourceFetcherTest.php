@@ -5,9 +5,16 @@ declare(strict_types=1);
 use App\Enums\Repurpose\SourceFormat;
 use App\Enums\SocialAccount\Platform;
 use App\Exceptions\Repurpose\SourceFetchException;
+use App\Jobs\Analytics\BootstrapAccountAnalytics;
+use App\Jobs\Analytics\CollectAccountDailySnapshot;
 use App\Models\SocialAccount;
 use App\Services\Repurpose\SourceFetcherFactory;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+
+beforeEach(function () {
+    Queue::fake([BootstrapAccountAnalytics::class, CollectAccountDailySnapshot::class]);
+});
 
 function instagramGraph(): string
 {
@@ -105,10 +112,12 @@ test('facebook stories resolve the downloadable file behind each story', functio
 
     $media = fetchFor($account, [SourceFormat::Story]);
 
+    Http::assertSentCount(1);
+
     expect($media)->toHaveCount(1)
         ->and($media[0]->id)->toBe('s1')
         ->and($media[0]->format)->toBe(SourceFormat::Story)
-        ->and($media[0]->downloadUrl)->toBe('https://cdn.example.com/story.mp4');
+        ->and($media[0]->resolveDownloadUrl())->toBe('https://cdn.example.com/story.mp4');
 });
 
 test('a since timestamp is sent to the api', function () {
@@ -231,7 +240,7 @@ test('facebook only resolves the file for a published video story', function () 
 
     expect($media)->toHaveCount(1)
         ->and($media[0]->id)->toBe('p1')
-        ->and($media[0]->downloadUrl)->toBe('https://cdn/v1.mp4');
+        ->and($media[0]->resolveDownloadUrl())->toBe('https://cdn/v1.mp4');
 
     Http::assertSentCount(2);
 });
@@ -312,4 +321,36 @@ test('a graph failure that is not an unknown field is not retried', function () 
 
     expect(fn () => fetchFor($account, [SourceFormat::Reel]))->toThrow(SourceFetchException::class)
         ->and($attempt)->toBe(1);
+});
+
+test('a transient failure looking up a story file throws instead of reporting the file missing', function (int $status, array $body) {
+    Http::fake([
+        facebookGraph().'/*/stories*' => Http::response(['data' => [
+            ['post_id' => 's1', 'status' => 'PUBLISHED', 'media_type' => 'video', 'media_id' => 'vid-1'],
+        ]]),
+        facebookGraph().'/vid-1*' => Http::response($body, $status),
+    ]);
+
+    $account = SocialAccount::factory()->create(['platform' => Platform::Facebook]);
+
+    $media = fetchFor($account, [SourceFormat::Story]);
+
+    expect(fn () => $media[0]->resolveDownloadUrl())->toThrow(SourceFetchException::class);
+})->with([
+    'server error' => [503, ['error' => ['code' => 2, 'message' => 'Service unavailable']]],
+    'too many requests' => [429, ['error' => ['message' => 'Slow down']]],
+    'page rate limit' => [400, ['error' => ['code' => 80001, 'message' => 'Too many calls']]],
+]);
+
+test('a story file confirmed gone resolves to no file', function () {
+    Http::fake([
+        facebookGraph().'/*/stories*' => Http::response(['data' => [
+            ['post_id' => 's1', 'status' => 'PUBLISHED', 'media_type' => 'video', 'media_id' => 'vid-1'],
+        ]]),
+        facebookGraph().'/vid-1*' => Http::response(['error' => ['code' => 100, 'message' => 'Object does not exist']], 400),
+    ]);
+
+    $account = SocialAccount::factory()->create(['platform' => Platform::Facebook]);
+
+    expect(fetchFor($account, [SourceFormat::Story])[0]->resolveDownloadUrl())->toBeNull();
 });

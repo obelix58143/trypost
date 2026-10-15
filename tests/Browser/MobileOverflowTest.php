@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
+use App\Enums\User\Goal;
+use App\Enums\User\Persona;
+use App\Enums\User\ReferralSource;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\User;
 use App\Models\Workspace;
 
@@ -50,15 +51,14 @@ test('key pages do not overflow horizontally on a phone', function () {
         // A long name previously stretched the AuthSplitLayout grid column past the viewport.
         'name' => 'A Really Very Extremely Long Workspace Name That Should Truncate Instead Of Overflowing',
     ]);
-    $workspace->members()->attach($user->id, ['role' => Role::Member->value]);
+    $workspace->members()->attach($user->id, membershipPivot('member'));
     $user->update(['current_workspace_id' => $workspace->id]);
 
-    $post = Post::factory()->create([
+    $post = Post::factory()->linkedin()->create([
         'workspace_id' => $workspace->id,
         'user_id' => $user->id,
         'content' => 'Launching our new mobile editor today!',
     ]);
-    PostPlatform::factory()->count(2)->create(['post_id' => $post->id]);
 
     $this->actingAs($user);
 
@@ -66,11 +66,46 @@ test('key pages do not overflow horizontally on a phone', function () {
         'workspaces (AuthLayout)' => route('app.workspaces.index'),
         'posts index (default)' => route('app.posts.index'),
         'post editor (full-width)' => route('app.posts.edit', $post),
-        'calendar (full-width)' => route('app.calendar'),
         'settings (tabs)' => route('app.api-keys.index'),
     ];
 
     foreach ($pages as $label => $url) {
         assertNoHorizontalOverflow(visit($url)->resize(375, 812), $label);
+    }
+});
+
+test('auth and welcome pages do not overflow horizontally on a phone', function () {
+    config(['trypost.self_hosted' => false]);
+
+    $guestPages = [
+        'login' => route('login'),
+        'register' => route('register'),
+        'forgot password' => route('password.request'),
+    ];
+
+    foreach ($guestPages as $label => $url) {
+        assertNoHorizontalOverflow(visit($url)->resize(390, 844), $label);
+    }
+
+    $user = User::factory()->create();
+    $user->update([
+        'persona' => Persona::Agency->value,
+        'goals' => [Goal::SaveTime->value],
+        'referral_source' => ReferralSource::ProductHunt->value,
+    ]);
+    $workspace = Workspace::factory()->create([
+        'account_id' => $user->account_id,
+        'user_id' => $user->id,
+    ]);
+    $workspace->members()->attach($user->id, membershipPivot('admin'));
+    $user->update(['current_workspace_id' => $workspace->id]);
+    $this->actingAs($user->fresh());
+
+    $welcomePages = [
+        'welcome plan' => route('app.welcome.plan'),
+    ];
+
+    foreach ($welcomePages as $label => $url) {
+        assertNoHorizontalOverflow(visit($url)->resize(390, 844), $label);
     }
 });

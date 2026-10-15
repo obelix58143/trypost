@@ -8,11 +8,10 @@ return [
     'back' => 'Wstecz',
 
     'confirm_modal' => [
-        'cannot_be_undone' => 'Tej operacji nie można cofnąć.',
         'type' => 'Wpisz',
         'to_confirm' => 'aby potwierdzić.',
         'copy_to_clipboard' => 'Kopiuj do schowka',
-        'delete_keyword' => 'usuń',
+        'delete_keyword' => 'USUŃ',
     ],
 
     'photo_upload' => [
@@ -59,11 +58,25 @@ return [
     'cancel' => 'Anuluj',
     'clear' => 'Wyczyść',
     'close' => 'Zamknij',
+    'more' => 'Więcej',
+    'play' => 'Odtwórz',
+    'loading' => 'Wczytywanie...',
     'loading_more' => 'Wczytywanie kolejnych...',
 
     'actions' => [
         'copy' => 'Kopiuj',
         'copied' => 'Skopiowano',
         'copy_failed' => 'Nie udało się skopiować do schowka',
+    ],
+
+    'media_lightbox' => [
+        'title' => 'Podgląd multimediów',
+        'previous' => 'Poprzedni',
+        'next' => 'Następny',
+        'zoom_in' => 'Powiększ',
+        'zoom_out' => 'Pomniejsz',
+        'counter' => ':current / :total',
+        'go_to' => 'Pokaż element :number',
+        'open' => 'Otwórz podgląd',
     ],
 ];

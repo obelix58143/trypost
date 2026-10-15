@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Social;
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\TokenExpiredException;
+use App\Services\Social\Meta\GraphError;
 use Illuminate\Http\Client\Response;
 
 class FacebookPublishException extends SocialPublishException
@@ -23,6 +25,24 @@ class FacebookPublishException extends SocialPublishException
      */
     private const string FACEBOOK_URL_SUBCODE = '1609008';
 
+    /**
+     * Graph codes the Video API error reference documents as the Page's own
+     * file (size, length, format) plus the duplicate post and the account's
+     * own limits. 6000 ("retry and report bug", and what finishing an empty
+     * session of ours returns), 1363042 (fixed with a valid token), the
+     * upload-session failures, "no video file" (our request), editing a video
+     * (ours), every code missing from Meta's references and the app-level
+     * limits 4, 32, 341 and 613 stay reported.
+     *
+     * @see https://developers.facebook.com/documentation/video-api/reference/error-codes
+     *
+     * @var list<int>
+     */
+    private const array USER_REJECTION_CODES = [
+        1363023, 1363022, 1363031, 1363032, 1363024, 1363025, 1363026, 506,
+        ...GraphError::ACCOUNT_RATE_LIMIT_CODES,
+    ];
+
     public function __construct(
         string $userMessage,
         ErrorCategory $category,
@@ -33,11 +53,38 @@ class FacebookPublishException extends SocialPublishException
         parent::__construct($userMessage, $category, $platformErrorCode, $rawResponse);
     }
 
+    /**
+     * A resumable upload (rupload) failure Meta asks to retry: a 5xx or a
+     * failure flagged retriable.
+     */
+    public static function isRetryableUpload(Response $response): bool
+    {
+        return $response->serverError()
+            || data_get($response->json(), 'debug_info.retriable') === true;
+    }
+
     public static function fromApiResponse(mixed $response): static
     {
         /** @var Response $response */
         $body = $response->json();
         $rawResponse = $response->body();
+
+        if (data_get($body, 'error') === null && filled(data_get($body, 'debug_info'))) {
+            $uploadErrorType = data_get($body, 'debug_info.type');
+
+            [$message, $category] = match ($uploadErrorType) {
+                'ProcessingFailedError' => [__('posts.errors.facebook.processing_failed'), ErrorCategory::MediaFormat],
+                'PartialRequestError', 'OffsetInvalidError' => [__('posts.errors.facebook.upload_incomplete'), ErrorCategory::ServerError],
+                default => [__('posts.errors.unrecognized_error', ['platform' => Platform::Facebook->label()]), ErrorCategory::Unknown],
+            };
+
+            return new static(
+                userMessage: $message,
+                category: $category,
+                platformErrorCode: is_string($uploadErrorType) && $uploadErrorType !== '' ? $uploadErrorType : null,
+                rawResponse: $rawResponse,
+            );
+        }
 
         $errorCode = data_get($body, 'error.code');
         $errorSubcode = data_get($body, 'error.error_subcode');
@@ -71,27 +118,22 @@ class FacebookPublishException extends SocialPublishException
             1363041 => ['Upload session expired. Please try again.', ErrorCategory::ServerError],
             1363021 => ['Problem during video upload. Please try again.', ErrorCategory::ServerError],
             1363005 => ['No permission to edit this video.', ErrorCategory::Permission],
-            1363047 => ['Reel encoding issue. Please try a different video.', ErrorCategory::MediaFormat],
             1609008 => ['Video format not supported for Reels.', ErrorCategory::MediaFormat],
-            1609010 => ['Reel encoding requirements not met.', ErrorCategory::MediaFormat],
             1366046 => ['Reels require a video.', ErrorCategory::ContentPolicy],
-            2061006 => ['Video is too short for this format.', ErrorCategory::MediaFormat],
-            1390008 => ['Caption is too long.', ErrorCategory::ContentPolicy],
-            1346003 => ['Thumbnail is incompatible.', ErrorCategory::ContentPolicy],
             1349125 => ['Rate limit exceeded. Try again later.', ErrorCategory::RateLimit],
-            4 => ['Too many API calls. Please try again later.', ErrorCategory::RateLimit],
+            4, 32, 341, 613, 80001 => ['Too many API calls. Please try again later.', ErrorCategory::RateLimit],
             17 => ['User call limit reached.', ErrorCategory::RateLimit],
             506 => ['Duplicate post detected. Please modify content.', ErrorCategory::ContentPolicy],
             default => [$errorMessage, ErrorCategory::Unknown],
         };
 
-        return new static(
+        return (new static(
             userMessage: $message,
             category: $category,
             platformErrorCode: $errorCode !== null ? (string) $errorCode : null,
             rawResponse: $rawResponse,
             platformErrorSubcode: $errorSubcode !== null ? (string) $errorSubcode : null,
-        );
+        ))->withNetworkReset($response)->asNetworkRejectionIf(in_array($errorCode, self::USER_REJECTION_CODES, true));
     }
 
     /**

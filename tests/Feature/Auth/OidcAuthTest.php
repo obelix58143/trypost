@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Http\Controllers\Auth\OidcController;
 use App\Models\Account;
 use App\Models\User;
@@ -285,7 +284,7 @@ test('auto-join places a new user on the shared account', function () {
     config([
         'trypost.self_hosted' => true,
         'trypost.oidc_auto_join_enabled' => true,
-        'trypost.oidc_auto_join_role' => Role::Member->value,
+        'trypost.oidc_auto_join_role' => 'member',
     ]);
 
     $account = Account::factory()->create(['created_at' => now()->subDay()]);
@@ -639,6 +638,30 @@ test('logging out from the app hands the browser a full page visit', function ()
 // ------------------------------------------------- roles from provider groups ---
 
 /**
+ * Workspace access as the role name OIDC_AUTO_JOIN_ROLE uses, so the
+ * expectations below read the same as the setting they exercise.
+ */
+function accessForRole(string $role): array
+{
+    return match ($role) {
+        'admin' => ['is_admin' => true, 'requires_approval' => false],
+        'viewer' => ['is_admin' => false, 'requires_approval' => true],
+        default => ['is_admin' => false, 'requires_approval' => false],
+    };
+}
+
+function roleOf(Workspace $workspace, User $user): string
+{
+    $pivot = $workspace->members()->where('users.id', $user->id)->firstOrFail()->pivot;
+
+    return match (true) {
+        (bool) $pivot->is_admin => 'admin',
+        (bool) $pivot->requires_approval => 'viewer',
+        default => 'member',
+    };
+}
+
+/**
  * A workspace with one member, so role changes have something to act on.
  *
  * @return array{0: User, 1: Workspace}
@@ -658,7 +681,7 @@ function memberInWorkspace(string $email, string $role = 'member'): array
         'account_id' => $account->id,
         'oidc_id' => 'provider-subject-1',
     ]);
-    $workspace->members()->attach($user->id, ['role' => $role]);
+    $workspace->members()->attach($user->id, accessForRole($role));
 
     return [$user, $workspace];
 }
@@ -672,7 +695,7 @@ test('a member of an admin group becomes workspace admin on sign-in', function (
 
     $this->get(route('auth.oidc.callback'));
 
-    expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
+    expect(roleOf($workspace, $user))
         ->toBe('admin');
 });
 
@@ -690,7 +713,7 @@ test('losing the admin group drops the role again on the next sign-in', function
 
     $this->get(route('auth.oidc.callback'));
 
-    expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
+    expect(roleOf($workspace, $user))
         ->toBe('member');
 });
 
@@ -704,7 +727,7 @@ test('roles are left alone while no admin group is configured', function () {
     $this->get(route('auth.oidc.callback'));
 
     // Without the setting the application stays in charge of roles.
-    expect($workspace->members()->where('users.id', $user->id)->first()->pivot->role)
+    expect(roleOf($workspace, $user))
         ->toBe('admin');
 });
 
@@ -762,13 +785,13 @@ test('the account owner is left out of the group role sync', function () {
         'account_id' => $account->id,
         'user_id' => $owner->id,
     ]);
-    $workspace->members()->attach($owner->id, ['role' => 'admin']);
+    $workspace->members()->attach($owner->id, accessForRole('admin'));
 
     fakeOidcDriver(['groups' => ['staff']]);
 
     $this->get(route('auth.oidc.callback'));
 
-    expect($workspace->members()->where('users.id', $owner->id)->first()->pivot->role)
+    expect(roleOf($workspace, $owner))
         ->toBe('admin');
 });
 
@@ -791,7 +814,7 @@ test('ownership is released so no one sits outside the group system', function (
         'account_id' => $account->id,
         'user_id' => $owner->id,
     ]);
-    $workspace->members()->attach($owner->id, ['role' => 'admin']);
+    $workspace->members()->attach($owner->id, accessForRole('admin'));
 
     fakeOidcDriver(['groups' => ['staff']]);
 
@@ -800,7 +823,7 @@ test('ownership is released so no one sits outside the group system', function (
     // Ownership gone, and with it the exemption: the role now follows the
     // groups like everyone else's.
     expect($account->fresh()->owner_id)->toBeNull()
-        ->and($workspace->members()->where('users.id', $owner->id)->first()->pivot->role)
+        ->and(roleOf($workspace, $owner))
         ->toBe('member');
 });
 
@@ -1177,8 +1200,6 @@ test('every string the login page can show is translated', function (string $loc
     app()->setLocale($locale);
 
     foreach ([
-        'auth.login.description',
-        'auth.login.description_without_password',
         'auth.oidc_login',
         'auth.oidc_signup',
         'auth.oidc_failed',

@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => 'Не удалось получить ваш email из GitHub. Сделайте email в GitHub публичным или предоставьте доступ к email, затем попробуйте снова.',
 
     'login' => [
-        'title' => 'Войдите в свой аккаунт',
-        'description' => 'Введите email и пароль, чтобы войти',
-        'description_without_password' => 'Войдите с учётной записью вашей организации, чтобы продолжить',
+        'title' => 'Вход в TryPost',
         'page_title' => 'Вход',
         'email' => 'Адрес email',
         'password' => 'Пароль',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'Весь ваш контент-календарь в одном месте',
-        'description' => 'Создайте аккаунт и начните планировать посты во всех сетях.',
+        'title' => 'Создайте аккаунт TryPost',
         'page_title' => 'Регистрация',
-        'signup_with_email' => 'Зарегистрироваться через email',
         'name' => 'Имя',
         'name_placeholder' => 'Полное имя',
         'email' => 'Адрес email',
@@ -93,6 +89,12 @@ return [
         'submit' => 'Создать аккаунт',
         'has_account' => 'Уже есть аккаунт?',
         'log_in' => 'Войти',
+        'password_requirements' => [
+            'min' => 'Не менее :count символов',
+            'mixed_case' => 'Заглавные и строчные буквы',
+            'number' => 'Хотя бы 1 цифра',
+            'symbol' => 'Хотя бы 1 спецсимвол',
+        ],
     ],
 
     'forgot_password' => [

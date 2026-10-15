@@ -10,7 +10,7 @@ function runMediaRule(string $contentType, array $media): array
 {
     $errors = [];
     $rule = (new ContentTypeCompatibleWithMedia)->setData(['media' => $media]);
-    $rule->validate('platforms.0.content_type', $contentType, function (string $message) use (&$errors): void {
+    $rule->validate('content_type', $contentType, function (string $message) use (&$errors): void {
         $errors[] = $message;
     });
 
@@ -27,7 +27,7 @@ test('fails when content type requires media and none provided', function () {
     $errors = runMediaRule(ContentType::InstagramReel->value, []);
 
     expect($errors)->toHaveCount(1);
-    expect($errors[0])->toContain('requires at least one image or video');
+    expect($errors[0])->toBe('Please include an image or video.');
 });
 
 test('fails when content type does not support images and an image is present', function () {
@@ -71,13 +71,19 @@ test('passes when video-only content type receives a video', function () {
     expect(runMediaRule(ContentType::FacebookStory->value, $media))->toBe([]);
 });
 
-test('facebook story rejects images', function () {
+test('facebook story accepts images', function () {
     $media = [['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg']];
 
-    $errors = runMediaRule(ContentType::FacebookStory->value, $media);
+    expect(runMediaRule(ContentType::FacebookStory->value, $media))->toBe([]);
+});
 
-    expect($errors)->toHaveCount(1);
-    expect($errors[0])->toContain('accepts only videos');
+test('facebook story still takes a single image or video', function () {
+    $media = [
+        ['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg'],
+        ['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg'],
+    ];
+
+    expect(runMediaRule(ContentType::FacebookStory->value, $media))->toHaveCount(1);
 });
 
 test('instagram story accepts images', function () {
@@ -356,7 +362,7 @@ test('falls back to stored media when the request omits the media key', function
     $errors = [];
     (new ContentTypeCompatibleWithMedia([['type' => 'document', 'mime_type' => 'application/pdf']]))
         ->setData([]) // no 'media' key in the request -> use the fallback
-        ->validate('platforms.0.content_type', ContentType::LinkedInPost->value, function (string $message) use (&$errors): void {
+        ->validate('content_type', ContentType::LinkedInPost->value, function (string $message) use (&$errors): void {
             $errors[] = $message;
         });
 
@@ -366,7 +372,7 @@ test('falls back to stored media when the request omits the media key', function
     $xErrors = [];
     (new ContentTypeCompatibleWithMedia([['type' => 'document', 'mime_type' => 'application/pdf']]))
         ->setData([])
-        ->validate('platforms.0.content_type', ContentType::XPost->value, function (string $message) use (&$xErrors): void {
+        ->validate('content_type', ContentType::XPost->value, function (string $message) use (&$xErrors): void {
             $xErrors[] = $message;
         });
 
@@ -383,7 +389,7 @@ test('request media takes precedence over the stored fallback', function () {
             ['type' => 'document', 'mime_type' => 'application/pdf'],
             ['type' => 'image', 'mime_type' => 'image/jpeg'],
         ]])
-        ->validate('platforms.0.content_type', ContentType::LinkedInPost->value, function (string $message) use (&$errors): void {
+        ->validate('content_type', ContentType::LinkedInPost->value, function (string $message) use (&$errors): void {
             $errors[] = $message;
         });
 
@@ -393,4 +399,41 @@ test('request media takes precedence over the stored fallback', function () {
 
 test('does nothing for invalid content type values', function () {
     expect(runMediaRule('not_a_real_content_type', []))->toBe([]);
+});
+
+test('pinterest content types accept only the media their pin type is made of', function (ContentType $type, array $media, bool $passes) {
+    expect(runMediaRule($type->value, $media) === [])->toBe($passes);
+})->with([
+    'photo pin with one image' => [ContentType::PinterestPin, [['type' => 'image', 'mime_type' => 'image/jpeg']], true],
+    'photo pin without media' => [ContentType::PinterestPin, [], false],
+    'video pin with a video' => [ContentType::PinterestVideoPin, [['type' => 'video', 'mime_type' => 'video/mp4']], true],
+    'video pin with an image' => [ContentType::PinterestVideoPin, [['type' => 'image', 'mime_type' => 'image/jpeg']], false],
+    'carousel with two images' => [ContentType::PinterestCarousel, array_fill(0, 2, ['type' => 'image', 'mime_type' => 'image/png']), true],
+    'carousel with five images' => [ContentType::PinterestCarousel, array_fill(0, 5, ['type' => 'image', 'mime_type' => 'image/png']), true],
+    'carousel with a video' => [ContentType::PinterestCarousel, [['type' => 'image', 'mime_type' => 'image/png'], ['type' => 'video', 'mime_type' => 'video/mp4']], false],
+]);
+
+test('tiktok never mixes photos and a video', function (ContentType $contentType) {
+    $media = [
+        ['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg'],
+        ['type' => MediaType::Video->value, 'mime_type' => 'video/mp4'],
+    ];
+
+    expect(runMediaRule($contentType->value, $media))->toBe([__('posts.form.warnings.no_mixed_media')]);
+})->with([ContentType::TikTokVideo, ContentType::TikTokPhoto]);
+
+test('a content type rejects more files than it takes', function () {
+    $video = ['type' => MediaType::Video->value, 'mime_type' => 'video/mp4'];
+
+    expect(runMediaRule(ContentType::TikTokVideo->value, [$video, $video]))
+        ->toBe([__('posts.form.warnings.max_files_exceeded', ['max' => 1, 'current' => 2])])
+        ->and(runMediaRule(ContentType::TikTokVideo->value, [$video]))->toBe([]);
+});
+
+test('a tiktok photo post takes up to 35 photos', function () {
+    $photo = ['type' => MediaType::Image->value, 'mime_type' => 'image/jpeg'];
+
+    expect(runMediaRule(ContentType::TikTokPhoto->value, array_fill(0, 35, $photo)))->toBe([])
+        ->and(runMediaRule(ContentType::TikTokPhoto->value, array_fill(0, 36, $photo)))
+        ->toBe([__('posts.form.warnings.max_files_exceeded', ['max' => 35, 'current' => 36])]);
 });

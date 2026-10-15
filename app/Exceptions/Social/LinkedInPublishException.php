@@ -4,11 +4,22 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Social;
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\TokenExpiredException;
 use Illuminate\Http\Client\Response;
 
 class LinkedInPublishException extends SocialPublishException
 {
+    /**
+     * Statuses LinkedIn documents as caused by the member: 403 ACCESS_DENIED
+     * is the scope the member granted or their company page role. 422
+     * (semantic errors in the fields we send) and 429 (member or
+     * application limits) stay reported.
+     *
+     * @var list<int>
+     */
+    private const array USER_REJECTION_STATUSES = [403];
+
     public static function fromApiResponse(mixed $response): static
     {
         /** @var Response $response */
@@ -25,19 +36,19 @@ class LinkedInPublishException extends SocialPublishException
             );
         }
 
-        if (str_contains((string) $rawResponse, 'Unable to obtain activity')) {
-            return new static(
-                userMessage: 'LinkedIn server error. Please try again.',
-                category: ErrorCategory::ServerError,
+        if ($statusCode === 429) {
+            return (new static(
+                userMessage: 'LinkedIn rate limit reached. Please try again later.',
+                category: ErrorCategory::RateLimit,
                 platformErrorCode: (string) $statusCode,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response);
         }
 
-        if (str_contains((string) $rawResponse, 'resource is forbidden')) {
+        if ($response->serverError()) {
             return new static(
-                userMessage: 'Not authorized to post to this account.',
-                category: ErrorCategory::Permission,
+                userMessage: __('posts.errors.linkedin.server_error'),
+                category: ErrorCategory::ServerError,
                 platformErrorCode: (string) $statusCode,
                 rawResponse: $rawResponse,
             );
@@ -46,15 +57,15 @@ class LinkedInPublishException extends SocialPublishException
         [$message, $category] = match ($statusCode) {
             403 => ['Not authorized to post to this account.', ErrorCategory::Permission],
             422 => ['Invalid post data. Please check your content.', ErrorCategory::ContentPolicy],
-            default => [$errorMessage ?? 'An unknown LinkedIn error occurred.', ErrorCategory::Unknown],
+            default => [self::providerMessage($response, 'message') ?? __('posts.errors.unrecognized_error', ['platform' => Platform::LinkedIn->label()]), ErrorCategory::Unknown],
         };
 
-        return new static(
+        return (new static(
             userMessage: $message,
             category: $category,
             platformErrorCode: (string) $statusCode,
             rawResponse: $rawResponse,
-        );
+        ))->asNetworkRejectionIf(in_array($statusCode, self::USER_REJECTION_STATUSES, true));
     }
 
     public function platform(): string

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\Post;
 
+use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Models\Post;
 use App\Services\Post\PostPreviewer;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -15,21 +16,31 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('Preview how a post will render on each enabled platform — applies platform-specific content sanitization (length truncation, forbidden chars, etc.) without publishing. Returns the original content alongside per-platform sanitized versions and length stats.')]
+#[Description('Preview how a post will be sent to its channel without publishing: the exact text the network gets (X links defused when that is on), next to the original content, with length stats. Use it to check a text before scheduling.')]
 class PreviewPostTool extends Tool
 {
+    use AuthorizesMcpTool;
+
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
             'post_id' => ['required', 'uuid'],
         ]);
 
-        $post = Post::where('workspace_id', $request->user()->current_workspace_id)
-            ->with(['postPlatforms.socialAccount'])
-            ->find(data_get($validated, 'post_id'));
+        $workspace = $request->user()?->currentWorkspace;
+
+        $post = $workspace
+            ? Post::where('workspace_id', $workspace->id)
+                ->with(['socialAccount'])
+                ->find(data_get($validated, 'post_id'))
+            : null;
 
         if (! $post) {
             return Response::error('Post not found.');
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'view', $post, 'Post not found.')) {
+            return $denied;
         }
 
         return Response::structured(app(PostPreviewer::class)->forPost($post));

@@ -24,7 +24,8 @@ class ApiKeyController extends Controller
             ->where('revoked', false)
             ->personalAccessApiKey()
             ->latest()
-            ->get();
+            ->orderByDesc('id')
+            ->paginate((int) config('app.pagination.default'));
 
         return ApiKeyResource::collection($tokens);
     }

@@ -8,6 +8,7 @@ use App\Actions\Repurpose\ListRepurposes;
 use App\Http\Resources\Api\RepurposeResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Mcp\Requests\Repurpose\ListRepurposesRequest;
+use App\Models\Repurpose;
 use App\Models\Workspace;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -25,7 +26,7 @@ class ListRepurposesTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace($request, 'manageRepurposes', 'Not authorized to manage repurposes.');
+        $workspace = $this->authorizeCurrentWorkspace($request, 'viewAny', Repurpose::class);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;

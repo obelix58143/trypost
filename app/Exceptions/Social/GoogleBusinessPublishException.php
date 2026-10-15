@@ -52,12 +52,12 @@ class GoogleBusinessPublishException extends SocialPublishException
         }
 
         if ($reason === 'RESOURCE_EXHAUSTED' || $status === 429) {
-            return new static(
+            return (new static(
                 userMessage: __('posts.errors.google_business.rate_limited'),
                 category: ErrorCategory::RateLimit,
                 platformErrorCode: $reason !== '' ? $reason : (string) $status,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response);
         }
 
         if ($status >= 500) {

@@ -1,34 +1,54 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3';
-import { IconAlertTriangle, IconCircleCheck, IconHistory, IconLoader2 } from '@tabler/icons-vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
+import {
+    IconAlertTriangle,
+    IconArrowLeft,
+    IconCircleCheck,
+    IconLoader2,
+} from '@tabler/icons-vue';
 import { trans } from 'laravel-vue-i18n';
 import { computed, onUnmounted, ref, watch } from 'vue';
 
+import ChannelAvatar from '@/components/ChannelAvatar.vue';
 import ChannelConfigurator from '@/components/ChannelConfigurator.vue';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import InputError from '@/components/InputError.vue';
-import PublishModeCard from '@/components/repurpose/PublishModeCard.vue';
-import RepurposeFlow from '@/components/repurpose/RepurposeFlow.vue';
 import RepurposeHealthBanner from '@/components/repurpose/RepurposeHealthBanner.vue';
 import RepurposeItemList from '@/components/repurpose/RepurposeItemList.vue';
 import RepurposeLifecycle from '@/components/repurpose/RepurposeLifecycle.vue';
+import RepurposesEmptyIllustration from '@/components/repurpose/RepurposesEmptyIllustration.vue';
 import RepurposeSummary from '@/components/repurpose/RepurposeSummary.vue';
-import SourceFormatCard from '@/components/repurpose/SourceFormatCard.vue';
+import SearchableSelect from '@/components/SearchableSelect.vue';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { usePageErrors } from '@/composables/usePageErrors';
-import { getPlatformMetaIssue } from '@/composables/usePostCompliance';
+import { getPlatformLabel } from '@/composables/usePlatformLogo';
 import debounce from '@/debounce';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { MediaType } from '@/lib/mediaType';
-import { destroy, update } from '@/routes/app/repurposes';
+import { getPlatformMetaIssue } from '@/lib/platformMeta';
+import {
+    destroy,
+    index as repurposesIndex,
+    update,
+} from '@/routes/app/repurposes';
 import type { PinterestBoard } from '@/types';
-import type { Channel, ChannelAccount, ChannelTikTokCreatorInfo } from '@/types/channel';
+import type {
+    Channel,
+    ChannelAccount,
+    ChannelTikTokCreatorInfo,
+} from '@/types/channel';
 import type { MediaItem } from '@/types/media';
 import type {
-    FlowNode,
     PublishModeOption,
     Repurpose,
     RepurposeDestination,
@@ -38,6 +58,7 @@ import type {
     SourceFormatOption,
 } from '@/types/repurpose';
 import { repurposeStatusVariant } from '@/types/repurpose-status';
+import { SocialAccountStatus } from '@/types/social-account-status';
 
 const props = defineProps<{
     repurpose: Repurpose;
@@ -48,11 +69,16 @@ const props = defineProps<{
     publishModes: PublishModeOption[];
     recommendedFormats: Record<string, string>;
     platformConfigs: Record<string, { publishConfig?: Record<string, any> }>;
-    pinterestBoards: Record<string, { boards: PinterestBoard[]; truncated: boolean }>;
+    pinterestBoards: Record<
+        string,
+        { boards: PinterestBoard[]; truncated: boolean }
+    >;
     tiktokCreatorInfos: Record<string, ChannelTikTokCreatorInfo | null>;
 }>();
 
-const availableAccountIds = new Set(props.destinationAccounts.map((account) => account.id));
+const availableAccountIds = new Set(
+    props.destinationAccounts.map((account) => account.id),
+);
 
 const form = useForm<{
     source_social_account_id: string | null;
@@ -75,7 +101,9 @@ const plannedMedia = computed<MediaItem[]>(() => [
 ]);
 
 const destinationAccounts = computed(() =>
-    props.destinationAccounts.filter((account) => account.id !== form.source_social_account_id),
+    props.destinationAccounts.filter(
+        (account) => account.id !== form.source_social_account_id,
+    ),
 );
 
 watch(
@@ -89,39 +117,51 @@ watch(
 
 const channels = computed<Channel[]>(() =>
     destinationAccounts.value.map((account) => {
-        const index = form.destinations.findIndex((item) => item.social_account_id === account.id);
+        const index = form.destinations.findIndex(
+            (item) => item.social_account_id === account.id,
+        );
         const destination = form.destinations[index];
 
         return {
             id: account.id,
             platform: account.platform,
-            issue: index === -1 ? null : getPlatformMetaIssue(account.platform, destination.meta ?? {}),
+            issue:
+                index === -1
+                    ? null
+                    : getPlatformMetaIssue(
+                          account.platform,
+                          destination.meta ?? {},
+                      ),
             displayName: account.display_name,
             username: account.username ?? null,
             avatarUrl: account.avatar_url,
             socialAccount: account,
-            contentType: destination?.content_type ?? props.recommendedFormats[account.id] ?? '',
+            contentType:
+                destination?.content_type ??
+                props.recommendedFormats[account.id] ??
+                '',
             meta: destination?.meta ?? {},
             boards: props.pinterestBoards?.[account.id]?.boards ?? [],
-            boardsTruncated: props.pinterestBoards?.[account.id]?.truncated ?? false,
+            boardsTruncated:
+                props.pinterestBoards?.[account.id]?.truncated ?? false,
             creatorInfo: props.tiktokCreatorInfos?.[account.id] ?? null,
-            publishConfig: props.platformConfigs?.[account.id]?.publishConfig ?? {},
-            contentTypeError: errors.value[`destinations.${index}.content_type`],
+            publishConfig:
+                props.platformConfigs?.[account.id]?.publishConfig ?? {},
+            contentTypeError:
+                errors.value[`destinations.${index}.content_type`],
         };
     }),
 );
 
-const selectedAccountIds = computed(() => form.destinations.map((destination) => destination.social_account_id));
-
-const pausedDestinations = computed(() =>
-    props.destinationAccounts
-        .filter((account) => account.is_active === false && selectedAccountIds.value.includes(account.id))
-        .map((account) => account.display_label ?? account.display_name),
+const selectedAccountIds = computed(() =>
+    form.destinations.map((destination) => destination.social_account_id),
 );
 
 const toggleDestination = (accountId: string) => {
     if (selectedAccountIds.value.includes(accountId)) {
-        form.destinations = form.destinations.filter((destination) => destination.social_account_id !== accountId);
+        form.destinations = form.destinations.filter(
+            (destination) => destination.social_account_id !== accountId,
+        );
 
         return;
     }
@@ -136,9 +176,14 @@ const toggleDestination = (accountId: string) => {
     ];
 };
 
-const updateDestination = (accountId: string, changes: Partial<RepurposeDestination>) => {
+const updateDestination = (
+    accountId: string,
+    changes: Partial<RepurposeDestination>,
+) => {
     form.destinations = form.destinations.map((destination) =>
-        destination.social_account_id === accountId ? { ...destination, ...changes } : destination,
+        destination.social_account_id === accountId
+            ? { ...destination, ...changes }
+            : destination,
     );
 };
 
@@ -150,31 +195,49 @@ const setDestinationMeta = (accountId: string, meta: Record<string, any>) =>
 
 const selectedSourceAccount = computed(
     () =>
-        props.sourceAccounts.find((account) => account.id === form.source_social_account_id)
-        ?? props.repurpose.source_account,
-);
-
-const flowSource = computed<FlowNode>(() => ({
-    platform: selectedSourceAccount.value?.platform ?? '',
-    label: selectedSourceAccount.value?.display_name,
-    username: selectedSourceAccount.value?.username,
-}));
-
-const flowDestinations = computed<FlowNode[]>(() =>
-    form.destinations.flatMap((destination) => {
-        const account = props.destinationAccounts.find((item) => item.id === destination.social_account_id);
-
-        return account
-            ? [{ platform: account.platform, label: account.display_name, username: account.username }]
-            : [];
-    }),
+        props.sourceAccounts.find(
+            (account) => account.id === form.source_social_account_id,
+        ) ?? props.repurpose.source_account,
 );
 
 const currentFormatLabel = computed(
-    () => props.sourceFormats.find((option) => option.value === form.source_format)?.label ?? '',
+    () =>
+        props.sourceFormats.find(
+            (option) => option.value === form.source_format,
+        )?.label ?? '',
 );
 
-const confirmDeleteModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(null);
+type RepurposeTab = 'configuration' | 'activity';
+
+const REPURPOSE_TABS: RepurposeTab[] = ['configuration', 'activity'];
+
+const activeTab = ref<RepurposeTab>('configuration');
+
+const selectTab = (tab: RepurposeTab): void => {
+    activeTab.value = tab;
+};
+
+const sourceAccountId = computed({
+    get: () => form.source_social_account_id ?? undefined,
+    set: (value: string | undefined) => {
+        form.source_social_account_id = value ?? null;
+    },
+});
+
+const sourceAccountOptions = computed(() =>
+    props.sourceAccounts.map((account) => ({
+        value: account.id,
+        label: account.display_name,
+        platform: account.platform,
+        avatar: account.avatar_url,
+        status: account.status ?? null,
+        disconnected: account.status !== SocialAccountStatus.Connected,
+    })),
+);
+
+const confirmDeleteModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(
+    null,
+);
 
 const isSaving = ref(false);
 const showSaved = ref(false);
@@ -193,16 +256,25 @@ const save = () => {
         preserveScroll: true,
         onSuccess: () => {
             showSaved.value = true;
-            setTimeout(() => { showSaved.value = false; }, 2000);
+            setTimeout(() => {
+                showSaved.value = false;
+            }, 2000);
         },
-        onFinish: () => { isSaving.value = false; },
+        onFinish: () => {
+            isSaving.value = false;
+        },
     });
 };
 
 const debouncedSave = debounce(save, 1500);
 
 watch(
-    () => [form.source_social_account_id, form.source_format, form.publish_mode, form.destinations],
+    () => [
+        form.source_social_account_id,
+        form.source_format,
+        form.publish_mode,
+        form.destinations,
+    ],
     () => {
         showSaved.value = false;
         debouncedSave();
@@ -218,7 +290,10 @@ const blockedReason = computed<string | null>(() => {
     }
 
     const issues = channels.value
-        .filter((channel) => selectedAccountIds.value.includes(channel.id) && channel.issue)
+        .filter(
+            (channel) =>
+                selectedAccountIds.value.includes(channel.id) && channel.issue,
+        )
         .map((channel) => `${channel.displayName}: ${channel.issue}`);
 
     return issues.length > 0 ? issues.join('\n') : null;
@@ -227,7 +302,6 @@ const blockedReason = computed<string | null>(() => {
 const handleDelete = () => {
     confirmDeleteModal.value?.open({
         url: destroy.url(props.repurpose.id),
-        confirmText: trans('common.confirm_modal.delete_keyword'),
     });
 };
 </script>
@@ -235,151 +309,379 @@ const handleDelete = () => {
 <template>
     <Head :title="$t('repurposes.show.title')" />
 
-    <AppLayout>
-        <div class="flex h-full flex-1 flex-col gap-6 px-6 py-8">
-            <header class="space-y-4">
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div class="space-y-2">
-                        <div class="flex flex-wrap items-center gap-3">
-                            <h1
-                                class="text-2xl font-semibold leading-tight text-foreground sm:text-4xl"
-                                style="font-family: var(--font-display)"
-                            >
-                                {{ $t('repurposes.show.title') }}
-                            </h1>
-
-                            <Badge :variant="repurposeStatusVariant(repurpose.status)">
-                                {{ $t(`repurposes.status.${repurpose.status}`) }}
-                            </Badge>
+    <AppLayout full-width>
+        <div
+            class="flex min-w-0 flex-col px-4 pt-6 pb-18 md:px-8"
+            data-testid="repurpose-page"
+        >
+            <div class="flex min-h-12 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
+                <div class="flex min-w-0 items-center gap-2 max-sm:flex-wrap max-sm:gap-y-3 sm:flex-1">
+                    <Button
+                        as-child
+                        variant="ghost"
+                        size="icon"
+                        class="shrink-0"
+                    >
+                        <Link
+                            :href="repurposesIndex.url()"
+                            :aria-label="$t('repurposes.title')"
+                            data-testid="repurpose-back"
+                        >
+                            <IconArrowLeft
+                                class="size-4 text-muted-foreground rtl:rotate-180"
+                            />
+                        </Link>
+                    </Button>
+                    <div class="flex min-w-0 items-center gap-4 max-sm:contents">
+                        <ChannelAvatar
+                            v-if="selectedSourceAccount"
+                            :platform="selectedSourceAccount.platform"
+                            :src="selectedSourceAccount.avatar_url"
+                            :name="selectedSourceAccount.display_name"
+                            :status="selectedSourceAccount.status ?? null"
+                            :account-id="selectedSourceAccount.id"
+                            :size="44"
+                            :data-platform="selectedSourceAccount.platform"
+                            data-testid="repurpose-source-avatar"
+                        />
+                        <div class="min-w-0 max-sm:contents">
+                            <div class="flex min-w-0 items-center gap-2 max-sm:flex-1">
+                                <h1
+                                    class="truncate font-heading text-xl leading-tight font-medium text-foreground"
+                                >
+                                    {{ $t('repurposes.show.title') }}
+                                </h1>
+                                <Badge
+                                    :variant="
+                                        repurposeStatusVariant(repurpose.status)
+                                    "
+                                    class="h-6 shrink-0 px-2"
+                                    data-testid="repurpose-status"
+                                >
+                                    {{
+                                        $t(
+                                            `repurposes.status.${repurpose.status}`,
+                                        )
+                                    }}
+                                </Badge>
+                            </div>
+                            <RepurposeSummary
+                                class="max-sm:basis-full"
+                                :source-account="selectedSourceAccount"
+                                :format-label="currentFormatLabel"
+                                :destinations="form.destinations"
+                                :destination-accounts="destinationAccounts"
+                            />
                         </div>
-
-                        <RepurposeSummary
-                            :source-account="selectedSourceAccount"
-                            :format-label="currentFormatLabel"
-                            :destinations="form.destinations"
-                            :destination-accounts="destinationAccounts"
-                        />
-                    </div>
-
-                    <div class="flex items-center gap-3">
-                        <span
-                            v-if="isSaving"
-                            class="flex items-center gap-1.5 text-xs font-semibold text-foreground/70"
-                            data-testid="repurpose-saving"
-                        >
-                            <IconLoader2 class="size-3.5 animate-spin" />
-                            {{ $t('repurposes.show.saving') }}
-                        </span>
-                        <span
-                            v-else-if="showSaved"
-                            class="flex items-center gap-1.5 text-xs font-semibold text-emerald-700"
-                            data-testid="repurpose-saved"
-                        >
-                            <IconCircleCheck class="size-3.5" stroke-width="2.5" />
-                            {{ $t('repurposes.show.saved') }}
-                        </span>
-
-                        <RepurposeLifecycle
-                            :repurpose="repurpose"
-                            :blocked-reason="blockedReason"
-                            @delete="handleDelete"
-                        />
                     </div>
                 </div>
 
-                <RepurposeHealthBanner :repurpose="repurpose" :accounts="destinationAccounts" />
+                <div class="flex shrink-0 items-center gap-3">
+                    <span
+                        v-if="isSaving"
+                        class="flex items-center gap-1.5 text-xs text-muted-foreground"
+                        data-testid="repurpose-saving"
+                    >
+                        <IconLoader2 class="size-3.5 animate-spin" />
+                        {{ $t('repurposes.show.saving') }}
+                    </span>
+                    <span
+                        v-else-if="showSaved"
+                        class="flex items-center gap-1.5 text-xs text-success-text"
+                        data-testid="repurpose-saved"
+                    >
+                        <IconCircleCheck class="size-3.5" />
+                        {{ $t('repurposes.show.saved') }}
+                    </span>
+
+                    <RepurposeLifecycle
+                        :repurpose="repurpose"
+                        :blocked-reason="blockedReason"
+                        @delete="handleDelete"
+                    />
+                </div>
+            </div>
+
+            <div class="mt-4 flex flex-col gap-3 empty:hidden">
+                <RepurposeHealthBanner
+                    :repurpose="repurpose"
+                    :accounts="destinationAccounts"
+                />
 
                 <p
                     v-if="repurpose.last_error"
-                    class="flex items-start gap-2 rounded-lg border-2 border-foreground bg-rose-50 p-2 text-xs font-semibold text-rose-700"
+                    class="flex items-start gap-2 rounded-lg bg-critical-subtle px-4 py-3 text-sm text-destructive-text"
                 >
-                    <IconAlertTriangle class="mt-0.5 size-3.5 shrink-0" />
+                    <IconAlertTriangle class="mt-0.5 size-4 shrink-0" />
                     {{ repurpose.last_error }}
                 </p>
+            </div>
 
-                <Card>
-                    <CardContent class="py-6">
-                        <RepurposeFlow :source="flowSource" :destinations="flowDestinations" size="lg" />
-                    </CardContent>
-                </Card>
-            </header>
+            <nav
+                class="mt-2 flex h-12 shrink-0 items-end gap-4 border-b border-border-strong"
+                role="tablist"
+                :aria-label="$t('repurposes.show.title')"
+            >
+                <button
+                    v-for="tab in REPURPOSE_TABS"
+                    :key="tab"
+                    type="button"
+                    role="tab"
+                    :aria-selected="activeTab === tab"
+                    :data-state="activeTab === tab ? 'active' : 'inactive'"
+                    :data-testid="`tab-${tab}`"
+                    class="relative -mb-px inline-flex h-[45px] shrink-0 cursor-pointer items-center gap-2 px-2 text-sm font-medium transition-control after:absolute after:inset-x-0.5 after:bottom-0 after:h-px after:bg-primary-text after:opacity-0 aria-selected:after:opacity-100"
+                    :class="
+                        activeTab === tab
+                            ? 'text-foreground'
+                            : 'text-muted-foreground hover:text-foreground'
+                    "
+                    @click="selectTab(tab)"
+                >
+                    {{ $t(`repurposes.tabs.${tab}`) }}
+                </button>
+            </nav>
 
-            <Tabs default-value="configuration">
-                <TabsList>
-                    <TabsTrigger value="configuration" data-testid="tab-configuration">
-                        {{ $t('repurposes.tabs.configuration') }}
-                    </TabsTrigger>
-                    <TabsTrigger value="activity" data-testid="tab-activity">
-                        {{ $t('repurposes.tabs.activity') }}
-                    </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="configuration">
-                    <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
-                        <div class="space-y-4 lg:sticky lg:top-6">
-                            <SourceFormatCard
-                                v-model:account="form.source_social_account_id"
-                                v-model:format="form.source_format"
-                                :accounts="sourceAccounts"
-                                :formats="sourceFormats"
-                                :error="form.errors.source_social_account_id"
-                            />
-
-                            <PublishModeCard v-model="form.publish_mode" :modes="publishModes" />
-                        </div>
-
-                        <div class="space-y-4">
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>{{ $t('repurposes.destinations.title') }}</CardTitle>
-                                    <CardDescription>{{ $t('repurposes.destinations.description') }}</CardDescription>
-                                </CardHeader>
-
-                                <CardContent>
-                                    <p
-                                        v-if="pausedDestinations.length > 0"
-                                        class="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400"
-                                        data-testid="paused-destinations-note"
-                                    >
-                                        {{ $t('repurposes.destinations.paused_note', { accounts: pausedDestinations.join(', ') }) }}
-                                    </p>
-
-                                    <ChannelConfigurator
-                                        :channels="channels"
-                                        :media="plannedMedia"
-                                        :selected-ids="selectedAccountIds"
-                                        @toggle="toggleDestination"
-                                        @update:content-type="setDestinationContentType"
-                                        @update:meta="setDestinationMeta"
-                                    />
-
-                                    <InputError
-                                        class="mt-4"
-                                        data-testid="destinations-error"
-                                        :message="form.errors.destinations"
-                                    />
-                                </CardContent>
-                            </Card>
-                        </div>
+            <div
+                v-if="activeTab === 'configuration'"
+                class="flex flex-col gap-8 pt-6 md:p-4 md:pt-8"
+                role="tabpanel"
+                data-testid="repurpose-configuration"
+            >
+                <section
+                    class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+                    data-testid="repurpose-source-card"
+                >
+                    <div class="min-w-0">
+                        <h2
+                            class="text-base leading-5 font-emphasis text-foreground"
+                        >
+                            {{ $t('repurposes.source.title') }}
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            {{ $t('repurposes.source.description') }}
+                        </p>
                     </div>
-                </TabsContent>
+                    <div class="w-full min-w-0 md:w-72 md:shrink-0">
+                        <div data-testid="source-account-select">
+                            <SearchableSelect
+                                v-model="sourceAccountId"
+                                :options="sourceAccountOptions"
+                                :placeholder="
+                                    $t('repurposes.create.source_placeholder')
+                                "
+                                :search-placeholder="
+                                    $t('repurposes.create.source_search')
+                                "
+                                :empty-text="
+                                    $t('repurposes.create.source_empty')
+                                "
+                                :invalid="
+                                    Boolean(form.errors.source_social_account_id)
+                                "
+                            >
+                                <template #option="{ option, compact }">
+                                    <ChannelAvatar
+                                        v-if="compact"
+                                        :platform="option.platform"
+                                        :name="option.label"
+                                        :src="option.avatar"
+                                        :size="20"
+                                    />
+                                    <ChannelAvatar
+                                        v-else
+                                        :platform="option.platform"
+                                        :name="option.label"
+                                        :src="option.avatar"
+                                        :status="option.status"
+                                        :size="32"
+                                        ring="popover"
+                                        :data-testid="`source-option-${option.value}`"
+                                    />
 
-                <TabsContent value="activity">
-                    <EmptyState
-                        v-if="(items.data ?? []).length === 0"
-                        :icon="IconHistory"
-                        :title="$t('repurposes.items.empty.title')"
-                        :description="$t('repurposes.items.empty.description')"
+                                    <span v-if="compact" class="truncate">{{
+                                        option.label
+                                    }}</span>
+                                    <span v-else class="min-w-0 text-start">
+                                        <span
+                                            class="block truncate text-sm leading-tight font-emphasis"
+                                            >{{ option.label }}</span
+                                        >
+                                        <span
+                                            v-if="option.disconnected"
+                                            class="block truncate text-xs text-destructive-text"
+                                            :data-testid="`source-option-disconnected-${option.value}`"
+                                        >
+                                            {{
+                                                $t(
+                                                    'repurposes.source.needs_reconnect',
+                                                )
+                                            }}
+                                        </span>
+                                        <span
+                                            v-else
+                                            class="block truncate text-xs text-muted-foreground"
+                                        >
+                                            {{ getPlatformLabel(option.platform) }}
+                                        </span>
+                                    </span>
+                                </template>
+                            </SearchableSelect>
+                        </div>
+                        <InputError
+                            class="mt-2"
+                            :message="form.errors.source_social_account_id"
+                        />
+                    </div>
+                </section>
+
+                <hr class="border-border" />
+
+                <section
+                    class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+                >
+                    <div class="min-w-0">
+                        <h2
+                            class="text-base leading-5 font-emphasis text-foreground"
+                        >
+                            {{ $t('repurposes.source.watch_label') }}
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            {{ $t('repurposes.source.watch_description') }}
+                        </p>
+                    </div>
+                    <div class="w-full min-w-0 md:w-72 md:shrink-0">
+                        <Select v-model="form.source_format">
+                            <SelectTrigger
+                                class="w-full"
+                                data-testid="source-format-select"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem
+                                    v-for="option in sourceFormats"
+                                    :key="option.value"
+                                    :value="option.value"
+                                    :data-testid="`source-format-option-${option.value}`"
+                                >
+                                    {{ option.label }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </section>
+
+                <hr class="border-border" />
+
+                <section
+                    class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+                    data-testid="repurpose-publish-mode-card"
+                >
+                    <div class="min-w-0">
+                        <h2
+                            class="text-base leading-5 font-emphasis text-foreground"
+                        >
+                            {{ $t('repurposes.publish_mode.title') }}
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            {{ $t('repurposes.publish_mode.description') }}
+                        </p>
+                    </div>
+                    <RadioGroup
+                        v-model="form.publish_mode"
+                        class="w-full min-w-0 gap-3 md:w-72 md:shrink-0"
+                        :aria-label="$t('repurposes.publish_mode.title')"
+                    >
+                        <label
+                            v-for="option in publishModes"
+                            :key="option.value"
+                            class="flex cursor-pointer items-start gap-3"
+                        >
+                            <RadioGroupItem
+                                :value="option.value"
+                                class="mt-0.5"
+                                :data-testid="`publish-mode-${option.value}`"
+                            />
+                            <span class="min-w-0">
+                                <span
+                                    class="block text-sm leading-5 font-emphasis text-foreground"
+                                    >{{ option.label }}</span
+                                >
+                                <span
+                                    class="block text-sm text-muted-foreground"
+                                    >{{ option.description }}</span
+                                >
+                            </span>
+                        </label>
+                    </RadioGroup>
+                </section>
+
+                <hr class="border-border" />
+
+                <section
+                    class="flex flex-col gap-4"
+                    data-testid="repurpose-destinations"
+                >
+                    <div class="min-w-0">
+                        <h2
+                            class="text-base leading-5 font-emphasis text-foreground"
+                        >
+                            {{ $t('repurposes.destinations.title') }}
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            {{ $t('repurposes.destinations.description') }}
+                        </p>
+                    </div>
+
+                    <ChannelConfigurator
+                        v-if="channels.length > 0"
+                        :channels="channels"
+                        :media="plannedMedia"
+                        :selected-ids="selectedAccountIds"
+                        @toggle="toggleDestination"
+                        @update:content-type="setDestinationContentType"
+                        @update:meta="setDestinationMeta"
                     />
+                    <p
+                        v-else
+                        class="rounded-xl border border-dashed border-border-strong px-4 py-6 text-center text-sm text-muted-foreground"
+                        data-testid="destinations-empty"
+                    >
+                        {{ $t('repurposes.destinations.none_available') }}
+                    </p>
 
-                    <Card v-else>
-                        <CardContent>
-                            <RepurposeItemList :items="items.data ?? []" />
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+                    <InputError
+                        data-testid="destinations-error"
+                        :message="form.errors.destinations"
+                    />
+                </section>
+            </div>
 
-            </Tabs>
+            <div
+                v-else
+                class="pt-6 md:p-4 md:pt-8"
+                role="tabpanel"
+                data-testid="repurpose-activity"
+            >
+                <EmptyState
+                    v-if="(items.data ?? []).length === 0"
+                    :title="$t('repurposes.items.empty.title')"
+                    :description="$t('repurposes.items.empty.description')"
+                    data-testid="repurpose-activity-empty"
+                >
+                    <template #illustration>
+                        <RepurposesEmptyIllustration />
+                    </template>
+                </EmptyState>
+
+                <div
+                    v-else
+                    class="rounded-xl border border-border bg-card px-4 py-4"
+                >
+                    <RepurposeItemList :items="items.data ?? []" />
+                </div>
+            </div>
         </div>
 
         <ConfirmDeleteModal

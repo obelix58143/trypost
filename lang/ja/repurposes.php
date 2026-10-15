@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'title' => 'Repurpose',
-    'description' => 'TryPost の外で投稿したものを、他のネットワークへ自動で再投稿します。',
     'new' => '新しい Repurpose',
 
     'flow' => [
@@ -13,15 +12,12 @@ return [
     ],
 
     'publish_mode' => [
-
         'title' => '公開',
 
         'description' => '新しい投稿が見つかったときの動作。',
-
     ],
 
     'publish_modes' => [
-
         'publish' => '自動的に公開',
 
         'publish_hint' => '新しい投稿は見つかった時点で予約されます。',
@@ -29,7 +25,6 @@ return [
         'draft' => '下書きとして作成',
 
         'draft_hint' => '新しい投稿はここで下書きになり、確認してから公開できます。',
-
     ],
 
     'formats' => [
@@ -41,8 +36,8 @@ return [
     'source' => [
         'title' => 'ソース',
         'description' => 'TryPost がこのアカウントを見張り、下で選んだ形式の新しい投稿を探します。',
-        'account_label' => 'アカウント',
         'watch_label' => '監視する形式',
+        'watch_description' => 'リポストのきっかけになる投稿の種類。',
         'needs_reconnect' => '再接続が必要',
     ],
 
@@ -58,8 +53,6 @@ return [
     ],
 
     'table' => [
-        'flow' => 'フロー',
-        'status' => 'ステータス',
         'published' => '再投稿済み',
         'last_polled' => '最終チェック',
     ],
@@ -97,7 +90,6 @@ return [
     ],
 
     'destinations' => [
-        'paused_note' => 'オフのためスキップされます。再度オンにするまで: :accounts',
         'title' => '配信先',
         'description' => '受け取るアカウントを選びます。それぞれ、指定した形式で投稿します。',
         'hint' => 'キャプションは、そのネットワークの上限を超えたときだけ調整されます。',
@@ -150,9 +142,7 @@ return [
     ],
 
     'menu' => [
-
         'label' => 'その他の操作',
-
     ],
 
     'danger' => [
@@ -175,6 +165,7 @@ return [
         'source_unusable' => 'この自動化を開始する前に、監視対象のアカウントを再接続してください。',
         'destinations_required' => '有効にする前に配信先を 1 つ以上選んでください。',
         'destination_needs_video' => 'その形式は動画に対応していません。',
+        'destination_not_supported' => 'Google ビジネスは公開先にできません。投稿で動画を使えないためです。',
         'only_paused_resumes' => '再開できるのは一時停止中の Repurpose だけです。',
         'only_active_pauses' => '一時停止できるのは有効なリパーパスだけです。',
         'only_running_disables' => '無効にできるのは稼働中のリパーパスだけです。',

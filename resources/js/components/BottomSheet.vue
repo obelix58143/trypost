@@ -1,0 +1,57 @@
+<script setup lang="ts">
+import { IconX } from '@tabler/icons-vue';
+
+import { Button } from '@/components/ui/button';
+import {
+    Sheet,
+    SheetClose,
+    SheetContent,
+    SheetTitle,
+} from '@/components/ui/sheet';
+
+withDefaults(
+    defineProps<{
+        title: string;
+        testId: string;
+        showHeader?: boolean;
+        contentClass?: string;
+    }>(),
+    { showHeader: true, contentClass: '' },
+);
+
+const open = defineModel<boolean>('open', { required: true });
+</script>
+
+<template>
+    <Sheet v-model:open="open">
+        <SheetContent
+            side="bottom"
+            :show-close-button="false"
+            :aria-describedby="undefined"
+            class="max-h-[85dvh] gap-0 overflow-y-auto overscroll-contain rounded-t-2xl p-0 pb-[env(safe-area-inset-bottom)]"
+            :class="contentClass"
+            :data-testid="testId"
+            @open-auto-focus.prevent
+        >
+            <div
+                v-if="showHeader"
+                class="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 bg-background py-2 ps-4 pe-2"
+            >
+                <SheetTitle class="truncate text-base">{{ title }}</SheetTitle>
+                <SheetClose as-child>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        :aria-label="$t('common.close')"
+                        :data-testid="`${testId}-close`"
+                    >
+                        <IconX class="size-4" />
+                    </Button>
+                </SheetClose>
+            </div>
+            <SheetTitle v-else class="sr-only">{{ title }}</SheetTitle>
+            <slot />
+        </SheetContent>
+    </Sheet>
+</template>

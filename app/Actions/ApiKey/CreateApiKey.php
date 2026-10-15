@@ -11,14 +11,6 @@ use App\Models\Workspace;
 class CreateApiKey
 {
     /**
-     * @return list<string>
-     */
-    public static function expiresAtRules(): array
-    {
-        return ['nullable', 'date', 'after_or_equal:today'];
-    }
-
-    /**
      * @param  array{name: string, expires_at?: string|null}  $data
      * @return array{token: AccessToken, plain_token: string}
      */

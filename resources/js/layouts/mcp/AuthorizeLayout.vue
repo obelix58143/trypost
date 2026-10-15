@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 
+import AppLogo from '@/components/AppLogo.vue';
+
 defineProps<{
     title: string;
     description?: string;
@@ -16,28 +18,21 @@ defineProps<{
 
         <div class="w-full max-w-md space-y-8">
             <div class="flex flex-col items-center gap-4 text-center">
-                <img
-                    src="/images/trypost/logo-light.png"
-                    alt="TryPost"
-                    class="h-10 w-auto"
-                />
+                <AppLogo class="text-[36px]" />
                 <div class="space-y-2">
                     <h1
                         class="text-xl font-semibold tracking-tight text-foreground"
                     >
                         {{ title }}
                     </h1>
-                    <p
-                        v-if="description"
-                        class="text-sm text-muted-foreground"
-                    >
+                    <p v-if="description" class="text-sm text-muted-foreground">
                         {{ description }}
                     </p>
                 </div>
             </div>
 
             <div
-                class="space-y-6 rounded-xl border-2 border-foreground bg-card p-6 shadow-sm"
+                class="space-y-6 rounded-xl border border-border bg-card p-6 shadow-sm"
             >
                 <slot />
             </div>

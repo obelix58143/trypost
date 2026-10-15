@@ -5,25 +5,27 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
-use App\Enums\SocialAccount\Status;
-use App\Exceptions\SocialAccount\ConnectPopupException;
-use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
-use App\Models\SocialAccount;
+use App\Exceptions\SocialAccount\ConnectFlowException;
+use App\Services\Http\SafeHttpFetcher;
+use App\Support\Social\PendingConnection;
+use Exception;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 
 class MastodonController extends SocialController
 {
     protected SocialPlatform $platform = SocialPlatform::Mastodon;
 
-    private const SCOPES = 'read:accounts write:statuses write:media';
+    private const SCOPES = 'read:accounts read:statuses write:statuses write:media';
 
     /**
-     * Show form to enter Mastodon instance URL
+     * The instance step, before the redirect to the instance's consent screen.
      */
     public function connect(Request $request): InertiaResponse
     {
@@ -37,13 +39,14 @@ class MastodonController extends SocialController
 
         return Inertia::render('accounts/MastodonConnect', [
             'errors' => session('errors')?->getBag('default')?->toArray() ?? [],
+            'backUrl' => PendingConnection::current()?->returnUrl() ?? PendingConnection::defaultReturnUrl(),
         ]);
     }
 
     /**
      * Register app on instance and redirect to OAuth
      */
-    public function authorizeInstance(Request $request): Response
+    public function authorizeInstance(Request $request, SafeHttpFetcher $fetcher): Response
     {
         $this->ensurePlatformEnabled();
 
@@ -56,6 +59,12 @@ class MastodonController extends SocialController
         $this->authorize('manageAccounts', $workspace);
 
         $instance = rtrim($request->instance, '/');
+
+        try {
+            $fetcher->guardAgainstSsrf($instance);
+        } catch (RuntimeException) {
+            return back()->withErrors(['instance' => __('accounts.mastodon.instance_unreachable')]);
+        }
 
         try {
             // Register app on the instance
@@ -73,7 +82,7 @@ class MastodonController extends SocialController
                     'body' => $appResponse->body(),
                 ]);
 
-                return back()->withErrors(['instance' => 'Could not connect to this Mastodon instance.']);
+                return back()->withErrors(['instance' => __('accounts.mastodon.instance_unreachable')]);
             }
 
             $app = $appResponse->json();
@@ -85,8 +94,11 @@ class MastodonController extends SocialController
                 'mastodon_client_id' => $app['client_id'],
                 'mastodon_client_secret' => $app['client_secret'],
                 'mastodon_oauth_state' => $state,
-                'social_connect_workspace' => $workspace->id,
             ]);
+
+            if (PendingConnection::current()?->platform() !== $this->platform) {
+                $this->rememberConnectSession($request, $workspace);
+            }
 
             // Redirect to OAuth
             $params = http_build_query([
@@ -95,16 +107,17 @@ class MastodonController extends SocialController
                 'redirect_uri' => route('app.social.mastodon.callback'),
                 'scope' => self::SCOPES,
                 'state' => $state,
+                'force_login' => PendingConnection::current()?->isSwitchingAccount() ? 'true' : null,
             ]);
 
             return Inertia::location("{$instance}/oauth/authorize?{$params}");
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Mastodon connection error', [
                 'instance' => $instance,
                 'error' => $e->getMessage(),
             ]);
 
-            return back()->withErrors(['instance' => 'Error connecting to Mastodon instance.']);
+            return back()->withErrors(['instance' => __('accounts.mastodon.connection_error')]);
         }
     }
 
@@ -114,7 +127,7 @@ class MastodonController extends SocialController
      * Everything the flow needs is captured into locals before the session is
      * cleared, so every exit below is free of cleanup.
      */
-    public function callback(Request $request): InertiaResponse
+    public function callback(Request $request): RedirectResponse
     {
         $savedState = session('mastodon_oauth_state');
         $instance = session('mastodon_instance');
@@ -124,14 +137,14 @@ class MastodonController extends SocialController
         if (! $instance) {
             $this->clearMastodonSession();
 
-            throw new ConnectPopupException('session_expired', $this->platform);
+            throw new ConnectFlowException(ConnectFlowException::SESSION_EXPIRED, $this->platform);
         }
 
         $this->clearMastodonSession();
         $workspace = $this->connectWorkspace($request);
 
         if ($request->state !== $savedState) {
-            throw new ConnectPopupException('invalid_state', $this->platform);
+            throw new ConnectFlowException('invalid_state', $this->platform);
         }
 
         try {
@@ -149,75 +162,59 @@ class MastodonController extends SocialController
                     'status' => $tokenResponse->status(),
                     'body' => $tokenResponse->body(),
                 ]);
-                $this->clearMastodonSession();
 
-                return $this->popupCallback(false, __('accounts.popup_callback.failed_to_authenticate'), $this->platform->value);
+                return $this->failConnection('failed_to_authenticate');
             }
 
             $tokenData = $tokenResponse->json();
-            $accessToken = $tokenData['access_token'];
+            $accessToken = data_get($tokenData, 'access_token');
 
-            // Get user profile
             $profileResponse = Http::withToken($accessToken)
                 ->get("{$instance}/api/v1/accounts/verify_credentials");
 
             if ($profileResponse->failed()) {
-                $this->clearMastodonSession();
-
-                return $this->popupCallback(false, __('accounts.popup_callback.failed_to_get_profile'), $this->platform->value);
+                return $this->failConnection('failed_to_get_profile');
             }
 
             $profile = $profileResponse->json();
 
-            $avatarPath = data_get($profile, 'avatar') ? uploadFromUrl(data_get($profile, 'avatar')) : null;
+            $grantedScopes = $this->reportedScopes(data_get($tokenData, 'scope'), explode(' ', self::SCOPES));
 
-            // Mastodon returns the granted scopes in the token response as a
-            // space-separated string. We persist them so the publisher can
-            // verify required scopes (write:statuses, write:media) before
-            // attempting to post.
-            $grantedScopes = array_values(array_filter(explode(' ', (string) data_get($tokenData, 'scope', self::SCOPES))));
-            $reconnect = $this->reconnectAccount($workspace);
-
-            SocialAccount::connectIdentity(
-                $workspace,
-                $this->platform,
-                (string) data_get($profile, 'id'),
-                [
-                    'username' => data_get($profile, 'acct'),
-                    'display_name' => data_get($profile, 'display_name') ?: data_get($profile, 'username'),
-                    'avatar_url' => $avatarPath,
-                    'access_token' => $accessToken,
-                    'refresh_token' => null,
-                    'token_expires_at' => null,
-                    'scopes' => $grantedScopes,
-                    'status' => Status::Connected,
-                    'error_message' => null,
-                    'disconnected_at' => null,
-                    'meta' => [
-                        'instance' => $instance,
-                        'client_id' => $clientId,
-                        'client_secret' => $clientSecret,
+            return $this->refusalForMissingPublishScopes($grantedScopes) ?? $this->offerIdentities($workspace, [
+                PendingConnection::identity(
+                    $this->platform,
+                    (string) data_get($profile, 'id'),
+                    data_get($profile, 'display_name') ?: data_get($profile, 'username'),
+                    data_get($profile, 'acct'),
+                    data_get($profile, 'avatar'),
+                    $this->platform->identityType()->value,
+                    [
+                        'username' => data_get($profile, 'acct'),
+                        'display_name' => data_get($profile, 'display_name') ?: data_get($profile, 'username'),
+                        'access_token' => $accessToken,
+                        'refresh_token' => null,
+                        'token_expires_at' => null,
+                        'scopes' => $grantedScopes,
+                        'meta' => [
+                            'instance' => $instance,
+                            'client_id' => $clientId,
+                            'client_secret' => $clientSecret,
+                        ],
                     ],
-                ],
-                $reconnect,
-            );
-
-            return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException $e) {
-            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
-        } catch (\Exception $e) {
+                ),
+            ], $this->reconnectAccount($workspace));
+        } catch (Exception $e) {
             Log::error('Mastodon callback error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
+            return $this->failConnection('error_connecting');
         }
     }
 
     /**
-     * Only the Mastodon-specific keys: the shared connect session is cleared by
-     * whatever closes the popup.
+     * Only the Mastodon-specific keys: the pending connection keeps the rest.
      */
     private function clearMastodonSession(): void
     {

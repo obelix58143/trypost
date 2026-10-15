@@ -1,0 +1,22 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Analytics\Collectors\Followers;
+
+use App\Dto\Analytics\AccountDailyObservation;
+use App\Exceptions\Analytics\AnalyticsCollectionException;
+use App\Models\SocialAccount;
+use Carbon\CarbonImmutable;
+
+class PinterestFollowerCollector extends AbstractFollowerCollector
+{
+    public function collect(SocialAccount $account, CarbonImmutable $date): AccountDailyObservation
+    {
+        AnalyticsCollectionException::unlessGranted($account, 'user_accounts:read');
+
+        $response = $this->get($account, config('trypost.platforms.pinterest.api').'/user_account');
+
+        return $this->observation($date, data_get($response->json(), 'follower_count'));
+    }
+}

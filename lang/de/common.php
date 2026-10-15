@@ -8,11 +8,10 @@ return [
     'back' => 'Zurück',
 
     'confirm_modal' => [
-        'cannot_be_undone' => 'Dies kann nicht rückgängig gemacht werden.',
         'type' => 'Gib',
         'to_confirm' => 'zur Bestätigung ein.',
         'copy_to_clipboard' => 'In die Zwischenablage kopieren',
-        'delete_keyword' => 'löschen',
+        'delete_keyword' => 'LÖSCHEN',
     ],
 
     'photo_upload' => [
@@ -59,11 +58,25 @@ return [
     'cancel' => 'Abbrechen',
     'clear' => 'Zurücksetzen',
     'close' => 'Schließen',
+    'more' => 'Mehr',
+    'play' => 'Abspielen',
+    'loading' => 'Wird geladen...',
     'loading_more' => 'Weitere werden geladen...',
 
     'actions' => [
         'copy' => 'Kopieren',
         'copied' => 'Kopiert',
         'copy_failed' => 'Kopieren in die Zwischenablage fehlgeschlagen',
+    ],
+
+    'media_lightbox' => [
+        'title' => 'Medienvorschau',
+        'previous' => 'Zurück',
+        'next' => 'Weiter',
+        'zoom_in' => 'Vergrößern',
+        'zoom_out' => 'Verkleinern',
+        'counter' => ':current / :total',
+        'go_to' => 'Element :number anzeigen',
+        'open' => 'Vorschau öffnen',
     ],
 ];

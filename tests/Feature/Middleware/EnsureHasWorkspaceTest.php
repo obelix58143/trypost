@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\SocialAccount\Platform;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia;
 
@@ -23,14 +24,17 @@ test('connect routes require a workspace even in self-hosted mode', function () 
         ->assertRedirect(route('app.workspaces.create'));
 });
 
-test('oauth callbacks are not blocked by the workspace gate and self-close the popup', function () {
+test('oauth callbacks and the confirmation page are not blocked by the workspace gate', function () {
     $user = User::factory()->create(['current_workspace_id' => null]);
 
     $this->actingAs($user)
         ->get(route('app.social.x.callback'))
+        ->assertRedirect(route('app.social.connect.show', Platform::X));
+
+    $this->get(route('app.social.connect.show', Platform::X))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->component('accounts/PopupCallback')
-            ->where('success', false),
+            ->component('accounts/ConnectFinish')
+            ->where('state', 'expired'),
         );
 });

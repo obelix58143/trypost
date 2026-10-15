@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\Label;
 
+use App\Support\Requests\Label\LabelRequestRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreLabelRequest extends FormRequest
@@ -18,9 +19,6 @@ class StoreLabelRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'name' => ['required', 'string', 'max:255'],
-            'color' => ['required', 'string', 'max:7', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-        ];
+        return LabelRequestRules::rules();
     }
 }

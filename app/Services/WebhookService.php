@@ -9,15 +9,13 @@ use App\Enums\Media\Type;
 use App\Enums\Webhook\EventType as WebhookEvent;
 use App\Jobs\DispatchWebhook;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Webhook;
 use App\Models\Workspace;
 use App\Models\WorkspaceLabel;
-use App\Services\Brand\SafeHttpFetcher;
+use App\Services\Http\SafeHttpFetcher;
 use Exception;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -50,7 +48,11 @@ class WebhookService
      */
     public function ping(string $endpoint, string $signingSecret): void
     {
-        $this->assertEndpointAllowed($endpoint);
+        try {
+            $request = $this->safeHttp->guardedRequest($endpoint, followRedirects: false);
+        } catch (RuntimeException) {
+            throw new RuntimeException(__('webhooks.errors.endpoint_not_allowed'));
+        }
 
         $body = [
             'id' => (string) Str::uuid(),
@@ -60,14 +62,16 @@ class WebhookService
         ];
 
         try {
-            $response = Http::timeout(5)
+            $response = $request
+                ->timeout(5)
                 ->withUserAgent(config('trypost.user_agent'))
-                ->withOptions(['allow_redirects' => false])
                 ->asJson()
                 ->withHeaders([
                     'X-Webhook-Signature' => $this->signature($body, $signingSecret),
                 ])
+                ->withOptions(['stream' => true])
                 ->post($endpoint, $body);
+            $this->safeHttp->bodyPrefix($response, 0);
         } catch (Exception) {
             throw new RuntimeException(__('webhooks.errors.endpoint_unreachable'));
         }
@@ -101,7 +105,7 @@ class WebhookService
      */
     public function postPayload(Post $post): array
     {
-        $post->load(['user', 'workspace', 'labels', 'postPlatforms.socialAccount']);
+        $post->load(['user', 'workspace', 'labels', 'socialAccount']);
 
         return [
             'id' => $post->id,
@@ -125,10 +129,18 @@ class WebhookService
                 ->values()
                 ->all(),
             'media' => $this->mediaPayload($post),
-            'platforms' => $post->postPlatforms
-                ->map(fn (PostPlatform $platform): array => $this->platformPayload($platform))
-                ->values()
-                ->all(),
+            'publish_status' => $post->publish_status->value,
+            'social_account_id' => $post->social_account_id,
+            'platform' => $post->platform?->value,
+            'content_type' => $post->content_type?->value,
+            'platform_post_id' => $post->platform_post_id,
+            'platform_url' => $post->platform_url,
+            'error_message' => $post->error_message,
+            'display_name' => $post->display_name,
+            'display_username' => $post->display_username,
+            'display_avatar' => $post->display_avatar,
+            'meta' => $post->meta ?? [],
+            'social_account' => $this->socialAccountPayload($post->socialAccount),
         ];
     }
 
@@ -184,32 +196,7 @@ class WebhookService
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function platformPayload(PostPlatform $platform): array
-    {
-        return [
-            'id' => $platform->id,
-            'social_account_id' => $platform->social_account_id,
-            'platform' => $platform->platform?->value,
-            'content_type' => $platform->content_type?->value,
-            'enabled' => $platform->enabled,
-            'status' => $platform->status?->value,
-            'platform_post_id' => $platform->platform_post_id,
-            'platform_url' => $platform->platform_url,
-            'published_at' => $platform->published_at?->toIso8601String(),
-            'error_message' => $platform->error_message,
-            'error_context' => $platform->error_context,
-            'display_name' => $platform->display_name,
-            'display_username' => $platform->display_username,
-            'display_avatar' => $platform->display_avatar,
-            'meta' => $platform->meta ?? [],
-            'social_account' => $this->socialAccountPayload($platform->socialAccount),
-        ];
-    }
-
-    /**
-     * @return array{id: string, platform: string|null, display_name: string|null, username: string|null, is_active: bool, status: string|null}|null
+     * @return array{id: string, platform: string|null, display_name: string|null, username: string|null, status: string|null}|null
      */
     private function socialAccountPayload(?SocialAccount $account): ?array
     {
@@ -222,7 +209,6 @@ class WebhookService
             'platform' => $account->platform?->value,
             'display_name' => $account->display_name,
             'username' => $account->username,
-            'is_active' => $account->is_active,
             'status' => $account->status?->value,
         ];
     }

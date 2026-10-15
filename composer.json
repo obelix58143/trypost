@@ -35,7 +35,7 @@
     "require": {
         "php": "^8.2",
         "google/apiclient": "^2.19",
-        "inertiajs/inertia-laravel": "^3.3.1",
+        "inertiajs/inertia-laravel": "^3.5.1",
         "intervention/image": "^4.0",
         "laravel/ai": "^0.10.3",
         "laravel/boost": "^2.5",
@@ -50,9 +50,7 @@
         "laravel/socialite": "^5.24",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.9",
-        "league/color-extractor": "^0.4.0",
         "league/flysystem-aws-s3-v3": "^3.0",
-        "league/html-to-markdown": "^5.1",
         "posthog/posthog-php": "^4.1",
         "predis/predis": "^3.3",
         "sendkit/sendkit-laravel": "^1.1",
@@ -103,7 +101,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --queue=default,analytics,rss-feeds,media-imports --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
         ],
         "lint": [
             "pint --parallel"

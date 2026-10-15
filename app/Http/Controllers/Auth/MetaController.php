@@ -6,8 +6,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Services\Social\Meta\GrantedPermissions;
 use App\Services\Social\Meta\ManagedPageList;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Http;
-use Inertia\Response as InertiaResponse;
 
 /**
  * What the Facebook and Instagram-via-Facebook connect flows share: one Meta app, one
@@ -17,12 +17,21 @@ abstract class MetaController extends SocialController
 {
     protected string $driver = 'facebook';
 
+    /**
+     * Meta's login dialog `auth_type` when switching account: `rerequest` still
+     * asks again for declined permissions, `reauthenticate` makes the person log
+     * in again so another Facebook account can be used.
+     *
+     * @see https://developers.facebook.com/docs/facebook-login/guides/advanced/re-authentication
+     */
+    protected const string SWITCH_ACCOUNT_AUTH_TYPE = 'rerequest,reauthenticate';
+
     private ?float $deadline = null;
 
     /** Graph fields the page walk asks for. */
     protected string $pageFields;
 
-    /** Popup key for "this login has no pages of the kind we want". */
+    /** Reason key for "this login has no pages of the kind we want". */
     protected string $noPagesKey;
 
     /** When the whole callback must stop reading pages, shared by every phase of it. */
@@ -41,18 +50,16 @@ abstract class MetaController extends SocialController
     }
 
     /**
-     * The scopes this login did not refuse, or the popup refusing the connect because
-     * one the platform needs to publish is among them.
+     * The scopes this login did not refuse, or the refusal when one the platform
+     * needs to publish is among them.
      *
-     * @return array<int, string>|InertiaResponse
+     * @return array<int, string>|RedirectResponse
      */
-    protected function grantedScopes(string $userToken): array|InertiaResponse
+    protected function grantedScopes(string $userToken): array|RedirectResponse
     {
         $granted = GrantedPermissions::for($this->graphApi(), $userToken, $this->scopes);
 
-        return array_diff($this->platform->requiredPublishScopes(), $granted) === []
-            ? $granted
-            : $this->popupCallback(false, __('accounts.popup_callback.publish_permission_refused'), $this->platform->value);
+        return $this->refusalForMissingPublishScopes($granted) ?? $granted;
     }
 
     /**
@@ -61,12 +68,12 @@ abstract class MetaController extends SocialController
      *
      * @param  array<int, array<string, mixed>>  $listed
      */
-    protected function noPagesOnOffer(ManagedPageList $walk, array $listed): InertiaResponse
+    protected function noPagesOnOffer(ManagedPageList $walk, array $listed): RedirectResponse
     {
-        return $this->popupCallback(false, __(match (true) {
-            ! $walk->complete => 'accounts.popup_callback.pages_read_incomplete',
+        return $this->failConnection(match (true) {
+            ! $walk->complete => 'pages_read_incomplete',
             empty($listed) => $this->noPagesKey,
-            default => 'accounts.popup_callback.pages_missing_permission',
-        }), $this->platform->value);
+            default => 'pages_missing_permission',
+        });
     }
 }

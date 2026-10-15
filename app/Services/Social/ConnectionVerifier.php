@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Social;
 
+use App\Actions\SocialAccount\SyncXSubscription;
+use App\Dto\BlueskySession;
 use App\Enums\SocialAccount\Platform;
 use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\BlueskyPublishException;
@@ -23,11 +25,23 @@ use App\Services\Social\Meta\GraphError;
 use App\Services\Social\Telegram\TelegramApi;
 use App\Support\GoogleBusinessResourceName;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class ConnectionVerifier
 {
+    /**
+     * TikTok OAuth errors that mean the refresh token itself is dead and the
+     * user must reconnect: only invalid_grant ("invalid, expired, revoked")
+     * is documented that way. Every other error is ours or temporary.
+     *
+     * @see https://developers.tiktok.com/doc/oauth-error-handling
+     *
+     * @var list<string>
+     */
+    private const array TIKTOK_DEAD_REFRESH_ERRORS = ['invalid_grant'];
+
     /**
      * Read and connect timeouts for a token refresh. Stated explicitly, even
      * though they match the client's defaults, so a change to those cannot
@@ -137,7 +151,7 @@ class ConnectionVerifier
         return blank($token) ? $current : (string) $token;
     }
 
-    private function tokenFrom(?array $data, Platform $platform, string $key = 'access_token'): string
+    private function tokenFrom(mixed $data, Platform $platform, string $key = 'access_token'): string
     {
         $token = data_get($data, $key);
 
@@ -245,6 +259,14 @@ class ConnectionVerifier
                 return false;
             }
 
+            $stored = SocialAccount::query()->find($account->id);
+
+            if ($stored && $stored->refresh_token !== $account->refresh_token) {
+                $account->setRawAttributes($stored->getAttributes(), true);
+
+                return false;
+            }
+
             match ($account->platform) {
                 Platform::LinkedIn, Platform::LinkedInPage => $this->refreshLinkedInToken($account),
                 Platform::X => $this->refreshXToken($account),
@@ -321,14 +343,7 @@ class ConnectionVerifier
             $response = $client->send(fn () => $this->refreshHttp()->withToken($account->refresh_token)
                 ->post("{$service}/xrpc/".BlueskyLexicon::REFRESH_SESSION));
 
-            $data = $response->json();
-            $account->update([
-                'access_token' => $this->tokenFrom($data, $account->platform, 'accessJwt'),
-                'refresh_token' => $this->tokenFrom($data, $account->platform, 'refreshJwt'),
-                'token_expires_at' => now()->addHours(2),
-            ]);
-
-            $account->refresh();
+            $this->updateBlueskySession($account, $response);
 
             return;
         } catch (TokenExpiredException) {
@@ -342,14 +357,7 @@ class ConnectionVerifier
                     'password' => decrypt($account->meta['password']),
                 ]));
 
-                $data = $reauth->json();
-                $account->update([
-                    'access_token' => $this->tokenFrom($data, $account->platform, 'accessJwt'),
-                    'refresh_token' => $this->tokenFrom($data, $account->platform, 'refreshJwt'),
-                    'token_expires_at' => now()->addHours(2),
-                ]);
-
-                $account->refresh();
+                $this->updateBlueskySession($account, $reauth);
 
                 return;
             } catch (TokenExpiredException) {
@@ -358,6 +366,23 @@ class ConnectionVerifier
         }
 
         throw new TokenExpiredException('Bluesky session expired');
+    }
+
+    private function updateBlueskySession(SocialAccount $account, Response $response): void
+    {
+        $session = BlueskySession::fromResponse($response);
+
+        if ($session === null || ! $session->hasTokens() || $session->did !== $account->platform_user_id) {
+            throw new PlatformUnavailableException('Bluesky returned an invalid session response.');
+        }
+
+        $account->update([
+            'access_token' => $session->accessToken,
+            'refresh_token' => $session->refreshToken,
+            'token_expires_at' => now()->addHours(2),
+        ]);
+
+        $account->refresh();
     }
 
     private function refreshYouTubeToken(SocialAccount $account): void
@@ -390,15 +415,32 @@ class ConnectionVerifier
             throw new TokenExpiredException('No refresh token available for TikTok account');
         }
 
-        $response = TokenRefreshClient::for(Platform::TikTok)->send(fn () => $this->refreshHttp()->asForm()
-            ->post(config('trypost.platforms.tiktok.api').'/oauth/token/', [
-                'grant_type' => 'refresh_token',
-                'refresh_token' => $account->refresh_token,
-                'client_key' => config('services.tiktok.client_id'),
-                'client_secret' => config('services.tiktok.client_secret'),
-            ]));
+        $response = TokenRefreshClient::for(Platform::TikTok)->send(
+            fn () => $this->refreshHttp()->asForm()
+                ->post(config('trypost.platforms.tiktok.api').'/oauth/token/', [
+                    'grant_type' => 'refresh_token',
+                    'refresh_token' => $account->refresh_token,
+                    'client_key' => config('services.tiktok.client_id'),
+                    'client_secret' => config('services.tiktok.client_secret'),
+                ]),
+            function (mixed $body): bool {
+                self::throwIfDeadTikTokRefresh($body);
+
+                return false;
+            },
+        );
 
         $data = $response->json();
+        self::throwIfDeadTikTokRefresh($data);
+
+        $error = data_get($data, 'error');
+        $description = self::tikTokErrorDescription($data);
+
+        if (filled($error)) {
+            $code = is_string($error) ? $error : 'unrecognized error';
+
+            throw new PlatformUnavailableException(trim("TikTok refresh returned {$code}: {$description}", ': '));
+        }
 
         $account->update([
             'access_token' => $this->tokenFrom($data, $account->platform),
@@ -407,6 +449,33 @@ class ConnectionVerifier
         ]);
 
         $account->refresh();
+    }
+
+    /**
+     * A dead refresh token expires the account with TikTok's error code,
+     * whether TikTok answered it with a 200 or a 4xx.
+     *
+     * @throws TokenExpiredException
+     */
+    private static function throwIfDeadTikTokRefresh(mixed $body): void
+    {
+        $error = is_array($body) ? data_get($body, 'error') : null;
+
+        if (! in_array($error, self::TIKTOK_DEAD_REFRESH_ERRORS, true)) {
+            return;
+        }
+
+        throw new TokenExpiredException(
+            self::tikTokErrorDescription($body) ?? $error,
+            platformErrorCode: $error,
+        );
+    }
+
+    private static function tikTokErrorDescription(mixed $body): ?string
+    {
+        $description = data_get($body, 'error_description');
+
+        return is_string($description) && $description !== '' ? $description : null;
     }
 
     private function refreshPinterestToken(SocialAccount $account): void
@@ -557,13 +626,15 @@ class ConnectionVerifier
     private function verifyX(SocialAccount $account): bool
     {
         $response = Http::withToken($account->access_token)
-            ->get(config('trypost.platforms.x.api').'/users/me');
+            ->get(config('trypost.platforms.x.api').'/users/me', ['user.fields' => SyncXSubscription::USER_FIELDS]);
 
         if (XPublishException::isConfirmedDeadToken($response)) {
             throw new TokenExpiredException('X access token is invalid or expired');
         }
 
         if ($response->successful()) {
+            SyncXSubscription::fromUser($account, (array) $response->json('data', []));
+
             return true;
         }
 

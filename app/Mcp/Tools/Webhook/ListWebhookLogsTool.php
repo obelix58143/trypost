@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\Webhook;
 
+use App\Actions\Webhook\ListWebhookLogs;
 use App\Http\Resources\Api\WebhookLogResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Mcp\Concerns\ResolvesWorkspaceWebhook;
-use App\Mcp\Requests\Webhook\ListWebhookLogsRequest;
 use App\Models\Webhook;
 use App\Models\Workspace;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -19,7 +19,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('List recent delivery logs for a webhook, newest first, including payload and response body. Use replay-webhook-log-tool with a log id to resend a delivery.')]
+#[Description('List recent delivery logs for a webhook, newest first, including payload and response body. Use replay-webhook-log-tool with a log id to resend a delivery. Paginated with the app page size: pass page; the response carries total, per_page, current_page and last_page.')]
 class ListWebhookLogsTool extends Tool
 {
     use AuthorizesMcpTool;
@@ -27,17 +27,16 @@ class ListWebhookLogsTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'manageWebhooks',
-            'Not authorized to manage webhooks.',
-        );
+        $workspace = $this->currentWorkspace($request);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate(ListWebhookLogsRequest::rules());
+        $validated = $request->validate([
+            'webhook_id' => ['required', 'string', 'uuid'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
 
         $webhook = $this->webhookInWorkspace($workspace, data_get($validated, 'webhook_id'));
 
@@ -45,13 +44,19 @@ class ListWebhookLogsTool extends Tool
             return $webhook;
         }
 
-        $logs = $webhook->logs()
-            ->orderByDesc('created_at')
-            ->limit((int) data_get($validated, 'limit', 50))
-            ->get();
+        if ($denied = $this->denyUnlessCan($request, 'view', $webhook, 'Webhook not found.')) {
+            return $denied;
+        }
+
+        $logs = ListWebhookLogs::execute($webhook)
+            ->paginate((int) config('app.pagination.default'), page: (int) data_get($validated, 'page', 1));
 
         return Response::structured([
-            'logs' => WebhookLogResource::collection($logs)->resolve(),
+            'logs' => WebhookLogResource::collection($logs->items())->resolve(),
+            'total' => $logs->total(),
+            'per_page' => $logs->perPage(),
+            'current_page' => $logs->currentPage(),
+            'last_page' => $logs->lastPage(),
         ]);
     }
 
@@ -62,7 +67,7 @@ class ListWebhookLogsTool extends Tool
     {
         return [
             'webhook_id' => $schema->string()->required()->description('The webhook ID.'),
-            'limit' => $schema->integer()->description('Max results (1-100, default 50).'),
+            'page' => $schema->integer()->description('Page number.'),
         ];
     }
 }

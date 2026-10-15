@@ -35,7 +35,7 @@ const { orientation, canScrollPrev, scrollPrev } = useCarousel()
   >
     <slot>
       <IconArrowLeft />
-      <span class="sr-only">Previous Slide</span>
+      <span class="sr-only">{{ $t('common.media_lightbox.previous') }}</span>
     </slot>
   </Button>
 </template>

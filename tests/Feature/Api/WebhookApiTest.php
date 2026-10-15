@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Enums\Webhook\EventType;
 use App\Enums\Webhook\Status;
 use App\Jobs\DispatchWebhook;
@@ -38,8 +37,8 @@ test('list webhooks omits the signing secret', function () {
     );
 
     $response->assertOk();
-    $response->assertJsonCount(2);
-    expect($response->json('0'))->not->toHaveKey('signing_secret');
+    $response->assertJsonCount(2, 'data');
+    expect($response->json('data.0'))->not->toHaveKey('signing_secret');
 });
 
 test('list webhooks does not include other workspace webhooks', function () {
@@ -59,8 +58,8 @@ test('list webhooks does not include other workspace webhooks', function () {
     );
 
     $response->assertOk();
-    $response->assertJsonCount(1);
-    $response->assertJsonPath('0.endpoint', 'https://own.example.com/hook');
+    $response->assertJsonCount(1, 'data');
+    $response->assertJsonPath('data.0.endpoint', 'https://own.example.com/hook');
 });
 
 test('create webhook returns the signing secret', function () {
@@ -535,9 +534,9 @@ test('webhooks from another workspace are not found', function () {
         ->assertNotFound();
 });
 
-test('members and viewers cannot manage webhooks through the api', function (Role $role) {
+test('members who are not admins cannot manage webhooks through the api', function (string $role) {
     $teammate = User::factory()->create(['account_id' => $this->user->account_id]);
-    $this->workspace->members()->attach($teammate->id, ['role' => $role->value]);
+    $this->workspace->members()->attach($teammate->id, membershipPivot($role));
     $teammate->update(['current_workspace_id' => $this->workspace->id]);
     $plainToken = passportToken($teammate, $this->workspace);
 
@@ -594,6 +593,6 @@ test('members and viewers cannot manage webhooks through the api', function (Rol
         'endpoint' => 'https://member.example.com/webhooks',
     ]);
 })->with([
-    Role::Member,
-    Role::Viewer,
+    'member',
+    'approval',
 ]);

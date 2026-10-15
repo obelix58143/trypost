@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { Link, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import { IconArrowLeft } from '@tabler/icons-vue';
 import { computed } from 'vue';
 
-import LocaleSwitcher from '@/components/LocaleSwitcher.vue';
+import { updateLanguage } from '@/actions/App/Http/Controllers/App/Settings/ProfileController';
+import AppLogo from '@/components/AppLogo.vue';
+import LanguageSelect from '@/components/LanguageSelect.vue';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import Toast from '@/components/Toast.vue';
-import { Button } from '@/components/ui/button';
-import WelcomeWorkspacePreview from '@/components/welcome/WelcomeWorkspacePreview.vue';
+import { useBelowBreakpoint } from '@/composables/useBreakpoint';
 import {
-    connect as connectRoute,
     goals as goalsRoute,
     persona as personaRoute,
     plan as planRoute,
-    referralSource as referralSourceRoute,
 } from '@/routes/app/welcome';
-import type { SharedData, WelcomeStep } from '@/types';
+import type { Language, SharedData, WelcomeStep } from '@/types';
 
 const maxWidthClass = {
     lg: 'max-w-lg',
@@ -31,26 +31,32 @@ const props = withDefaults(
         description?: string;
         step?: WelcomeStep;
         size?: MaxWidthSize;
-        centered?: boolean;
     }>(),
     {
         title: undefined,
         description: undefined,
         step: undefined,
         size: '3xl',
-        centered: false,
     },
 );
 
 const page = usePage<SharedData>();
 
-const summary = computed(() => page.props.welcome ?? null);
+const languages = computed<Language[]>(
+    () => (page.props.languages as Language[] | undefined) ?? [],
+);
+
+const changeLanguage = (locale: string): void => {
+    router.put(
+        updateLanguage.url(),
+        { locale },
+        { preserveScroll: true, preserveState: true },
+    );
+};
 
 const steps = [
     { key: 'persona', route: personaRoute() },
     { key: 'goals', route: goalsRoute() },
-    { key: 'referral_source', route: referralSourceRoute() },
-    { key: 'connect', route: connectRoute() },
     { key: 'plan', route: planRoute() },
 ] as const;
 
@@ -58,165 +64,136 @@ const currentIndex = computed(() =>
     steps.findIndex((entry) => entry.key === props.step),
 );
 
+const isMobile = useBelowBreakpoint('sm');
+
+const showsStepsAboveTitle = computed(
+    () => isMobile.value && Boolean(props.title || props.description),
+);
+
 const previousStep = computed(() =>
     currentIndex.value > 0 ? steps[currentIndex.value - 1] : null,
 );
-
-const alignCenter = computed(() => props.centered || summary.value === null);
 </script>
 
 <template>
-    <div
-        :class="[
-            'min-h-svh bg-background',
-            summary
-                ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_28rem] xl:grid-cols-[minmax(0,1fr)_32rem] 2xl:grid-cols-[minmax(0,1fr)_36rem]'
-                : '',
-        ]"
-    >
-        <div class="relative flex min-h-svh flex-col">
-            <header
-                class="flex items-center justify-between gap-4 px-6 pt-6 md:px-10 lg:px-14"
+    <div class="flex min-h-svh flex-col bg-muted">
+        <header
+            class="flex items-center justify-between gap-4 px-4 pt-4 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:px-8 sm:pt-8 lg:px-12"
+        >
+            <div class="flex min-w-0 items-center gap-3">
+                <Link
+                    v-if="previousStep"
+                    :href="previousStep.route"
+                    :aria-label="$t('welcome.back')"
+                    :title="$t('welcome.back')"
+                    class="flex size-8 shrink-0 items-center justify-center rounded-lg text-foreground transition-control hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                    data-testid="welcome-back"
+                >
+                    <IconArrowLeft class="size-4 rtl:rotate-180" />
+                </Link>
+                <AppLogo class="text-[24px] max-sm:[&>span]:hidden" />
+            </div>
+
+            <Teleport
+                v-if="currentIndex >= 0"
+                to="#welcome-steps-mobile"
+                defer
+                :disabled="!showsStepsAboveTitle"
             >
                 <nav
-                    v-if="currentIndex >= 0"
-                    class="flex items-center gap-3"
                     :aria-label="$t('welcome.progress')"
+                    class="flex justify-center"
                 >
-                    <span
-                        class="text-sm font-semibold whitespace-nowrap text-muted-foreground tabular-nums"
-                    >
-                        {{
-                            $t('welcome.step_of', {
-                                step: String(currentIndex + 1),
-                                total: String(steps.length),
-                            })
-                        }}
-                    </span>
                     <ol class="flex items-center gap-1.5">
                         <li
                             v-for="(entry, index) in steps"
                             :key="entry.key"
-                            class="flex h-6 items-center"
                             :title="$t(`welcome.steps.${entry.key}`)"
                             :data-testid="`welcome-step-${entry.key}`"
                             :aria-current="
                                 index === currentIndex ? 'step' : undefined
                             "
-                        >
-                            <span
-                                :class="[
-                                    'h-1.5 w-6 rounded-full transition-colors sm:w-8',
-                                    index <= currentIndex
-                                        ? 'bg-primary'
-                                        : 'bg-foreground/15',
-                                ]"
-                            />
-                        </li>
+                            :aria-label="
+                                $t('welcome.step_of', {
+                                    step: String(index + 1),
+                                    total: String(steps.length),
+                                })
+                            "
+                            :class="[
+                                'size-1.5 rounded-full transition-[background-color] duration-200 ease-out',
+                                index === currentIndex
+                                    ? 'bg-foreground'
+                                    : 'bg-border-strong',
+                            ]"
+                        />
                     </ol>
                 </nav>
-                <span v-else />
+            </Teleport>
+            <span v-else />
 
-                <LocaleSwitcher />
-            </header>
+            <div class="flex items-center justify-end gap-2">
+                <LanguageSelect
+                    :model-value="String(page.props.locale)"
+                    :languages="languages"
+                    :label="$t('settings.preferences.language.heading')"
+                    testid="welcome-language"
+                    trigger-class="bg-card max-sm:px-2 max-sm:[&>span]:sr-only"
+                    @update:model-value="changeLanguage"
+                />
+                <ThemeToggle compact-on-mobile />
+            </div>
+        </header>
 
-            <main
+        <main
+            :class="[
+                'flex flex-1 flex-col px-4 py-12 sm:px-8 lg:px-12',
+                $slots.actions &&
+                    'max-sm:pb-[calc(7rem+env(safe-area-inset-bottom))]',
+            ]"
+        >
+            <div
                 :class="[
-                    'flex flex-1 flex-col px-6 pt-8 pb-8 md:px-10 lg:px-14 lg:pt-10',
-                    summary ? '' : 'items-center',
+                    'mx-auto my-auto flex w-full flex-col items-center gap-8',
+                    maxWidthClass[size],
                 ]"
             >
                 <div
-                    :class="[
-                        'my-auto w-full',
-                        maxWidthClass[size],
-                        alignCenter ? 'mx-auto text-center' : '',
-                    ]"
+                    v-if="title || description"
+                    class="flex flex-col gap-2 text-center"
                 >
                     <div
-                        v-if="title || description"
-                        class="flex flex-col gap-3"
+                        v-if="currentIndex >= 0"
+                        id="welcome-steps-mobile"
+                        class="mb-2 sm:hidden"
+                    />
+                    <h1
+                        v-if="title"
+                        class="motion-auth-reveal mx-auto max-w-xl font-heading text-[28px] leading-9 font-medium text-balance text-foreground sm:text-[32px] sm:leading-10"
                     >
-                        <h1 v-if="title" class="h3 text-foreground">
-                            {{ title }}
-                        </h1>
-                        <p
-                            v-if="description"
-                            :class="[
-                                'text-base text-pretty text-muted-foreground',
-                                alignCenter ? 'mx-auto max-w-xl' : 'max-w-prose',
-                            ]"
-                        >
-                            {{ description }}
-                        </p>
-                    </div>
-
-                    <div class="mt-6 flex flex-col gap-8">
-                        <slot />
-                    </div>
+                        {{ title }}
+                    </h1>
+                    <p
+                        v-if="description"
+                        class="mx-auto max-w-xl text-base text-pretty text-muted-foreground"
+                    >
+                        {{ description }}
+                    </p>
                 </div>
-            </main>
 
-            <footer
-                v-if="$slots.actions || previousStep"
-                class="sticky bottom-0 z-10 mt-auto border-t border-foreground/10 bg-background/90 px-6 py-4 backdrop-blur-sm md:px-10 lg:px-14"
-            >
+                <div class="w-full">
+                    <slot />
+                </div>
+
                 <div
-                    class="flex w-full flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                    v-if="$slots.actions"
+                    class="flex w-full max-w-sm flex-col items-center gap-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-10 max-sm:max-w-none max-sm:border-t max-sm:border-border max-sm:bg-card max-sm:px-4 max-sm:pt-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                    data-testid="welcome-actions"
                 >
-                    <Button
-                        v-if="previousStep"
-                        as-child
-                        variant="outline"
-                        size="lg"
-                        class="w-full sm:w-auto"
-                    >
-                        <Link
-                            :href="previousStep.route"
-                            data-testid="welcome-back"
-                        >
-                            <IconArrowLeft
-                                class="size-4 rtl:rotate-180"
-                                stroke-width="2.25"
-                            />
-                            {{ $t('welcome.back') }}
-                        </Link>
-                    </Button>
-
-                    <div class="sm:ms-auto">
-                        <slot name="actions" />
-                    </div>
+                    <slot name="actions" />
                 </div>
-            </footer>
-
-            <Toast />
-        </div>
-
-        <aside
-            v-if="summary"
-            class="relative hidden overflow-hidden border-s-2 border-foreground bg-accent lg:sticky lg:top-0 lg:flex lg:h-svh lg:flex-col lg:justify-center lg:px-10 xl:px-14"
-        >
-            <div
-                class="pointer-events-none absolute -top-24 -right-24 size-[440px] rounded-full bg-violet-200/50 blur-3xl"
-            />
-            <div
-                class="pointer-events-none absolute -bottom-32 -left-32 size-[440px] rounded-full bg-fuchsia-200/40 blur-3xl"
-            />
-            <div
-                class="pointer-events-none absolute inset-0 opacity-[0.06]"
-                style="
-                    background-image: radial-gradient(
-                        circle,
-                        #0a0a0a 1px,
-                        transparent 1px
-                    );
-                    background-size: 28px 28px;
-                "
-            />
-
-            <div class="relative mx-auto w-full max-w-lg">
-                <WelcomeWorkspacePreview :summary="summary" :step="step" />
             </div>
-        </aside>
+        </main>
+
+        <Toast />
     </div>
 </template>

@@ -6,12 +6,13 @@ namespace App\Services\Social;
 
 use App\Enums\Media\Type as MediaType;
 use App\Enums\SocialAccount\Platform;
+use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\LinkedInPublishException;
 use App\Exceptions\TokenExpiredException;
-use App\Models\PostPlatform;
+use App\Models\Post;
 use App\Models\SocialAccount;
-use App\Services\Brand\SafeHttpFetcher;
+use App\Services\Http\SafeHttpFetcher;
 use App\Services\Media\MediaOptimizer;
 use App\Services\Social\Concerns\HasSocialHttpClient;
 use App\Services\Social\LinkCard\LinkCardFetcher;
@@ -72,15 +73,13 @@ abstract class AbstractLinkedInPublisher
         return $postId ? "https://www.linkedin.com/feed/update/{$postId}" : null;
     }
 
-    public function publish(PostPlatform $postPlatform): array
+    public function publish(Post $post): array
     {
-        $this->validateContentLength($postPlatform);
+        $this->validateContentLength($post);
 
-        $content = $postPlatform->post->content
-            ? app(ContentSanitizer::class)->sanitize($postPlatform->post->content, $postPlatform->platform)
-            : null;
+        $content = app(ContentSanitizer::class)->forPost($post);
 
-        $this->account = $postPlatform->socialAccount;
+        $this->account = $post->socialAccount;
         $this->hasRetried = false;
 
         if ($this->account->needsProactiveTokenRefresh()) {
@@ -90,28 +89,28 @@ abstract class AbstractLinkedInPublisher
         $this->accessToken = $this->account->access_token;
 
         try {
-            return $this->dispatchByMedia($content, $postPlatform);
+            return $this->dispatchByMedia($content, $post);
         } catch (TokenExpiredException $e) {
-            return $this->retryWithRefresh($postPlatform, $content, $e);
+            return $this->retryWithRefresh($post, $content, $e);
         }
     }
 
-    private function dispatchByMedia(?string $content, PostPlatform $postPlatform): array
+    private function dispatchByMedia(?string $content, Post $post): array
     {
-        $media = $postPlatform->post->mediaItems;
+        $media = $post->mediaItems;
 
         if ($media->contains(fn ($item) => $item->isDocument())) {
-            return $this->publishDocument($content, $media, $this->resolveDocumentTitle($postPlatform));
+            return $this->publishDocument($content, $media, $this->resolveDocumentTitle($post));
         }
 
         if ($media->filter(fn ($item) => $item->isImage())->count() >= 2) {
             return $this->publishCarousel($content, $media);
         }
 
-        return $this->publishPost($content, $media);
+        return $this->publishPost($content, $media, $post->attachesLinkPreview());
     }
 
-    private function retryWithRefresh(PostPlatform $postPlatform, ?string $content, TokenExpiredException $originalException): array
+    private function retryWithRefresh(Post $post, ?string $content, TokenExpiredException $originalException): array
     {
         if ($this->hasRetried) {
             throw $originalException;
@@ -123,7 +122,7 @@ abstract class AbstractLinkedInPublisher
             app(ConnectionVerifier::class)->refreshToken($this->account);
             $this->accessToken = $this->account->access_token;
 
-            return $this->dispatchByMedia($content, $postPlatform);
+            return $this->dispatchByMedia($content, $post);
         } catch (Throwable $e) {
             Log::error("{$this->label()} refresh failed during retry", [
                 'account_id' => $this->account->id,
@@ -133,7 +132,7 @@ abstract class AbstractLinkedInPublisher
         }
     }
 
-    private function publishPost(?string $content, $media): array
+    private function publishPost(?string $content, $media, bool $attachArticle): array
     {
         $payload = $this->basePayload($content);
 
@@ -147,7 +146,7 @@ abstract class AbstractLinkedInPublisher
                     'altText' => $item->isImage() ? $item->altTextFor($this->platform()) : null,
                 ], fn ($v) => $v !== null)];
             }
-        } else {
+        } elseif ($attachArticle) {
             $article = $this->articleContent($content);
 
             if ($article !== null) {
@@ -231,17 +230,11 @@ abstract class AbstractLinkedInPublisher
     {
         $maxBytes = MediaType::Image->maxSizeInBytes();
 
-        $response = app(SafeHttpFetcher::class)
-            ->guardedRequest($url, followRedirects: false)
-            ->timeout(self::ARTICLE_THUMB_TIMEOUT_SECONDS)
+        $safeHttp = app(SafeHttpFetcher::class);
+
+        $response = $safeHttp
+            ->limitTransfer($safeHttp->guardedRequest($url, followRedirects: false), $maxBytes, timeoutSeconds: self::ARTICLE_THUMB_TIMEOUT_SECONDS)
             ->sink($tempFile)
-            ->withOptions([
-                'progress' => static function ($total, $downloaded) use ($maxBytes): void {
-                    if ($total > $maxBytes || $downloaded > $maxBytes) {
-                        throw new RuntimeException('og:image exceeds the maximum image size');
-                    }
-                },
-            ])
             ->get($url);
 
         if (! $response->successful()) {
@@ -364,15 +357,15 @@ abstract class AbstractLinkedInPublisher
      * The title shown on a LinkedIn document (PDF carousel) post. Falls back to
      * the uploaded file name, then a generic label, so it's never empty.
      */
-    private function resolveDocumentTitle(PostPlatform $postPlatform): string
+    private function resolveDocumentTitle(Post $post): string
     {
-        $title = data_get($postPlatform->meta, 'document_title');
+        $title = data_get($post->meta, 'document_title');
 
         if (filled($title)) {
             return (string) $title;
         }
 
-        return $postPlatform->post->mediaItems->first(fn ($media) => $media->isDocument())?->original_filename ?? 'Document';
+        return $post->mediaItems->first(fn ($media) => $media->isDocument())?->original_filename ?? 'Document';
     }
 
     private function uploadMedia($mediaItem): ?string
@@ -438,7 +431,7 @@ abstract class AbstractLinkedInPublisher
 
         if ($initResponse->failed()) {
             Log::error("{$this->label()} image init failed", ['body' => $this->redactResponseBody($initResponse->body())]);
-            $this->handleApiError($initResponse);
+            $this->handleMediaApiError($initResponse);
         }
 
         $initData = $initResponse->json();
@@ -472,7 +465,7 @@ abstract class AbstractLinkedInPublisher
 
         if ($uploadResponse->failed()) {
             Log::error("{$this->label()} image upload failed", ['body' => $this->redactResponseBody($uploadResponse->body())]);
-            $this->handleApiError($uploadResponse);
+            $this->handleMediaApiError($uploadResponse);
         }
 
         return $imageUrn;
@@ -507,7 +500,7 @@ abstract class AbstractLinkedInPublisher
 
         if ($initResponse->failed()) {
             Log::error("{$this->label()} video init failed", ['body' => $this->redactResponseBody($initResponse->body())]);
-            $this->handleApiError($initResponse);
+            $this->handleMediaApiError($initResponse);
         }
 
         $initData = $initResponse->json();
@@ -545,7 +538,7 @@ abstract class AbstractLinkedInPublisher
                         'index' => $index,
                         'body' => $this->redactResponseBody($chunkResponse->body()),
                     ]);
-                    $this->handleApiError($chunkResponse);
+                    $this->handleMediaApiError($chunkResponse);
                 }
 
                 $etag = $chunkResponse->header('etag');
@@ -571,7 +564,7 @@ abstract class AbstractLinkedInPublisher
 
         if ($finalizeResponse->failed()) {
             Log::error("{$this->label()} video finalize failed", ['body' => $this->redactResponseBody($finalizeResponse->body())]);
-            $this->handleApiError($finalizeResponse);
+            $this->handleMediaApiError($finalizeResponse);
         }
 
         $this->waitForProcessing('videos', $videoUrn, 'video');
@@ -588,7 +581,7 @@ abstract class AbstractLinkedInPublisher
 
         if ($initResponse->failed()) {
             Log::error("{$this->label()} document init failed", ['body' => $this->redactResponseBody($initResponse->body())]);
-            $this->handleApiError($initResponse);
+            $this->handleMediaApiError($initResponse);
         }
 
         $initData = $initResponse->json();
@@ -622,7 +615,7 @@ abstract class AbstractLinkedInPublisher
 
             if ($uploadResponse->failed()) {
                 Log::error("{$this->label()} document upload failed", ['body' => $this->redactResponseBody($uploadResponse->body())]);
-                $this->handleApiError($uploadResponse);
+                $this->handleMediaApiError($uploadResponse);
             }
         } finally {
             @unlink($tempFile);
@@ -721,6 +714,22 @@ abstract class AbstractLinkedInPublisher
     private function label(): string
     {
         return $this->platform()->label();
+    }
+
+    /**
+     * Media steps run before the post exists, so a LinkedIn 5xx there is
+     * safe to retry; anything else is classified like a post failure.
+     */
+    private function handleMediaApiError(Response $response): never
+    {
+        if ($response->serverError()) {
+            throw new PlatformUnavailableException(
+                "{$this->label()} returned {$response->status()} while uploading media",
+                $response->status(),
+            );
+        }
+
+        $this->handleApiError($response);
     }
 
     private function handleApiError(Response $response): never

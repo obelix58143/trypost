@@ -15,9 +15,13 @@ final class BlueskyLexicon
 
     public const CREATE_RECORD = 'com.atproto.repo.createRecord';
 
+    public const LIST_RECORDS = 'com.atproto.repo.listRecords';
+
     public const UPLOAD_BLOB = 'com.atproto.repo.uploadBlob';
 
     public const CREATE_SESSION = 'com.atproto.server.createSession';
+
+    public const GET_SESSION = 'com.atproto.server.getSession';
 
     public const REFRESH_SESSION = 'com.atproto.server.refreshSession';
 
@@ -30,6 +34,8 @@ final class BlueskyLexicon
     public const FEED_POST = 'app.bsky.feed.post';
 
     public const GET_POSTS = 'app.bsky.feed.getPosts';
+
+    public const GET_POST_THREAD = 'app.bsky.feed.getPostThread';
 
     public const GET_PROFILE = 'app.bsky.actor.getProfile';
 

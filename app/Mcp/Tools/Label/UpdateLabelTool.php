@@ -9,6 +9,7 @@ use App\Http\Resources\Api\LabelResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Models\Workspace;
 use App\Models\WorkspaceLabel;
+use App\Support\Requests\Label\LabelRequestRules;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -23,28 +24,20 @@ class UpdateLabelTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'createPost',
-            'Not authorized to manage labels.',
-        );
+        $workspace = $this->authorizeCurrentWorkspace($request, 'createPost');
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate([
-            'label_id' => ['required', 'string'],
-            'name' => ['required', 'string', 'max:255'],
-            'color' => ['required', 'string', 'max:7', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-        ]);
-
         $label = WorkspaceLabel::where('workspace_id', $workspace->id)
-            ->find(data_get($validated, 'label_id'));
+            ->find(data_get($request->validate(['label_id' => ['required', 'string', 'uuid']]), 'label_id'));
 
         if (! $label) {
             return Response::error('Label not found.');
         }
+
+        $validated = $request->validate(LabelRequestRules::rules());
 
         $label = UpdateLabel::execute($label, $validated);
 
@@ -56,7 +49,7 @@ class UpdateLabelTool extends Tool
         return [
             'label_id' => $schema->string()->required()->description('The label ID.'),
             'name' => $schema->string()->required()->description('The new name.'),
-            'color' => $schema->string()->required()->description('Hex color code (e.g. #FF5733).'),
+            'color' => $schema->string()->required()->description('Hex color as #RRGGBB with the leading # (e.g. #FF5733).'),
         ];
     }
 }

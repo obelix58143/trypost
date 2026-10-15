@@ -5,15 +5,15 @@ declare(strict_types=1);
 use App\Actions\Workspace\PurgeWorkspace;
 use App\Models\Media;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Social\GoogleBusinessDerivativeCleaner;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
-test('purge workspace deletes the workspace and returns media paths', function () {
+test('purge workspace deletes the workspace, its media rows and, after commit, their files', function () {
     Storage::fake();
 
     $owner = User::factory()->create();
@@ -28,12 +28,15 @@ test('purge workspace deletes the workspace and returns media paths', function (
     );
     $path = $media->path;
 
-    $paths = PurgeWorkspace::execute($workspace);
+    DB::transaction(function () use ($workspace, $path): void {
+        PurgeWorkspace::execute($workspace);
 
-    expect($paths)->toBe([$path]);
+        Storage::assertExists($path);
+    });
+
     expect(Workspace::find($workspace->id))->toBeNull();
     expect(Media::find($media->id))->toBeNull();
-    Storage::assertExists($path);
+    Storage::assertMissing($path);
 });
 
 test('purge workspace prunes google business jpegs before the cascade', function () {
@@ -44,17 +47,12 @@ test('purge workspace prunes google business jpegs before the cascade', function
         'account_id' => $owner->account_id,
         'user_id' => $owner->id,
     ]);
-    $post = Post::factory()->create([
+    $post = Post::factory()->forAccount(SocialAccount::factory()->googleBusiness()->create([
         'workspace_id' => $workspace->id,
+    ]))->create([
         'user_id' => $owner->id,
     ]);
-    $target = PostPlatform::factory()->googleBusiness()->create([
-        'post_id' => $post->id,
-        'social_account_id' => SocialAccount::factory()->googleBusiness()->create([
-            'workspace_id' => $workspace->id,
-        ])->id,
-    ]);
-    $path = GoogleBusinessDerivativeCleaner::pathFor($target->id);
+    $path = GoogleBusinessDerivativeCleaner::pathFor($post);
     Storage::put($path, 'image');
 
     PurgeWorkspace::execute($workspace);

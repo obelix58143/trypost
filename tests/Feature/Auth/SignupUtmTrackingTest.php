@@ -29,7 +29,7 @@ test('email registration saves utm parameters from the register page query strin
     $this->post(route('register.store'), [
         'name' => 'UTM User',
         'email' => 'utm@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ])
         ->assertRedirect(route('app.welcome', absolute: false));
@@ -44,7 +44,7 @@ test('email registration without utm parameters saves null utm columns', functio
     $this->post(route('register.store'), [
         'name' => 'No UTM User',
         'email' => 'no-utm@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ])
         ->assertRedirect(route('app.welcome', absolute: false));
@@ -69,7 +69,7 @@ test('email registration ignores non-utm query params', function () {
     $this->post(route('register.store'), [
         'name' => 'Strip Test',
         'email' => 'strip@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -183,7 +183,7 @@ test('invitation registration redirects to the invite page instead of app.welcom
     $this->post(route('register.store'), [
         'name' => 'Invited User',
         'email' => 'invited@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'invite' => $invite->id,
         'locale' => 'en',
     ])
@@ -198,7 +198,7 @@ test('utm values longer than 255 characters are truncated before being stored', 
     $this->post(route('register.store'), [
         'name' => 'Long UTM User',
         'email' => 'long-utm@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 
@@ -211,7 +211,7 @@ test('email registration captures the requesting ip address', function () {
     $this->post(route('register.store'), [
         'name' => 'IP User',
         'email' => 'ip@example.com',
-        'password' => 'Password123!',
+        'password' => strongPassword(),
         'locale' => 'en',
     ]);
 

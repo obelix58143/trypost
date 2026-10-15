@@ -1,37 +1,30 @@
 <script setup lang="ts">
-import { Link, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import {
-    IconAffiliate,
-    IconAlertTriangle,
-    IconCalendar,
-    IconChartBar,
-    IconChevronRight,
-    IconClock,
-    IconFileCheck,
+    IconBulb,
+    IconCalendarEvent,
+    IconTrendingUp,
     IconFileText,
-    IconHash,
-    IconPencil,
-    IconPhoto,
-    IconPlugConnected,
+    IconLayoutGrid,
+    IconPlus,
     IconRepeat,
-    IconSelector,
-    IconTag,
-    IconWebhook,
+    IconUsers,
 } from '@tabler/icons-vue';
 import { trans } from 'laravel-vue-i18n';
 import { computed, ref } from 'vue';
 
-import {
-    create as createPost,
-    index as postsIndex,
-} from '@/actions/App/Http/Controllers/App/PostController';
+import { index as postsIndex } from '@/actions/App/Http/Controllers/App/PostController';
+import AppLogo from '@/components/AppLogo.vue';
+import InviteMemberDialog from '@/components/members/InviteMemberDialog.vue';
+import NavChannels from '@/components/NavChannels.vue';
 import NavMain from '@/components/NavMain.vue';
-import NotificationBell from '@/components/NotificationBell.vue';
-import { Avatar } from '@/components/ui/avatar';
+import SidebarUserMenu from '@/components/SidebarUserMenu.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -39,63 +32,67 @@ import {
     SidebarContent,
     SidebarFooter,
     SidebarHeader,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
-import WorkspaceMenuContent from '@/components/WorkspaceMenuContent.vue';
-import WorkspaceUpgradeDialog from '@/components/workspaces/WorkspaceUpgradeDialog.vue';
-import { useWorkspaceRole } from '@/composables/useWorkspaceRole';
-import { accounts, analytics, calendar } from '@/routes/app';
-import { index as assets } from '@/routes/app/assets';
-import { portal } from '@/routes/app/billing';
-import { index as labels } from '@/routes/app/labels';
-import { index as mcp } from '@/routes/app/mcp';
+import { useConnectChannelDialog } from '@/composables/useConnectChannelDialog';
+import { openPostComposer } from '@/composables/useGlobalPostComposer';
+import { useWorkspaceAbilities } from '@/composables/useWorkspaceAbilities';
+import { insights } from '@/routes/app';
+import { index as ideasIndex, create as createIdea } from '@/routes/app/create/ideas';
 import { index as repurposes } from '@/routes/app/repurposes';
-import { index as signatures } from '@/routes/app/signatures';
-import { index as webhooks } from '@/routes/app/webhooks';
-import type { NavItem, User } from '@/types';
-
-interface Workspace {
-    id: string;
-    name: string;
-    logo_url: string | null;
-}
+import type { NavItem } from '@/types';
+import type { SidebarChannel } from '@/types/channel';
 
 const page = usePage();
-const user = computed(() => page.props.auth.user as User);
-const currentWorkspace = computed<Workspace | null>(
-    () => page.props.auth.currentWorkspace as Workspace | null,
-);
-const workspaces = computed<Workspace[]>(
-    () => page.props.auth.workspaces as Workspace[],
-);
-const subscriptionPastDue = computed<boolean>(() =>
-    Boolean(page.props.auth.subscriptionPastDue),
+const currentWorkspace = computed(
+    () => page.props.auth.currentWorkspace,
 );
 
 const {
     canCreatePost,
     canManageRepurposes,
     canManageAccounts,
-    canManageWebhooks,
-    canCreateWorkspace,
-} = useWorkspaceRole();
-const { isMobile } = useSidebar();
+    canManageTeam,
+} = useWorkspaceAbilities();
+const { open: openConnectDialog } = useConnectChannelDialog();
 
-const workspaceUpgradeDialogOpen = ref(false);
+const inviteMemberDialogOpen = ref(false);
+
+const openInviteMemberDialog = (): void => {
+    inviteMemberDialogOpen.value = true;
+};
+
+const { isMobile, state: sidebarState } = useSidebar();
+
+const scheduledPostsCount = computed(() =>
+    ((page.props.channels as SidebarChannel[] | undefined) ?? []).reduce(
+        (total, channel) => total + channel.scheduled_posts_count,
+        0,
+    ),
+);
 
 const mainNavItems = computed<NavItem[]>(() => [
+    ...(canCreatePost.value
+        ? [
+              {
+                  title: trans('sidebar.create'),
+                  href: ideasIndex.url(),
+                  icon: IconBulb,
+                  activePattern: '/create',
+              },
+          ]
+        : []),
     {
-        title: trans('sidebar.posts.calendar'),
-        href: calendar.url(),
-        icon: IconCalendar,
+        title: trans('sidebar.groups.posts'),
+        href: postsIndex.url(),
+        icon: IconCalendarEvent,
+        count: scheduledPostsCount.value,
+        countTestId: 'sidebar-publish-count',
     },
     {
-        title: trans('sidebar.analytics'),
-        href: analytics.url(),
-        icon: IconChartBar,
+        title: trans('channels.insights'),
+        href: insights.url(),
+        icon: IconTrendingUp,
     },
     ...(canManageRepurposes.value
         ? [
@@ -108,192 +105,143 @@ const mainNavItems = computed<NavItem[]>(() => [
           ]
         : []),
 ]);
-
-const postsNavItems = computed<NavItem[]>(() => [
-    {
-        title: trans('sidebar.posts.all'),
-        href: postsIndex.url(),
-        icon: IconFileText,
-        excludeActive: [
-            postsIndex.url('scheduled'),
-            postsIndex.url('published'),
-            postsIndex.url('draft'),
-        ],
-    },
-    {
-        title: trans('sidebar.posts.scheduled'),
-        href: postsIndex.url('scheduled'),
-        icon: IconClock,
-    },
-    {
-        title: trans('sidebar.posts.posted'),
-        href: postsIndex.url('published'),
-        icon: IconFileCheck,
-    },
-    {
-        title: trans('sidebar.posts.drafts'),
-        href: postsIndex.url('draft'),
-        icon: IconPencil,
-    },
-]);
-
-const workspaceNavItems = computed<NavItem[]>(() => [
-    ...(canManageAccounts.value
-        ? [
-              {
-                  title: trans('sidebar.workspace.connections'),
-                  href: accounts.url(),
-                  icon: IconAffiliate,
-              },
-          ]
-        : []),
-    ...(canCreatePost.value
-        ? [
-              {
-                  title: trans('sidebar.workspace.signatures'),
-                  href: signatures.url(),
-                  icon: IconHash,
-              },
-              {
-                  title: trans('sidebar.workspace.labels'),
-                  href: labels.url(),
-                  icon: IconTag,
-              },
-              {
-                  title: trans('sidebar.workspace.assets'),
-                  href: assets.url(),
-                  icon: IconPhoto,
-              },
-          ]
-        : []),
-    ...(canManageWebhooks.value
-        ? [
-              {
-                  title: trans('sidebar.workspace.webhooks'),
-                  href: webhooks.url(),
-                  icon: IconWebhook,
-              },
-          ]
-        : []),
-    {
-        title: trans('sidebar.workspace.mcp'),
-        href: mcp.url(),
-        icon: IconPlugConnected,
-    },
-]);
 </script>
 
 <template>
-    <Sidebar collapsible="offcanvas">
-        <SidebarHeader>
-            <SidebarMenu>
-                <SidebarMenuItem>
-                    <div class="flex items-center gap-1">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger as-child>
-                                <SidebarMenuButton
-                                    size="lg"
-                                    class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-                                    data-test="sidebar-menu-button"
-                                    data-testid="sidebar-workspace-menu"
-                                >
-                                    <Avatar
-                                        :src="currentWorkspace?.logo_url"
-                                        :name="currentWorkspace?.name ?? '?'"
-                                        class="h-8 w-8 shrink-0 rounded-md border-2 border-foreground"
-                                        fallback-class="bg-violet-100 text-violet-700 font-bold"
-                                    />
-                                    <div
-                                        class="grid min-w-0 flex-1 text-left text-sm leading-tight"
-                                    >
-                                        <span class="truncate font-semibold">
-                                            {{
-                                                currentWorkspace?.name ??
-                                                $t('sidebar.select_workspace')
-                                            }}
-                                        </span>
-                                    </div>
-                                    <component
-                                        :is="
-                                            isMobile
-                                                ? IconSelector
-                                                : IconChevronRight
-                                        "
-                                        class="ml-auto size-4"
-                                    />
-                                </SidebarMenuButton>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                                class="w-(--reka-dropdown-menu-trigger-width) min-w-64"
-                                align="start"
-                                :side="isMobile ? 'bottom' : 'right'"
-                                :side-offset="4"
-                            >
-                                <WorkspaceMenuContent
-                                    :user="user"
-                                    :current-workspace="currentWorkspace"
-                                    :workspaces="workspaces"
-                                    :can-create-workspace="canCreateWorkspace"
-                                    @upgrade-required="
-                                        workspaceUpgradeDialogOpen = true
-                                    "
-                                />
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        <NotificationBell v-if="currentWorkspace" />
-                    </div>
-                </SidebarMenuItem>
-            </SidebarMenu>
+    <Sidebar collapsible="icon">
+        <SidebarHeader
+            class="flex-row items-center justify-between gap-3 px-4 pt-4 pb-0 group-data-[collapsible=icon]:px-2.5"
+        >
+            <Link
+                :href="postsIndex.url()"
+                class="flex h-8 items-center rounded-md px-2 outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:px-1"
+                data-testid="sidebar-logo"
+            >
+                <span class="inline-flex group-data-[collapsible=icon]:hidden">
+                    <AppLogo class="text-[20px]" />
+                </span>
+                <span class="hidden group-data-[collapsible=icon]:inline-flex">
+                    <AppLogo variant="mark" class="text-[21px]" />
+                </span>
+            </Link>
         </SidebarHeader>
 
-        <SidebarContent class="gap-px">
-            <div v-if="currentWorkspace && canCreatePost" class="px-2 py-2">
-                <Link :href="createPost.url()" class="block">
-                    <Button class="w-full">
-                        {{ $t('sidebar.create_post') }}
-                    </Button>
-                </Link>
+        <SidebarContent class="gap-0">
+            <div
+                v-if="currentWorkspace && canCreatePost"
+                class="px-4 pt-4 pb-3 group-data-[collapsible=icon]:px-2.5"
+            >
+                <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                        <Button
+                            class="h-9 w-full justify-center gap-1.5 rounded-full bg-primary-strong font-medium text-primary-strong-foreground hover:bg-primary-text-hover data-[state=open]:bg-primary-text-hover dark:hover:bg-primary dark:data-[state=open]:bg-primary group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:px-0"
+                            :aria-label="$t('sidebar.new')"
+                            data-testid="sidebar-new"
+                        >
+                            <IconPlus
+                                class="hidden size-4 group-data-[collapsible=icon]:block"
+                            />
+                            <span class="group-data-[collapsible=icon]:hidden">{{
+                                $t('sidebar.new')
+                            }}</span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                        class="w-72 p-1.5"
+                        align="start"
+                        :side="
+                            isMobile || sidebarState === 'expanded'
+                                ? 'bottom'
+                                : 'right'
+                        "
+                        :side-offset="4"
+                        data-testid="sidebar-new-menu"
+                    >
+                        <DropdownMenuItem
+                            class="gap-3 p-2"
+                            data-testid="sidebar-new-post"
+                            @select="openPostComposer()"
+                        >
+                            <span
+                                class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-text-hover dark:bg-primary-strong dark:text-primary-strong-foreground"
+                                data-testid="sidebar-new-post-icon"
+                            >
+                                <IconFileText
+                                    class="size-5 text-primary-text-hover dark:text-primary-strong-foreground"
+                                />
+                            </span>
+                            <span class="grid gap-0.5">
+                                <span class="text-sm font-semibold">{{
+                                    $t('sidebar.new_menu.post')
+                                }}</span>
+                                <span
+                                    class="text-xs font-normal text-muted-foreground"
+                                    >{{
+                                        $t('sidebar.new_menu.post_description')
+                                    }}</span
+                                >
+                            </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            class="gap-3 p-2"
+                            data-testid="sidebar-new-idea"
+                            @select="router.visit(createIdea.url())"
+                        >
+                            <span
+                                class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-subtle text-primary-strong dark:text-primary-text"
+                                data-testid="sidebar-new-idea-icon"
+                            >
+                                <IconBulb
+                                    class="size-5 text-primary-strong dark:text-primary-text"
+                                />
+                            </span>
+                            <span class="grid gap-0.5">
+                                <span class="text-sm font-semibold">{{
+                                    $t('sidebar.new_menu.idea')
+                                }}</span>
+                                <span
+                                    class="text-xs font-normal text-muted-foreground"
+                                    >{{
+                                        $t('sidebar.new_menu.idea_description')
+                                    }}</span
+                                >
+                            </span>
+                        </DropdownMenuItem>
+                        <template v-if="canManageAccounts || canManageTeam">
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                v-if="canManageAccounts"
+                                data-testid="sidebar-new-channel"
+                                @select="openConnectDialog()"
+                            >
+                                <IconLayoutGrid
+                                    class="size-4 text-muted-foreground"
+                                />
+                                {{ $t('sidebar.new_menu.channel') }}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                v-if="canManageTeam"
+                                data-testid="sidebar-new-member"
+                                @select="openInviteMemberDialog"
+                            >
+                                <IconUsers class="size-4 text-muted-foreground" />
+                                {{ $t('sidebar.new_menu.member') }}
+                            </DropdownMenuItem>
+                        </template>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
             <NavMain v-if="currentWorkspace" :items="mainNavItems" />
-            <NavMain
-                v-if="currentWorkspace"
-                :items="postsNavItems"
-                :label="$t('sidebar.groups.posts')"
-            />
-            <NavMain
-                v-if="currentWorkspace && workspaceNavItems.length"
-                :items="workspaceNavItems"
-                :label="$t('sidebar.groups.workspace')"
-            />
+            <NavChannels v-if="currentWorkspace" />
         </SidebarContent>
-        <SidebarFooter>
-            <div
-                v-if="subscriptionPastDue"
-                class="mx-1 mb-1 rounded-md border-2 border-destructive bg-destructive/10 p-3"
-            >
-                <div class="flex items-center gap-2 text-destructive">
-                    <IconAlertTriangle class="size-4 shrink-0" />
-                    <span class="text-sm font-semibold">{{
-                        $t('billing.past_due_notice.title')
-                    }}</span>
-                </div>
-                <p class="mt-1 text-xs text-muted-foreground">
-                    {{ $t('billing.past_due_notice.description') }}
-                </p>
-                <Button
-                    as="a"
-                    :href="portal.url()"
-                    variant="destructive"
-                    size="sm"
-                    class="mt-2 w-full"
-                >
-                    {{ $t('billing.past_due_notice.cta') }}
-                </Button>
-            </div>
+        <SidebarFooter class="gap-0 p-0">
+            <SidebarUserMenu />
         </SidebarFooter>
 
-        <WorkspaceUpgradeDialog v-model:open="workspaceUpgradeDialogOpen" />
+        <InviteMemberDialog
+            v-if="canManageTeam"
+            v-model:open="inviteMemberDialogOpen"
+        />
     </Sidebar>
 </template>

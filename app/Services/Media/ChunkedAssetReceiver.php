@@ -5,16 +5,25 @@ declare(strict_types=1);
 namespace App\Services\Media;
 
 use App\Enums\Media\Type as MediaType;
+use App\Models\Media;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\HeicConverter;
 use App\Support\VideoDurationProbe;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 final class ChunkedAssetReceiver
 {
     public function __construct(private readonly ChunkedCloudUploader $cloud) {}
+
+    public static function chunkDirectory(): string
+    {
+        return storage_path('app/private/chunks');
+    }
 
     public function receive(
         Workspace $workspace,
@@ -33,6 +42,32 @@ final class ChunkedAssetReceiver
         return $this->cloud->shouldUseMultipart($fileName)
             ? $this->receiveViaMultipart($workspace, $identifier, $fileName, $chunk, $rangeStart, $rangeEnd, $totalSize, $meta)
             : $this->receiveViaLocalAssemble($workspace, $identifier, $fileName, $chunk, $rangeStart, $rangeEnd, $totalSize, $meta);
+    }
+
+    /**
+     * The assembled bytes must be a type the allow-list accepts, and fit the
+     * cap of the type its name announced and of the type its bytes are, so
+     * neither a renamed file nor a declared size smaller than the bytes sent
+     * gets past the per-type limit.
+     */
+    private static function assertWithinCap(string $fileName, string $mimeType, int $size): void
+    {
+        if (MediaType::fromMime($mimeType) === null && ! HeicConverter::isHeicMime($mimeType) && ! HeicConverter::isSequenceMime($mimeType)) {
+            throw ValidationException::withMessages([
+                'file_name' => __('posts.composer.upload_errors.unsupported_type'),
+            ]);
+        }
+
+        $type = collect([MediaType::fromExtension(MediaType::extensionOf($fileName)), MediaType::classify($mimeType)])
+            ->filter()
+            ->sortBy(fn (MediaType $type): int => $type->maxSizeInBytes())
+            ->first();
+
+        if ($type !== null && $size > $type->maxSizeInBytes()) {
+            throw ValidationException::withMessages([
+                'total_size' => __('posts.composer.upload_errors.too_large', ['size' => $type->maxSizeInMb()]),
+            ]);
+        }
     }
 
     /**
@@ -76,12 +111,14 @@ final class ChunkedAssetReceiver
         $size = (int) data_get($result, 'size');
 
         try {
+            self::assertWithinCap($fileName, $mimeType, $size);
+
             $media = $workspace->addMediaFromStoredPath(
                 $path,
                 $fileName,
                 $mimeType,
                 $size,
-                'assets',
+                Media::COLLECTION_UPLOADS,
                 $this->withStoredVideoDuration($meta, $mimeType, $path, $size),
             );
         } catch (Throwable $exception) {
@@ -131,20 +168,34 @@ final class ChunkedAssetReceiver
         int $totalSize,
         array $meta,
     ): ChunkReceipt {
-        $tempFile = storage_path("app/private/chunks/{$identifier}");
+        $tempFile = self::chunkDirectory()."/{$identifier}";
 
         if (! is_dir(dirname($tempFile))) {
             mkdir(dirname($tempFile), 0755, true);
         }
 
-        file_put_contents($tempFile, $chunk, $rangeStart === 0 ? 0 : FILE_APPEND);
+        $received = is_file($tempFile) ? (int) filesize($tempFile) : 0;
+
+        if (strlen($chunk) !== ($rangeEnd - $rangeStart + 1) || $rangeEnd >= $totalSize || $rangeStart > $received) {
+            throw ValidationException::withMessages([
+                'range_start' => __('posts.composer.upload_errors.server'),
+            ]);
+        }
+
+        if ($rangeStart < $received) {
+            return ChunkReceipt::inProgress((int) round($received / $totalSize * 100));
+        }
+
+        file_put_contents($tempFile, $chunk, FILE_APPEND);
 
         if (($rangeEnd + 1) < $totalSize) {
             return ChunkReceipt::inProgress((int) round(($rangeEnd + 1) / $totalSize * 100));
         }
 
         try {
-            $media = $workspace->addMediaFromPath($tempFile, $fileName, 'assets', $meta);
+            self::assertWithinCap($fileName, (string) File::mimeType($tempFile), (int) filesize($tempFile));
+
+            $media = $workspace->addMediaFromPath($tempFile, $fileName, Media::COLLECTION_UPLOADS, $meta);
         } finally {
             @unlink($tempFile);
         }

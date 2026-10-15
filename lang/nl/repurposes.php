@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'title' => 'Repurpose',
-    'description' => 'Publiceer wat je buiten TryPost post automatisch opnieuw op je andere netwerken.',
     'new' => 'Nieuwe repurpose',
 
     'flow' => [
@@ -13,15 +12,12 @@ return [
     ],
 
     'publish_mode' => [
-
         'title' => 'Publiceren',
 
         'description' => 'Wat er gebeurt als er een nieuw bericht verschijnt.',
-
     ],
 
     'publish_modes' => [
-
         'publish' => 'Automatisch publiceren',
 
         'publish_hint' => 'Elk nieuw bericht wordt ingepland zodra dat gevonden is.',
@@ -29,7 +25,6 @@ return [
         'draft' => 'Als concept aanmaken',
 
         'draft_hint' => 'Elk nieuw bericht wordt hier een concept om na te kijken en te publiceren.',
-
     ],
 
     'formats' => [
@@ -41,8 +36,8 @@ return [
     'source' => [
         'title' => 'Bron',
         'description' => 'TryPost volgt dit account op nieuwe berichten van het formaat hieronder.',
-        'account_label' => 'Account',
         'watch_label' => 'Volgen',
+        'watch_description' => 'Het soort post dat een repost start.',
         'needs_reconnect' => 'Opnieuw verbinden nodig',
     ],
 
@@ -58,8 +53,6 @@ return [
     ],
 
     'table' => [
-        'flow' => 'Stroom',
-        'status' => 'Status',
         'published' => 'Gerepliceerd',
         'last_polled' => 'Laatst gecontroleerd',
     ],
@@ -97,7 +90,6 @@ return [
     ],
 
     'destinations' => [
-        'paused_note' => 'Uitgeschakeld en overgeslagen tot je ze weer aanzet: :accounts',
         'title' => 'Bestemmingen',
         'description' => 'Kies de accounts die het ontvangen. Elk plaatst in het formaat dat jij kiest.',
         'hint' => 'Het bijschrift wordt alleen per netwerk aangepast als het de limiet van dat netwerk overschrijdt.',
@@ -150,9 +142,7 @@ return [
     ],
 
     'menu' => [
-
         'label' => 'Meer acties',
-
     ],
 
     'danger' => [
@@ -175,6 +165,7 @@ return [
         'source_unusable' => 'Verbind het gevolgde account opnieuw voordat je deze automatisering start.',
         'destinations_required' => 'Kies minstens één bestemming voordat je activeert.',
         'destination_needs_video' => 'Dat formaat kan geen video bevatten.',
+        'destination_not_supported' => 'Google Business kan geen bestemming zijn: de berichten ondersteunen geen video.',
         'only_paused_resumes' => 'Alleen een gepauzeerde repurpose kan worden hervat.',
         'only_active_pauses' => 'Alleen een actieve repurpose kan worden gepauzeerd.',
         'only_running_disables' => 'Alleen een lopende repurpose kan worden uitgeschakeld.',

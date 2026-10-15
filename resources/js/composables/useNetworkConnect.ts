@@ -1,36 +1,66 @@
 import { router } from '@inertiajs/vue3';
-import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
-import { toast } from 'vue-sonner';
+import { computed, toValue, type MaybeRefOrGetter } from 'vue';
 
-import { oauthConnectUrl, useOAuthPopup } from '@/composables/useOAuthPopup';
+import { useConnectChannelDialog } from '@/composables/useConnectChannelDialog';
+import { connect as blueskyConnect } from '@/routes/app/social/bluesky';
+import { connect as discordConnect } from '@/routes/app/social/discord';
+import { connect as facebookConnect } from '@/routes/app/social/facebook';
+import { connect as googleBusinessConnect } from '@/routes/app/social/google-business';
+import { connect as instagramConnect } from '@/routes/app/social/instagram';
+import { connect as instagramFacebookConnect } from '@/routes/app/social/instagram-facebook';
+import { connect as linkedinConnect } from '@/routes/app/social/linkedin';
+import { connect as mastodonConnect } from '@/routes/app/social/mastodon';
+import { connect as pinterestConnect } from '@/routes/app/social/pinterest';
+import { connect as threadsConnect } from '@/routes/app/social/threads';
+import { connect as tiktokConnect } from '@/routes/app/social/tiktok';
+import { connect as xConnect } from '@/routes/app/social/x';
+import { connect as youtubeConnect } from '@/routes/app/social/youtube';
 import { Platform } from '@/types/platform';
 import type { AvailablePlatform } from '@/types/social-account';
+
+const CONNECT_ROUTES: Record<
+    string,
+    { url: (options?: { query?: Record<string, string> }) => string }
+> = {
+    [Platform.Bluesky]: blueskyConnect,
+    [Platform.Discord]: discordConnect,
+    [Platform.Facebook]: facebookConnect,
+    [Platform.GoogleBusiness]: googleBusinessConnect,
+    [Platform.Instagram]: instagramConnect,
+    [Platform.InstagramFacebook]: instagramFacebookConnect,
+    [Platform.LinkedIn]: linkedinConnect,
+    [Platform.Mastodon]: mastodonConnect,
+    [Platform.Pinterest]: pinterestConnect,
+    [Platform.Threads]: threadsConnect,
+    [Platform.TikTok]: tiktokConnect,
+    [Platform.X]: xConnect,
+    [Platform.YouTube]: youtubeConnect,
+};
+
+export const connectUrl = (
+    platform: string,
+    reconnectId?: string,
+): string | undefined =>
+    CONNECT_ROUTES[platform]?.url({
+        query: {
+            return_to: window.location.pathname,
+            ...(reconnectId ? { reconnect: reconnectId } : {}),
+        },
+    });
 
 export const useNetworkConnect = (
     platforms: MaybeRefOrGetter<AvailablePlatform[]>,
 ) => {
-    const telegramOpen = ref(false);
-    const telegramReconnectId = ref<string>();
-    const instagramOpen = ref(false);
-
-    const { openOAuthPopup } = useOAuthPopup((result) => {
-        if (result.success) {
-            toast.success(result.message);
-            router.reload();
-            return;
-        }
-
-        toast.error(result.message);
-    });
+    const dialog = useConnectChannelDialog();
 
     const connectEntry = (platform: string): string =>
         platform === Platform.LinkedInPage ? Platform.LinkedIn : platform;
 
     const openConnect = (platform: string, reconnectId?: string) => {
-        const url = oauthConnectUrl(platform, reconnectId);
+        const url = connectUrl(platform, reconnectId);
 
         if (url) {
-            openOAuthPopup(url);
+            router.visit(url);
         }
     };
 
@@ -38,13 +68,12 @@ export const useNetworkConnect = (
         const entry = connectEntry(platform);
 
         if (entry === Platform.Telegram) {
-            telegramReconnectId.value = reconnectId;
-            telegramOpen.value = true;
+            dialog.openAt('telegram', reconnectId);
             return;
         }
 
         if (entry === Platform.Instagram && !reconnectId) {
-            instagramOpen.value = true;
+            dialog.openAt('instagram');
             return;
         }
 
@@ -61,12 +90,5 @@ export const useNetworkConnect = (
             ],
     );
 
-    return {
-        telegramOpen,
-        telegramReconnectId,
-        instagramOpen,
-        instagramMethods,
-        startConnect,
-        openConnect,
-    };
+    return { startConnect, openConnect, instagramMethods };
 };

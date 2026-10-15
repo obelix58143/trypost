@@ -26,7 +26,7 @@ class PauseRepurposeTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace($request, 'manageRepurposes', 'Not authorized to manage repurposes.');
+        $workspace = $this->currentWorkspace($request);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
@@ -37,6 +37,10 @@ class PauseRepurposeTool extends Tool
 
         if (! $repurpose instanceof Repurpose) {
             return $repurpose;
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'update', $repurpose, 'Repurpose not found.')) {
+            return $denied;
         }
 
         try {

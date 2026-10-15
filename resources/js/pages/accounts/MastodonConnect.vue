@@ -1,55 +1,72 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { IconInfoCircle } from '@tabler/icons-vue';
-import { trans } from 'laravel-vue-i18n';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import PopupLayout from '@/layouts/PopupLayout.vue';
+import ConnectLayout from '@/layouts/ConnectLayout.vue';
 import { authorize as authorizeMastodon } from '@/routes/app/social/mastodon';
+
+defineProps<{ backUrl: string }>();
 
 const form = useForm({ instance: 'https://mastodon.social' });
 
-const onSubmit = () => form.post(authorizeMastodon.url());
+const onSubmit = (): void => {
+    form.post(authorizeMastodon.url());
+};
 </script>
 
 <template>
-    <PopupLayout :title="$t('accounts.mastodon.title')">
-        <div class="max-w-md mx-auto">
-            <div class="flex items-center gap-3 mb-6">
-                <img src="/images/accounts/mastodon.png" alt="Mastodon" class="h-10 w-10" />
-                <div>
-                    <h1 class="text-xl font-bold tracking-tight">{{ $t('accounts.mastodon.title') }}</h1>
-                    <p class="text-sm text-muted-foreground">{{ $t('accounts.mastodon.description') }}</p>
-                </div>
+    <ConnectLayout
+        :title="$t('accounts.mastodon.title')"
+        platform="mastodon"
+        :close-url="backUrl"
+    >
+        <div class="flex flex-col gap-6">
+            <div class="flex flex-col gap-2">
+                <h1
+                    class="text-xl leading-tight font-medium text-foreground"
+                    data-testid="connect-title"
+                >
+                    {{ $t('accounts.mastodon.title') }}
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    {{ $t('accounts.mastodon.description') }}
+                </p>
             </div>
 
-            <form @submit.prevent="onSubmit" class="space-y-4">
-                <div class="space-y-2">
+            <form class="flex flex-col gap-4" @submit.prevent="onSubmit">
+                <div class="grid gap-2">
                     <Label for="instance">{{ $t('accounts.mastodon.instance_url') }}</Label>
                     <Input
                         id="instance"
                         v-model="form.instance"
                         type="url"
-                        :placeholder="trans('accounts.mastodon.instance_placeholder')"
-                        :class="{ 'border-destructive': form.errors.instance }"
+                        autofocus
+                        :placeholder="$t('accounts.mastodon.instance_placeholder')"
+                        :aria-invalid="Boolean(form.errors.instance)"
+                        data-testid="mastodon-instance"
                     />
-                    <p v-if="form.errors.instance" class="text-sm text-destructive">
-                        {{ form.errors.instance }}
+                    <InputError :message="form.errors.instance" />
+                    <p class="text-sm text-muted-foreground" data-testid="mastodon-instance-hint">
+                        {{ $t('accounts.mastodon.instance_hint') }}
                     </p>
                 </div>
 
-                <Alert>
-                    <IconInfoCircle class="h-4 w-4" />
-                    <AlertDescription class="inline">{{ $t('accounts.mastodon.instance_hint') }}</AlertDescription>
-                </Alert>
-
-                <Button type="submit" :disabled="form.processing" class="w-full">
-                    {{ form.processing ? $t('accounts.mastodon.submitting') : $t('accounts.mastodon.submit') }}
+                <Button
+                    type="submit"
+                    class="mt-2 w-full"
+                    :disabled="form.processing"
+                    data-testid="mastodon-submit"
+                >
+                    {{
+                        form.processing
+                            ? $t('accounts.mastodon.submitting')
+                            : $t('accounts.mastodon.submit')
+                    }}
                 </Button>
             </form>
         </div>
-    </PopupLayout>
+    </ConnectLayout>
 </template>

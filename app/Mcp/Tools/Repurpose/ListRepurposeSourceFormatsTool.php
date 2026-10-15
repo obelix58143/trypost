@@ -6,6 +6,7 @@ namespace App\Mcp\Tools\Repurpose;
 
 use App\Enums\Repurpose\SourceFormat;
 use App\Mcp\Concerns\AuthorizesMcpTool;
+use App\Models\Repurpose;
 use App\Models\Workspace;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -22,7 +23,7 @@ class ListRepurposeSourceFormatsTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace($request, 'manageRepurposes', 'Not authorized to manage repurposes.');
+        $workspace = $this->authorizeCurrentWorkspace($request, 'viewAny', Repurpose::class);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;

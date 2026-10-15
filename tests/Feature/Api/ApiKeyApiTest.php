@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Models\AccessToken;
 use App\Models\User;
 use App\Models\Workspace;
@@ -30,7 +29,7 @@ test('list api keys', function () {
     );
 
     $response->assertOk();
-    $response->assertJsonCount(3);
+    $response->assertJsonCount(3, 'data');
 });
 
 test('list api keys excludes revoked and other-workspace tokens', function () {
@@ -55,7 +54,7 @@ test('list api keys excludes revoked and other-workspace tokens', function () {
     $this->withHeaders(['Authorization' => 'Bearer '.$result['plain_token']])
         ->getJson(route('api.api-keys.index'))
         ->assertOk()
-        ->assertJsonCount(1)
+        ->assertJsonCount(1, 'data')
         ->assertJsonMissing(['id' => $revoked->id])
         ->assertJsonMissing(['id' => $other->id]);
 });
@@ -67,7 +66,7 @@ test('list api keys excludes workspace-bound mcp oauth grants', function () {
     $this->withHeaders(['Authorization' => 'Bearer '.$result['plain_token']])
         ->getJson(route('api.api-keys.index'))
         ->assertOk()
-        ->assertJsonCount(1)
+        ->assertJsonCount(1, 'data')
         ->assertJsonMissing(['id' => $oauth->id]);
 });
 
@@ -105,7 +104,7 @@ test('create api key returns plain token', function () {
 test('workspace members cannot manage api keys through the api', function () {
     $result = createApiKeyApiToken();
     $member = User::factory()->create(['account_id' => $result['user']->account_id]);
-    $result['workspace']->members()->attach($member->id, ['role' => Role::Member->value]);
+    $result['workspace']->members()->attach($member->id, membershipPivot('member'));
     $member->update(['current_workspace_id' => $result['workspace']->id]);
     $plainToken = passportToken($member, $result['workspace']);
 

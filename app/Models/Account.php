@@ -29,7 +29,6 @@ class Account extends Model
     protected $fillable = [
         'owner_id',
         'name',
-        'billing_email',
         'plan_id',
         'trial_ends_at',
     ];
@@ -185,7 +184,7 @@ class Account extends Model
 
     public function stripeEmail(): string
     {
-        return $this->billing_email ?? $this->owner?->email ?? '';
+        return $this->owner?->email ?? '';
     }
 
     public function stripeName(): string

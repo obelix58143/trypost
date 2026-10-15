@@ -13,8 +13,9 @@ class RevokeMcpOAuthGrants
 {
     /**
      * Revoke MCP OAuth grants only when the user can no longer view any
-     * workspace (full removal). Demotion to Viewer keeps the grant — write
-     * tools enforce createPost via policies, matching the web app.
+     * workspace (full removal). Losing admin access or needing approval keeps
+     * the grant: the tools enforce each ability through the same policies as
+     * the web app.
      *
      * @return bool True when at least one grant was revoked.
      */

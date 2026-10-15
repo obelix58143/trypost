@@ -1,25 +1,19 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
-import { trans } from 'laravel-vue-i18n';
 
 import InputError from '@/components/InputError.vue';
-import { Button } from '@/components/ui/button';
-import WelcomeChoicePill from '@/components/welcome/WelcomeChoicePill.vue';
+import WelcomeChoiceCard from '@/components/welcome/WelcomeChoiceCard.vue';
+import WelcomeContinueButton from '@/components/welcome/WelcomeContinueButton.vue';
 import WelcomeLayout from '@/layouts/WelcomeLayout.vue';
-import { personaMeta, welcomeOptionMeta } from '@/lib/welcomeOptions';
+import { personaArt, welcomeOptionArt } from '@/lib/welcomeOptions';
 import { store } from '@/routes/app/welcome/persona';
-import type { WelcomeSummary } from '@/types';
 
 const props = defineProps<{
     personas: string[];
     selected?: string | null;
-    welcome: WelcomeSummary;
 }>();
 
 const form = useForm({ persona: props.selected ?? '' });
-
-const personaLabel = (value: string): string =>
-    trans(`welcome.personas.${value}`);
 
 const select = (value: string): void => {
     form.persona = value;
@@ -39,15 +33,14 @@ const submit = (): void => {
 
     <WelcomeLayout
         :title="$t('welcome.title')"
-        :description="$t('welcome.description')"
         step="persona"
     >
-        <div class="flex flex-wrap gap-2.5">
-            <WelcomeChoicePill
+        <div class="grid gap-2 sm:grid-cols-2">
+            <WelcomeChoiceCard
                 v-for="persona in personas"
                 :key="persona"
-                :label="personaLabel(persona)"
-                :meta="welcomeOptionMeta(personaMeta, persona)"
+                :label="$t(`welcome.personas.${persona}`)"
+                :art="welcomeOptionArt(personaArt, persona)"
                 :selected="form.persona === persona"
                 :testid="`welcome-persona-${persona}`"
                 @select="select(persona)"
@@ -55,21 +48,12 @@ const submit = (): void => {
         </div>
 
         <template #actions>
-            <div
-                class="flex flex-col gap-2 sm:flex-row-reverse sm:items-center sm:gap-4"
-            >
-                <Button
-                    type="button"
-                    size="lg"
-                    class="w-full sm:w-auto sm:min-w-48"
-                    :disabled="!form.persona || form.processing"
-                    data-testid="welcome-persona-continue"
-                    @click="submit"
-                >
-                    {{ $t('welcome.continue') }}
-                </Button>
-                <InputError :message="form.errors.persona" />
-            </div>
+            <WelcomeContinueButton
+                :disabled="!form.persona || form.processing"
+                testid="welcome-persona-continue"
+                @continue="submit"
+            />
+            <InputError :message="form.errors.persona" />
         </template>
     </WelcomeLayout>
 </template>

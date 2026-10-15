@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Auth;
 
-use App\Enums\UserWorkspace\Role as WorkspaceRole;
 use App\Models\User;
+use App\Support\Auth\OidcWorkspaceAccess;
 
 /**
- * Derives a user's workspace role from the groups their identity provider
+ * Derives a user's workspace access (admin or not) from the groups their identity provider
  * reports, on every sign-in.
  *
  * This is what lets an instance run without a standing local admin account:
@@ -25,14 +25,14 @@ class SyncOidcWorkspaceRole
     {
         $adminGroups = self::configuredAdminGroups();
 
-        // Without an admin group configured, roles stay under whoever manages
+        // Without an admin group configured, access stays under whoever manages
         // them in the application - invites, or an admin changing them by hand.
         if ($adminGroups === []) {
             return;
         }
 
         // Ownership is resolved through account.owner_id and outranks the
-        // workspace role, so demoting an owner here would show "member" in the
+        // workspace flags, so demoting an owner here would show them as a non-admin in the
         // interface while they keep every permission. Leave owners alone rather
         // than display a right they still have as one they lost.
         if ($user->account?->owner_id === $user->id) {
@@ -40,15 +40,11 @@ class SyncOidcWorkspaceRole
         }
 
         $target = array_intersect($groups, $adminGroups) !== []
-            ? WorkspaceRole::Admin
-            : WorkspaceRole::tryFrom((string) config('trypost.oidc_auto_join_role')) ?? WorkspaceRole::Member;
+            ? OidcWorkspaceAccess::admin()
+            : OidcWorkspaceAccess::configuredDefault();
 
         foreach ($user->workspaces as $workspace) {
-            if ($workspace->pivot->role === $target->value) {
-                continue;
-            }
-
-            $workspace->members()->updateExistingPivot($user->id, ['role' => $target->value]);
+            $workspace->members()->updateExistingPivot($user->id, $target);
         }
     }
 

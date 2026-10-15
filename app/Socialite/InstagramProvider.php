@@ -21,7 +21,7 @@ class InstagramProvider extends AbstractProvider implements ProviderInterface
         // enable_fb_login=0 forces the pure Instagram Login flow (without
         // delegating to Facebook OAuth). Tokens issued from the FB-delegated
         // path can't be exchanged via graph.instagram.com/access_token.
-        return 'https://www.instagram.com/oauth/authorize?enable_fb_login=0&'.http_build_query([
+        return config('trypost.platforms.instagram.oauth_url').'/oauth/authorize?enable_fb_login=0&'.http_build_query([
             'client_id' => $this->clientId,
             'redirect_uri' => $this->redirectUrl,
             'response_type' => 'code',
@@ -33,7 +33,7 @@ class InstagramProvider extends AbstractProvider implements ProviderInterface
 
     protected function getTokenUrl(): string
     {
-        return 'https://api.instagram.com/oauth/access_token';
+        return config('trypost.platforms.instagram.oauth_api').'/oauth/access_token';
     }
 
     protected function getUserByToken($token): array
@@ -71,8 +71,12 @@ class InstagramProvider extends AbstractProvider implements ProviderInterface
         ]);
 
         $data = json_decode((string) $response->getBody(), true);
+        $data = data_get($data, 'data.0', $data);
 
-        return $this->exchangeForLongLivedToken($data);
+        return $this->exchangeForLongLivedToken([
+            ...$data,
+            'scope' => implode(',', (array) data_get($data, 'permissions', [])),
+        ]);
     }
 
     protected function exchangeForLongLivedToken(array $data): array

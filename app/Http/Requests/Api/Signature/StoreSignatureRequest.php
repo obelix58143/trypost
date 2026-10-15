@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\Signature;
 
+use App\Support\Requests\Signature\SignatureRequestRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreSignatureRequest extends FormRequest
@@ -18,9 +19,6 @@ class StoreSignatureRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'name' => ['required', 'string', 'max:255'],
-            'content' => ['required', 'string'],
-        ];
+        return SignatureRequestRules::rules();
     }
 }

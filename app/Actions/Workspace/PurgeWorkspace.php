@@ -4,33 +4,26 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspace;
 
-use App\Actions\Media\DeleteWorkspaceMedia;
+use App\Actions\Media\DeleteOwnedMedia;
 use App\Enums\SocialAccount\Platform;
-use App\Models\PostPlatform;
+use App\Models\Post;
 use App\Models\Workspace;
 use App\Support\Social\GoogleBusinessDerivativeCleaner;
 
 class PurgeWorkspace
 {
     /**
-     * Delete workspace media rows and the workspace itself.
-     * Related posts/accounts/labels/etc. cascade via FK.
-     *
-     * Returns media storage paths for DeleteOrphanedMediaFiles after commit.
-     *
-     * @return list<string>
+     * Delete every media row of the workspace (files go after commit) and the
+     * workspace itself. Related posts/accounts/labels/etc. cascade via FK.
      */
-    public static function execute(Workspace $workspace): array
+    public static function execute(Workspace $workspace): void
     {
-        PostPlatform::query()
+        $workspace->posts()
             ->where('platform', Platform::GoogleBusiness)
-            ->whereIn('post_id', $workspace->posts()->select('id'))
-            ->pluck('id')
-            ->each(fn (string $id) => app(GoogleBusinessDerivativeCleaner::class)->cleanup($id));
+            ->select(['id'])
+            ->each(fn (Post $post) => app(GoogleBusinessDerivativeCleaner::class)->cleanup($post));
 
-        $mediaPaths = DeleteWorkspaceMedia::purgeRecords($workspace);
+        DeleteOwnedMedia::forWorkspace($workspace);
         $workspace->delete();
-
-        return $mediaPaths;
     }
 }

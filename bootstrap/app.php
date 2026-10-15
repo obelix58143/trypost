@@ -47,12 +47,14 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->shouldRenderJsonWhen(fn (Request $request, Throwable $e): bool => $request->is('api/*') || $request->expectsJson());
+
         $exceptions->dontReportWhen(function (Throwable $e) {
             return $e instanceof OAuthServerException && $e->getHttpStatusCode() < 500;
         });
 
         $exceptions->renderable(function (TooManyRequestsHttpException $e, Request $request) {
-            if ($request->expectsJson()) {
+            if ($request->is('api/*') || $request->expectsJson()) {
                 $retryAfter = $e->getHeaders()['Retry-After'] ?? null;
                 $message = $retryAfter
                     ? "Rate limit exceeded. Please retry after {$retryAfter} seconds."
@@ -66,7 +68,7 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (DomainException $e, Request $request) {
-            if ($request->expectsJson()) {
+            if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json(['message' => $e->getMessage()], 422);
             }
         });

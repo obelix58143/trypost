@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => 'GitHub에서 이메일을 가져올 수 없습니다. GitHub 이메일을 공개로 설정하거나 이메일 권한을 부여한 후 다시 시도하세요.',
 
     'login' => [
-        'title' => '계정에 로그인',
-        'description' => '로그인하려면 아래에 이메일과 비밀번호를 입력하세요',
-        'description_without_password' => '계속하려면 조직 계정으로 로그인하세요',
+        'title' => 'TryPost에 로그인',
         'page_title' => '로그인',
         'email' => '이메일 주소',
         'password' => '비밀번호',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => '모든 소셜 캘린더를 한 곳에서',
-        'description' => '계정을 만들고 모든 네트워크에 게시물 예약을 시작하세요.',
+        'title' => 'TryPost 계정 만들기',
         'page_title' => '회원가입',
-        'signup_with_email' => '이메일로 가입하기',
         'name' => '이름',
         'name_placeholder' => '전체 이름',
         'email' => '이메일 주소',
@@ -93,6 +89,12 @@ return [
         'submit' => '계정 만들기',
         'has_account' => '이미 계정이 있으신가요?',
         'log_in' => '로그인',
+        'password_requirements' => [
+            'min' => ':count자 이상',
+            'mixed_case' => '대문자와 소문자',
+            'number' => '숫자 1개 이상',
+            'symbol' => '기호 1개 이상',
+        ],
     ],
 
     'forgot_password' => [

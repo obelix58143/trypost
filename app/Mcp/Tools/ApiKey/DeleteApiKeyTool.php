@@ -23,11 +23,7 @@ class DeleteApiKeyTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'manageTeam',
-            'Not authorized to manage API keys.',
-        );
+        $workspace = $this->authorizeCurrentWorkspace($request, 'manageTeam');
 
         if (! $workspace instanceof Workspace) {
             return $workspace;

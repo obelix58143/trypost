@@ -8,7 +8,6 @@ return [
     'back' => '戻る',
 
     'confirm_modal' => [
-        'cannot_be_undone' => 'この操作は取り消せません。',
         'type' => '入力',
         'to_confirm' => 'で確認してください。',
         'copy_to_clipboard' => 'クリップボードにコピー',
@@ -59,11 +58,25 @@ return [
     'cancel' => 'キャンセル',
     'clear' => 'クリア',
     'close' => '閉じる',
+    'more' => 'その他',
+    'play' => '再生',
+    'loading' => '読み込み中...',
     'loading_more' => 'さらに読み込み中...',
 
     'actions' => [
         'copy' => 'コピー',
         'copied' => 'コピーしました',
         'copy_failed' => 'クリップボードへのコピーに失敗しました',
+    ],
+
+    'media_lightbox' => [
+        'title' => 'メディアのプレビュー',
+        'previous' => '前へ',
+        'next' => '次へ',
+        'zoom_in' => '拡大',
+        'zoom_out' => '縮小',
+        'counter' => ':current / :total',
+        'go_to' => '項目 :number を表示',
+        'open' => 'プレビューを開く',
     ],
 ];

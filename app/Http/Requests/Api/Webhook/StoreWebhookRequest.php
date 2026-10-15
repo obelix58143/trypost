@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\Webhook;
 
-use App\Enums\Webhook\EventType;
+use App\Support\Requests\Webhook\WebhookRequestRules;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreWebhookRequest extends FormRequest
 {
@@ -20,10 +19,6 @@ class StoreWebhookRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'endpoint' => ['required', 'url', 'max:255'],
-            'events' => ['required', 'array', 'min:1'],
-            'events.*' => ['string', Rule::enum(EventType::class)],
-        ];
+        return WebhookRequestRules::store();
     }
 }

@@ -46,4 +46,8 @@ dayjs.extend(isBetween);
 const weekStartMonday = ['en', 'uk', 'es', 'pt-br', 'fr', 'de', 'it', 'nl', 'pl', 'el', 'ja', 'ko', 'zh', 'ru', 'tr', 'ar'];
 weekStartMonday.forEach((locale) => dayjs.updateLocale(locale, { weekStart: 1 }));
 
+dayjs.updateLocale('pt-br', {
+    weekdays: ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'],
+});
+
 export default dayjs;

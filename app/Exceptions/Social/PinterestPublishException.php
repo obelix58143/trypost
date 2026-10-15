@@ -24,21 +24,21 @@ class PinterestPublishException extends SocialPublishException
         }
 
         if ($status === 403) {
-            return new static(
+            return (new static(
                 userMessage: 'Not authorized to create pins on this board.',
                 category: ErrorCategory::Permission,
                 platformErrorCode: (string) $status,
                 rawResponse: $rawResponse,
-            );
+            ))->asNetworkRejection();
         }
 
         if ($status === 429) {
-            return new static(
+            return (new static(
                 userMessage: 'Rate limit exceeded. Please try again later.',
                 category: ErrorCategory::RateLimit,
                 platformErrorCode: (string) $status,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response);
         }
 
         // Documented for /pins, /media, and /boards alike (Pinterest's public
@@ -96,12 +96,12 @@ class PinterestPublishException extends SocialPublishException
     public static function fromProcessingStatus(string $status, ?string $rawResponse = null): static
     {
         if ($status === 'failed') {
-            return new static(
+            return (new static(
                 userMessage: 'Media processing failed. Please try a different file.',
                 category: ErrorCategory::MediaFormat,
                 platformErrorCode: null,
                 rawResponse: $rawResponse,
-            );
+            ))->asNetworkRejection();
         }
 
         return new static(

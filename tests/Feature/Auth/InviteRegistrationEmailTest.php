@@ -41,8 +41,8 @@ test('invite registration rejects a different email than the invite', function (
     $this->post(route('register.store'), [
         'name' => 'Invitee',
         'email' => 'other@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
+        'password' => strongPassword(),
+        'password_confirmation' => strongPassword(),
         'invite' => $this->invite->id,
         'locale' => 'en',
     ])->assertSessionHasErrors('email');
@@ -54,8 +54,8 @@ test('invite registration allows the invited email', function () {
     $this->post(route('register.store'), [
         'name' => 'Invitee',
         'email' => 'invitee@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
+        'password' => strongPassword(),
+        'password_confirmation' => strongPassword(),
         'invite' => $this->invite->id,
         'locale' => 'en',
     ])->assertRedirect(route('app.invites.show', $this->invite));

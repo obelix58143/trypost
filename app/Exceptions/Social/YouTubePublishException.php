@@ -4,12 +4,42 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Social;
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\TokenExpiredException;
 use Google\Service\Exception as GoogleServiceException;
 use Illuminate\Http\Client\Response;
 
 class YouTubePublishException extends SocialPublishException
 {
+    /** @var list<string> */
+    private const array SERVER_ERROR_REASONS = ['backendError', 'internalError'];
+
+    /**
+     * The statuses the resumable upload guide says to retry. A 501 or any
+     * other 5xx is permanent, so retrying it only uploads the video again.
+     *
+     * @see https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol
+     *
+     * @var list<int>
+     */
+    private const array RETRYABLE_SERVER_STATUSES = [500, 502, 503, 504];
+
+    /**
+     * Reasons YouTube documents as caused by the user's title, description
+     * or channel limits. Metadata we build or never send (category, tags,
+     * publishAt, recording details, game rating, filename, media body), the
+     * license and privacy values we send, an undescribed `forbidden`,
+     * failedPrecondition and the project quota and rate limits stay reported.
+     *
+     * @var list<string>
+     */
+    private const array USER_REJECTION_REASONS = [
+        'invalidTitle',
+        'invalidDescription',
+        'uploadLimitExceeded',
+        'uploadRateLimitExceeded',
+    ];
+
     public static function fromApiResponse(mixed $response): static
     {
         /** @var Response $response */
@@ -26,17 +56,14 @@ class YouTubePublishException extends SocialPublishException
             );
         }
 
-        [$message, $category] = self::mapReasonToMessageAndCategory(
-            reason: $reason,
-            fallbackMessage: $fallbackMessage,
-        );
+        [$message, $category] = self::mapReasonToMessageAndCategory($reason, self::providerMessage($response, 'error.message'));
 
-        return new static(
+        return (new static(
             userMessage: $message,
             category: $category,
             platformErrorCode: $reason,
             rawResponse: $rawResponse,
-        );
+        ))->withNetworkReset($response)->asNetworkRejectionIf(in_array($reason, self::USER_REJECTION_REASONS, true));
     }
 
     public static function fromGoogleException(GoogleServiceException $e): static
@@ -52,17 +79,31 @@ class YouTubePublishException extends SocialPublishException
             );
         }
 
+        if (self::isServerError($e)) {
+            return new static(
+                userMessage: __('posts.errors.youtube.upload_unconfirmed'),
+                category: ErrorCategory::ServerError,
+                platformErrorCode: $reason ?? (string) $e->getCode(),
+                rawResponse: $e->getMessage(),
+            );
+        }
+
         [$message, $category] = self::mapReasonToMessageAndCategory(
-            reason: $reason,
-            fallbackMessage: $rawMessage,
+            $reason,
+            self::filledMessage(data_get($errors, '0.message')),
         );
 
-        return new static(
+        return (new static(
             userMessage: $message,
             category: $category,
             platformErrorCode: $reason,
             rawResponse: $e->getMessage(),
-        );
+        ))->asNetworkRejectionIf(in_array($reason, self::USER_REJECTION_REASONS, true));
+    }
+
+    public static function isServerError(GoogleServiceException $e): bool
+    {
+        return in_array($e->getCode(), self::RETRYABLE_SERVER_STATUSES, true) || in_array(data_get($e->getErrors(), '0.reason'), self::SERVER_ERROR_REASONS, true);
     }
 
     public function platform(): string
@@ -84,7 +125,7 @@ class YouTubePublishException extends SocialPublishException
     /**
      * @return array{string, ErrorCategory}
      */
-    private static function mapReasonToMessageAndCategory(?string $reason, string $fallbackMessage): array
+    private static function mapReasonToMessageAndCategory(?string $reason, ?string $providerMessage): array
     {
         return match ($reason) {
             'invalidTitle' => ['Video title is invalid or empty.', ErrorCategory::ContentPolicy],
@@ -99,10 +140,12 @@ class YouTubePublishException extends SocialPublishException
             'mediaBodyRequired' => ['Video file is missing from the request.', ErrorCategory::MediaFormat],
             'failedPrecondition' => ['Thumbnail too large or account not verified.', ErrorCategory::MediaFormat],
             'uploadLimitExceeded' => ['Daily upload limit reached. Try again tomorrow.', ErrorCategory::RateLimit],
+            'quotaExceeded' => ['YouTube API quota exceeded. Try again later.', ErrorCategory::RateLimit],
+            'rateLimitExceeded', 'userRateLimitExceeded', 'uploadRateLimitExceeded' => ['YouTube rate limit exceeded. Try again later.', ErrorCategory::RateLimit],
             'forbidden' => ["You don't have permission to upload to this channel.", ErrorCategory::Permission],
             'forbiddenLicenseSetting' => ['Invalid video license setting.', ErrorCategory::Permission],
             'forbiddenPrivacySetting' => ['Invalid video privacy setting.', ErrorCategory::Permission],
-            default => [$fallbackMessage, ErrorCategory::Unknown],
+            default => [$providerMessage ?? __('posts.errors.unrecognized_error', ['platform' => Platform::YouTube->label()]), ErrorCategory::Unknown],
         };
     }
 }

@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 use App\Actions\Billing\StartSubscriptionCheckout;
 use App\Enums\Plan\Slug;
-use App\Enums\SocialAccount\Platform as SocialPlatform;
-use App\Enums\SocialAccount\Status;
 use App\Enums\User\Goal;
 use App\Enums\User\Locale;
 use App\Enums\User\Persona;
 use App\Enums\User\ReferralSource;
-use App\Enums\UserWorkspace\Role;
+use App\Jobs\Analytics\BootstrapAccountAnalytics;
+use App\Jobs\Analytics\CollectAccountDailySnapshot;
 use App\Models\Plan;
-use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
+use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
+    Queue::fake([BootstrapAccountAnalytics::class, CollectAccountDailySnapshot::class]);
+
     config(['trypost.self_hosted' => false]);
 
     $this->user = User::factory()->create([
@@ -29,20 +30,8 @@ beforeEach(function () {
         'account_id' => $this->user->account_id,
         'user_id' => $this->user->id,
     ]);
-    $workspace->members()->attach($this->user->id, ['role' => Role::Admin->value]);
+    $workspace->members()->attach($this->user->id, membershipPivot('admin'));
     $this->user->update(['current_workspace_id' => $workspace->id]);
-
-    SocialAccount::factory()->create([
-        'workspace_id' => $workspace->id,
-        'platform' => SocialPlatform::X,
-        'status' => Status::Connected,
-    ]);
-});
-
-test('connect store sends the user to the plan step instead of Stripe', function () {
-    $this->actingAs($this->user->fresh())
-        ->post(route('app.welcome.connect.store'))
-        ->assertRedirect(route('app.welcome.plan'));
 });
 
 test('the first-month offer copy mirrors the per-month suffix', function () {
@@ -77,12 +66,13 @@ test('the welcome plan step stores a locale change and stays on the page', funct
     expect($this->user->fresh()->locale)->toBe(Locale::PortugueseBrazil);
 });
 
-test('the plan step redirects back to connect when no account is connected', function () {
-    $this->user->fresh()->currentWorkspace->socialAccounts()->delete();
+test('the plan step opens without a connected social account', function () {
+    expect($this->user->fresh()->currentWorkspace->socialAccounts()->exists())->toBeFalse();
 
     $this->actingAs($this->user->fresh())
         ->get(route('app.welcome.plan'))
-        ->assertRedirect(route('app.welcome.connect'));
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('welcome/Plan', false));
 });
 
 test('the plan step rejects an archived plan', function () {

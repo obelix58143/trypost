@@ -1,0 +1,52 @@
+import {
+    IconActivity,
+    IconBookmark,
+    IconChartBar,
+    IconClick,
+    IconClockPlay,
+    IconExternalLink,
+    IconEye,
+    IconMessage,
+    IconMessageReply,
+    IconPercentage,
+    IconPinned,
+    IconQuote,
+    IconRepeat,
+    IconTarget,
+    IconThumbUp,
+    IconTrendingUp,
+    IconUserPlus,
+} from '@tabler/icons-vue';
+
+const METRIC_ICONS: Record<string, typeof IconEye> = {
+    views: IconEye,
+    video_views: IconEye,
+    engaged_views: IconEye,
+    impressions: IconEye,
+    reach: IconTarget,
+    reactions: IconThumbUp,
+    comments: IconMessage,
+    replies: IconMessageReply,
+    shares: IconRepeat,
+    reposts: IconRepeat,
+    quotes: IconQuote,
+    saves: IconBookmark,
+    bookmarks: IconBookmark,
+    engagement_rate: IconActivity,
+    follows: IconTrendingUp,
+    subscribers_gained: IconUserPlus,
+    watch_time_milliseconds: IconClockPlay,
+    average_watch_time_milliseconds: IconClockPlay,
+    total_play_time_milliseconds: IconClockPlay,
+    average_video_play_time_milliseconds: IconClockPlay,
+    average_percentage_viewed: IconPercentage,
+    clicks: IconClick,
+    link_clicks: IconClick,
+    pin_clicks: IconPinned,
+    outbound_clicks: IconExternalLink,
+    save_rate: IconBookmark,
+};
+
+/** The icon shown next to a publication metric; unknown metrics get a chart. */
+export const metricIcon = (key: string): typeof IconEye =>
+    METRIC_ICONS[key] ?? IconChartBar;

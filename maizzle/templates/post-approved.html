@@ -1,0 +1,30 @@
+<x-main>
+  <x-message authenticated="true">
+    <x-heading>
+      @{{ __('mail.post_approved.heading') }}
+    </x-heading>
+
+    <p class="m-0 leading-6">
+      @{{ __('mail.post_approved.body', ['name' => $approverName, 'workspace' => $workspaceName]) }}
+    </p>
+
+    @if($channel)
+      <p class="m-0 mt-4 text-sm font-semibold text-foreground">
+        @{{ __('mail.post_approved.channel') }}
+      </p>
+      <x-channel-card />
+    @endif
+    <p class="m-0 mt-4 text-sm font-semibold text-foreground">
+      @{{ __('mail.post_approved.goes_out') }}
+    </p>
+    <p class="m-0 mt-2 leading-6 text-sm">
+      @{{ $goesOutAt ?? __('mail.post_approved.publishing_now') }}
+    </p>
+
+    <x-spacer height="24px" />
+
+    <x-button href="@{{ $url }}">
+      @{{ __('mail.post_approved.button') }}
+    </x-button>
+  </x-message>
+</x-main>

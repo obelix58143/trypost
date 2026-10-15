@@ -39,7 +39,9 @@ class UpdateRepurpose
                 $locked = $locked->fresh();
 
                 if ($locked->status === Status::Active) {
+                    ActivateRepurpose::assertSourceUsable($locked);
                     ActivateRepurpose::assertHasUsableDestination($locked);
+                    ActivateRepurpose::assertDestinationsCarryRequiredMeta($locked);
                 }
 
                 return $locked;

@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use App\Enums\TikTok\PrivacyLevel;
+use App\Exceptions\PlatformUnavailableException;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Social\TikTokCreatorInfo;
 use Illuminate\Support\Facades\Http;
+use Symfony\Component\HttpFoundation\Response;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
@@ -126,4 +128,38 @@ test('it drops unknown privacy options returned by creator info', function () {
         PrivacyLevel::PublicToEveryone->value,
         PrivacyLevel::SelfOnly->value,
     ]);
+});
+
+test('a refusal tiktok reports with http 200 is read from error.code', function (string $code) {
+    Http::fake([
+        $this->api.'/post/publish/creator_info/query/' => Http::response([
+            'data' => [],
+            'error' => ['code' => $code, 'message' => 'Limit', 'log_id' => 'log123'],
+        ], 200),
+    ]);
+
+    expect(fn () => $this->service->fetchOrFail($this->account))
+        ->toThrow(fn (PlatformUnavailableException $exception) => expect($exception->httpStatus)->toBe(Response::HTTP_TOO_MANY_REQUESTS));
+})->with(['spam_risk_too_many_posts', 'reached_active_user_cap']);
+
+test('a creator banned from posting with http 200 cannot post', function () {
+    Http::fake([
+        $this->api.'/post/publish/creator_info/query/' => Http::response([
+            'data' => [],
+            'error' => ['code' => 'spam_risk_user_banned_from_posting', 'message' => 'Banned', 'log_id' => 'log123'],
+        ], 200),
+    ]);
+
+    expect($this->service->fetchOrFail($this->account)['privacy_level_options'])->toBe([]);
+});
+
+test('an ok error code with data is a successful answer', function () {
+    Http::fake([
+        $this->api.'/post/publish/creator_info/query/' => Http::response([
+            'data' => ['privacy_level_options' => [PrivacyLevel::SelfOnly->value]],
+            'error' => ['code' => 'ok', 'message' => '', 'log_id' => 'log123'],
+        ], 200),
+    ]);
+
+    expect($this->service->fetchOrFail($this->account)['privacy_level_options'])->toBe([PrivacyLevel::SelfOnly->value]);
 });

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\UserWorkspace\Role;
 use App\Mcp\Servers\TryPostServer;
 use App\Mcp\Tools\Label\CreateLabelTool;
 use App\Mcp\Tools\Label\DeleteLabelTool;
@@ -16,7 +15,7 @@ use Illuminate\Testing\Fluent\AssertableJson;
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
 });
 
@@ -28,7 +27,7 @@ test('list labels returns wrapped labels array with LabelResource shape', functi
 
     $response->assertOk()
         ->assertStructuredContent(function (AssertableJson $json) {
-            $json->has('labels', 2, function (AssertableJson $label) {
+            $json->where('current_page', 1)->where('per_page', (int) config('app.pagination.default'))->etc()->has('labels', 2, function (AssertableJson $label) {
                 $label->hasAll(['id', 'name', 'color', 'created_at', 'updated_at'])
                     ->missing('workspace_id');
             });

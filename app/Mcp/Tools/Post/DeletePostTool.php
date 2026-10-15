@@ -16,27 +16,29 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[IsDestructive]
-#[Description('Delete a post permanently. This cannot be undone.')]
+#[Description('Delete a post from TryPost permanently; this cannot be undone. A post is never removed from the network where it was published. Posts that are publishing, published or failed cannot be changed or deleted. A member who needs approval may delete only posts they wrote, or requests they made that are still pending approval.')]
 class DeletePostTool extends Tool
 {
     use AuthorizesMcpTool;
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $validated = $request->validate(['post_id' => ['required', 'string']]);
+        $validated = $request->validate(['post_id' => ['required', 'uuid']]);
 
-        $post = Post::where('workspace_id', $request->user()?->current_workspace_id)
-            ->find(data_get($validated, 'post_id'));
+        $workspace = $request->user()?->currentWorkspace;
+        $post = $workspace
+            ? Post::where('workspace_id', $workspace->id)->find(data_get($validated, 'post_id'))
+            : null;
 
         if (! $post) {
             return Response::error('Post not found.');
         }
 
-        if ($denied = $this->denyUnlessCan($request, 'delete', $post, 'Not authorized to delete this post.')) {
+        if ($denied = $this->denyUnlessCan($request, 'delete', $post, 'Post not found.')) {
             return $denied;
         }
 
-        DeletePost::execute($post);
+        DeletePost::execute($post, respectStatus: true);
 
         return Response::structured(['deleted' => true]);
     }

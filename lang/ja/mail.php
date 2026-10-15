@@ -5,7 +5,7 @@ declare(strict_types=1);
 return [
 
     'layout' => [
-        'tagline' => 'オープンソースの SNS 投稿スケジュールツール',
+        'tagline' => ':brandチームより送信',
         'manage_notifications' => '通知設定',
         'signoff' => 'よろしくお願いいたします。',
         'team' => 'TryPost チーム',
@@ -16,7 +16,7 @@ return [
         'title' => ':platform アカウントの再接続が必要です',
         'preview' => ':workspace の :platform アカウントを再接続すると、投稿の予約を続けられます。',
         'heading' => 'アカウントが切断されました',
-        'intro' => 'ワークスペース <strong>:workspace</strong> から <strong>:platform</strong> アカウント <strong>:account</strong> が切断されました。',
+        'intro' => '以下のアカウントがワークスペース :workspace から切断されました。',
         'reasons_title' => '考えられる原因:',
         'reason_expired' => 'アクセストークンの有効期限が切れた',
         'reason_revoked' => 'TryPost のアクセス権を取り消した',
@@ -34,13 +34,6 @@ return [
         'ignore' => 'アカウントを作成していない場合は、このメールを無視してください。',
     ],
 
-    'mentioned_in_comment' => [
-        'subject' => ':name さんが TryPost であなたにメンションしました',
-        'title' => ':name さんがあなたにメンションしました',
-        'intro' => ':name さんが投稿のコメントであなたにメンションしました。',
-        'button' => 'コメントを表示',
-    ],
-
     'password_reset' => [
         'subject' => 'パスワードを再設定してください',
         'preview' => 'パスワードを再設定してください。',
@@ -55,18 +48,68 @@ return [
         'title' => '投稿が公開できない可能性があります',
         'heading' => '投稿が公開できない可能性があります',
         'intro' => '予約済みの投稿を公開するには、ワークスペース :workspace の次のアカウントを再接続する必要があります。',
-        'posts_label' => '{1} :count 件の予約投稿: :times UTC|[0,*] :count 件の予約投稿: :times UTC',
+        'posts_label' => '{1} :count 件の予約投稿: :times (:timezone)|[0,*] :count 件の予約投稿: :times (:timezone)',
         'reconnect_cta' => '予約投稿を逃さないよう、今すぐこれらのアカウントを再接続してください。',
         'button' => 'アカウントを再接続',
+    ],
+
+    'post_note_added' => [
+        'subject' => ':author さんが投稿にメモを追加しました',
+        'title' => ':author さんからの新しいメモ',
+        'heading' => '投稿への新しいメモ',
+        'body' => ':author さんがワークスペース :workspace の投稿にメモを追加しました。',
+        'post_title' => '投稿',
+        'post_without_text' => 'この投稿にはまだテキストがありません。',
+        'button' => 'メモを見る',
+    ],
+    'post_approval_requested' => [
+        'subject' => ':nameさんが投稿の承認を依頼しました',
+        'title' => '承認が必要な投稿があります',
+        'preview' => ':nameさんが:workspaceで承認を依頼しました。',
+        'heading' => '承認が必要な投稿があります',
+        'body' => ':nameさん（:email）がワークスペース「:workspace」で承認を依頼しました。',
+        'channel' => 'チャンネル',
+        'requested_time' => '希望時刻',
+        'next_queue_slot' => 'キューの次の枠',
+        'as_soon_as_approved' => '承認されしだい',
+        'post_without_text' => 'この投稿にはまだテキストがありません。',
+        'button' => '承認待ちの投稿を見る',
+    ],
+
+    'post_approved' => [
+        'subject' => ':nameさんがあなたの投稿を承認しました',
+        'title' => '投稿が承認されました',
+        'preview' => ':nameさんが:workspaceであなたの投稿を承認しました。',
+        'heading' => '投稿が承認されました',
+        'body' => ':nameさんがワークスペース「:workspace」であなたの投稿を承認しました。',
+        'channel' => 'チャンネル',
+        'goes_out' => '公開予定',
+        'channel_time' => ':channel：:time',
+        'publishing_now' => '今すぐ公開中',
+        'button' => 'キューで見る',
+    ],
+
+    'post_rejected' => [
+        'subject' => ':nameさんがあなたの投稿を承認しませんでした',
+        'title' => '投稿は承認されませんでした',
+        'preview' => ':nameさんがあなたの投稿を下書きに戻しました。',
+        'heading' => '投稿は承認されませんでした',
+        'body' => ':nameさんがワークスペース「:workspace」のあなたの投稿を下書きに戻しました。',
+        'channel' => 'チャンネル',
+        'button' => '下書きで見る',
+    ],
+
+    'post_preview' => [
+        'no_text' => 'テキストのない投稿',
+        'error' => 'エラーの詳細',
     ],
 
     'post_publish_failed' => [
         'subject' => ':workspace で投稿の公開に失敗しました',
         'title' => '投稿の公開に失敗しました',
-        'preview' => '1 つ以上のプラットフォームで公開に失敗しました。',
+        'preview' => '投稿の公開に失敗しました',
         'heading' => '投稿の公開に失敗しました',
-        'body' => 'ワークスペース :workspace の予約投稿が、1 つ以上のプラットフォームで公開に失敗しました。',
-        'platforms_title' => '失敗したプラットフォーム:',
+        'body' => ':workspace の投稿を公開できませんでした。',
         'button' => '投稿を見る',
     ],
 
@@ -76,9 +119,8 @@ return [
         'preview' => '投稿が正常に公開されました。',
         'heading' => '投稿が公開されました',
         'body' => 'ワークスペース :workspace の投稿が正常に公開されました。',
-        'platforms_title' => '公開先:',
-        'view_post' => '投稿を見る',
-        'button' => '投稿を見る',
+        'button' => 'SNSで投稿を見る',
+        'open_in_app' => 'TryPostで開く',
     ],
 
     'webhook_paused' => [
@@ -86,7 +128,8 @@ return [
         'title' => '連続した失敗のためWebhookを一時停止しました',
         'preview' => '配信が5回連続で失敗したため、Webhookを一時停止しました。',
         'heading' => '連続した失敗のためWebhookを一時停止しました',
-        'body' => ':endpoint のWebhookを、配信が5回連続で失敗したため一時停止しました。Endpointを確認し、Webhookの詳細ページから再度有効にしてください。',
+        'body' => '配信が5回連続で失敗したため、Webhookを一時停止しました。',
+        'next_steps' => 'Endpointを確認し、Webhookの詳細ページから再度有効にしてください。',
         'button' => 'Webhookを見る',
     ],
 
@@ -104,12 +147,13 @@ return [
     ],
 
     'workspace_invite' => [
-        'subject' => ':account への招待が届いています',
-        'title' => ':account への招待が届いています',
-        'preview' => ':account への招待が届いています',
+        'subject' => ':workspace への招待が届いています',
+        'title' => ':workspace への招待が届いています',
+        'preview' => ':workspace への招待が届いています',
         'heading' => '招待が届いています',
-        'intro' => 'ワークスペース <strong>:account</strong> での共同作業に招待されました。',
+        'intro' => 'ワークスペース <strong>:workspace</strong> での共同作業に招待されました。',
         'role' => '<strong>:role</strong> として招待されました。',
+        'roles' => ['admin' => '管理者', 'member' => 'メンバー', 'needs_approval' => 'メンバー（投稿は承認が必要）'],
         'button' => '招待を承認',
         'expiry' => 'この招待は 7 日間有効です。',
     ],

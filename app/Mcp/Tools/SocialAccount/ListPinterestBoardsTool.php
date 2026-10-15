@@ -18,32 +18,30 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('List Pinterest boards for a connected Pinterest account. Use the returned board id as platforms[].meta.board_id when creating or updating a Pinterest post (required to publish).')]
+#[Description('List Pinterest boards for a connected Pinterest account. Use the returned board id as meta.board_id (destinations[].meta.board_id in create-posts-tool) when creating or updating a Pinterest post (required to publish).')]
 class ListPinterestBoardsTool extends Tool
 {
     use AuthorizesMcpTool;
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'createPost',
-            'Not authorized to manage posts.',
-        );
+        $workspace = $this->authorizeCurrentWorkspace($request, 'createPost');
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate([
-            'account_id' => ['required', 'string', 'uuid'],
-        ]);
+        $validated = $request->validate(['account_id' => ['required', 'string', 'uuid']]);
 
         $account = SocialAccount::where('workspace_id', $workspace->id)
             ->find(data_get($validated, 'account_id'));
 
         if (! $account) {
             return Response::error('Social account not found.');
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'view', $account, 'Social account not found.')) {
+            return $denied;
         }
 
         if ($account->platform !== Platform::Pinterest) {

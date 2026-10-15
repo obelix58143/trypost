@@ -5,24 +5,23 @@ declare(strict_types=1);
 use App\Enums\Post\Status as PostStatus;
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
-use App\Enums\UserWorkspace\Role;
 use App\Jobs\PublishPost;
 use App\Mcp\Servers\TryPostServer;
 use App\Mcp\Tools\Post\PublishPostTool;
 use App\Mcp\Tools\Post\UpdatePostTool;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceLabel;
+use App\Support\PostStatusRules;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\Fluent\AssertableJson;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
 
     $this->socialAccount = SocialAccount::factory()->create([
@@ -54,29 +53,22 @@ test('update post can change content', function () {
     expect($post->fresh()->content)->toBe('new content');
 });
 
-test('update post enables platforms', function () {
+test('update post cannot turn a channel-less legacy draft into a channel post', function () {
     $post = Post::factory()->create([
         'workspace_id' => $this->workspace->id,
         'user_id' => $this->user->id,
     ]);
 
-    $platform = PostPlatform::factory()->linkedin()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'enabled' => false,
-    ]);
-
     $response = TryPostServer::actingAs($this->user)
         ->tool(UpdatePostTool::class, [
             'post_id' => $post->id,
-            'platforms' => [
-                ['id' => $platform->id, 'content_type' => ContentType::LinkedInPost->value],
-            ],
+            'content_type' => ContentType::LinkedInPost->value,
         ]);
 
-    $response->assertOk();
+    $response->assertHasErrors();
 
-    expect($platform->fresh()->enabled)->toBeTrue();
+    expect($post->fresh()->social_account_id)->toBeNull()
+        ->and($post->fresh()->content_type)->toBeNull();
 });
 
 test('update post can attach labels', function () {
@@ -116,63 +108,49 @@ test('update post rejects posts in any terminal state', function (PostStatus $st
     $response = TryPostServer::actingAs($this->user)
         ->tool(UpdatePostTool::class, ['post_id' => $post->id, 'content' => 'x']);
 
-    $response->assertHasErrors([__('posts.cannot_edit_finalized')]);
+    $response->assertHasErrors([__('posts.flash.cannot_edit_finalized')]);
 })->with([
     PostStatus::Published,
-    PostStatus::PartiallyPublished,
     PostStatus::Failed,
     PostStatus::Publishing,
 ]);
 
-test('update post rejects a platforms[].id that belongs to another post', function () {
-    $myPost = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+test('update post rejects the removed platforms input', function () {
+    $post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'status' => PostStatus::Draft,
-    ]);
-
-    $otherPost = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
-        'user_id' => $this->user->id,
-        'status' => PostStatus::Draft,
-    ]);
-    $foreignPlatform = PostPlatform::factory()->linkedin()->create([
-        'post_id' => $otherPost->id,
-        'social_account_id' => $this->socialAccount->id,
-    ]);
-
-    $response = TryPostServer::actingAs($this->user)
-        ->tool(UpdatePostTool::class, [
-            'post_id' => $myPost->id,
-            'platforms' => [
-                ['id' => $foreignPlatform->id, 'content_type' => ContentType::LinkedInPost->value],
-            ],
-        ]);
-
-    $response->assertHasErrors();
-});
-
-test('update post rejects a content_type that does not match the post_platform', function () {
-    $post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
-        'user_id' => $this->user->id,
-        'status' => PostStatus::Draft,
-    ]);
-    $postPlatform = PostPlatform::factory()->linkedin()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'enabled' => true,
+        'content' => 'Kept',
     ]);
 
     $response = TryPostServer::actingAs($this->user)
         ->tool(UpdatePostTool::class, [
             'post_id' => $post->id,
+            'content' => 'Changed',
             'platforms' => [
-                ['id' => $postPlatform->id, 'content_type' => 'x_post'],
+                ['social_account_id' => $this->socialAccount->id, 'content_type' => ContentType::LinkedInPost->value],
             ],
         ]);
 
     $response->assertHasErrors();
+
+    expect($post->fresh()->content)->toBe('Kept');
+});
+
+test('update post rejects a content_type that does not match the post channel', function () {
+    $post = Post::factory()->forAccount($this->socialAccount)->create([
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Draft,
+    ]);
+
+    $response = TryPostServer::actingAs($this->user)
+        ->tool(UpdatePostTool::class, [
+            'post_id' => $post->id,
+            'content_type' => 'x_post',
+        ]);
+
+    $response->assertHasErrors();
+
+    expect($post->fresh()->content_type)->toBe(ContentType::LinkedInPost);
 });
 
 // PublishPostTool
@@ -181,17 +159,11 @@ test('publish post immediate dispatches PublishPost job', function () {
     Queue::fake();
     $this->freezeTime();
 
-    $post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'status' => PostStatus::Draft,
         'scheduled_at' => null,
-    ]);
-
-    PostPlatform::factory()->linkedin()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'enabled' => true,
+        'content' => 'Ready to publish',
     ]);
 
     $response = TryPostServer::actingAs($this->user)
@@ -203,25 +175,16 @@ test('publish post immediate dispatches PublishPost job', function () {
     expect($post->fresh()->status)->toBe(PostStatus::Publishing)
         ->and($post->fresh()->scheduled_at->toDateTimeString())->toBe(now()->toDateTimeString());
 
-    // Regression: previously UpdatePost::execute disabled every platform when
-    // called without a `platforms` key, leaving the publish job with nothing
-    // to publish. The Arr::has guard keeps the existing toggle state intact.
-    expect(PostPlatform::where('post_id', $post->id)->where('enabled', true)->count())->toBe(1);
+    expect($post->fresh()->social_account_id)->toBe($this->socialAccount->id);
 });
 
 test('publish post scheduled does not dispatch immediately', function () {
     Queue::fake();
 
-    $post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'status' => PostStatus::Draft,
-    ]);
-
-    PostPlatform::factory()->linkedin()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'enabled' => true,
+        'content' => 'Ready to schedule',
     ]);
 
     $response = TryPostServer::actingAs($this->user)
@@ -236,23 +199,17 @@ test('publish post scheduled does not dispatch immediately', function () {
     expect($post->fresh()->status)->toBe(PostStatus::Scheduled);
 });
 
-test('publish post fails when no platforms enabled', function () {
+test('publish post fails for a post without a channel', function () {
     $post = Post::factory()->create([
         'workspace_id' => $this->workspace->id,
         'user_id' => $this->user->id,
         'status' => PostStatus::Draft,
     ]);
 
-    PostPlatform::factory()->linkedin()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'enabled' => false,
-    ]);
-
     $response = TryPostServer::actingAs($this->user)
         ->tool(PublishPostTool::class, ['post_id' => $post->id]);
 
-    $response->assertHasErrors(['Post has no enabled platforms. Use update-post-tool to enable at least one platform first.']);
+    $response->assertHasErrors([__('posts.errors.no_social_account')]);
 });
 
 test('publish post 404 from another workspace', function () {
@@ -266,24 +223,23 @@ test('publish post 404 from another workspace', function () {
 });
 
 test('publish post rejects posts already in a terminal state', function (PostStatus $status) {
-    $post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'status' => $status,
-    ]);
-
-    PostPlatform::factory()->linkedin()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $this->socialAccount->id,
     ]);
 
     $response = TryPostServer::actingAs($this->user)
         ->tool(PublishPostTool::class, ['post_id' => $post->id]);
 
-    $response->assertHasErrors([__('posts.cannot_edit_finalized')]);
+    $response->assertHasErrors([__('posts.flash.cannot_edit_finalized')]);
 })->with([
     PostStatus::Published,
-    PostStatus::PartiallyPublished,
     PostStatus::Failed,
     PostStatus::Publishing,
 ]);
+
+test('the edit blocked message is translated text, not a lang key', function () {
+    expect(PostStatusRules::editBlockedMessage())
+        ->toBe(__('posts.flash.cannot_edit_finalized'))
+        ->not->toBe('posts.flash.cannot_edit_finalized');
+});

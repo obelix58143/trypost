@@ -102,12 +102,11 @@ const changePlan = (planId: string): void => {
             <PlanPicker
                 v-if="plans.length > 0"
                 :plans="plans"
-                :interval="selectedInterval"
+                v-model:interval="selectedInterval"
                 :current-plan-id="authPlan?.id ?? null"
                 :current-interval="currentInterval"
                 :disabled-plan-ids="deniedPlanIds"
                 :processing="planForm.processing"
-                @update:interval="(value) => (selectedInterval = value)"
                 @select="changePlan"
             />
         </DialogContent>

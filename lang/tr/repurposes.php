@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'title' => 'Repurpose',
-    'description' => 'TryPost dışında paylaştıklarını diğer ağlarında otomatik olarak yeniden yayınla.',
     'new' => 'Yeni repurpose',
 
     'flow' => [
@@ -13,15 +12,12 @@ return [
     ],
 
     'publish_mode' => [
-
         'title' => 'Yayınlama',
 
         'description' => 'Yeni bir gönderi göründüğünde ne olur.',
-
     ],
 
     'publish_modes' => [
-
         'publish' => 'Otomatik yayınla',
 
         'publish_hint' => 'Her yeni gönderi bulunduğu anda planlanır.',
@@ -29,7 +25,6 @@ return [
         'draft' => 'Taslak olarak oluştur',
 
         'draft_hint' => 'Her yeni gönderi, gözden geçirip yayınlaman için burada taslak olur.',
-
     ],
 
     'formats' => [
@@ -41,8 +36,8 @@ return [
     'source' => [
         'title' => 'Kaynak',
         'description' => 'TryPost bu hesabı aşağıdaki formattaki yeni gönderiler için izler.',
-        'account_label' => 'Hesap',
         'watch_label' => 'İzle',
+        'watch_description' => 'Repost başlatan gönderi türü.',
         'needs_reconnect' => 'Yeniden bağlanmalı',
     ],
 
@@ -58,8 +53,6 @@ return [
     ],
 
     'table' => [
-        'flow' => 'Akış',
-        'status' => 'Durum',
         'published' => 'Kopyalanan',
         'last_polled' => 'Son kontrol',
     ],
@@ -97,7 +90,6 @@ return [
     ],
 
     'destinations' => [
-        'paused_note' => 'Kapalı ve yeniden açana kadar atlanıyor: :accounts',
         'title' => 'Hedefler',
         'description' => 'Alacak hesapları seç. Her biri senin belirlediğin formatta paylaşır.',
         'hint' => 'Açıklama yalnızca o ağın sınırını aştığında ağa göre uyarlanır.',
@@ -150,9 +142,7 @@ return [
     ],
 
     'menu' => [
-
         'label' => 'Diğer işlemler',
-
     ],
 
     'danger' => [
@@ -175,6 +165,7 @@ return [
         'source_unusable' => 'Bu otomasyonu başlatmadan önce izlenen hesabı yeniden bağlayın.',
         'destinations_required' => 'Etkinleştirmeden önce en az bir hedef seç.',
         'destination_needs_video' => 'Bu format video taşıyamaz.',
+        'destination_not_supported' => 'Google Business hedef olamaz: gönderileri video kabul etmez.',
         'only_paused_resumes' => 'Yalnızca duraklatılmış bir repurpose sürdürülebilir.',
         'only_active_pauses' => 'Yalnızca etkin bir repurpose duraklatılabilir.',
         'only_running_disables' => 'Yalnızca çalışan bir repurpose kapatılabilir.',

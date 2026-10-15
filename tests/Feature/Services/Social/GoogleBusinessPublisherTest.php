@@ -5,10 +5,9 @@ declare(strict_types=1);
 use App\Enums\GoogleBusiness\LocalPostState;
 use App\Enums\GoogleBusiness\TopicType;
 use App\Enums\PostPlatform\ContentType;
-use App\Enums\SocialAccount\Platform;
+use App\Enums\User\Locale;
 use App\Exceptions\Social\GoogleBusinessPublishException;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
@@ -20,7 +19,7 @@ use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
-    $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id, 'content_language' => 'en']);
+    $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
 
     $this->socialAccount = SocialAccount::factory()->googleBusiness()->create([
         'workspace_id' => $this->workspace->id,
@@ -28,19 +27,13 @@ beforeEach(function () {
         'token_expires_at' => now()->addHour(),
     ]);
 
-    $this->post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $this->post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'content' => 'Check out our new arrivals!',
-    ]);
-
-    $this->postPlatform = PostPlatform::factory()->googleBusiness()->create([
-        'post_id' => $this->post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'platform' => Platform::GoogleBusiness,
         'content_type' => ContentType::GoogleBusinessPost,
         'meta' => ['topic_type' => TopicType::Standard->value],
     ]);
+    $this->post->setRelation('socialAccount', $this->socialAccount);
 
     $this->publisher = new GoogleBusinessPublisher;
 });
@@ -49,7 +42,7 @@ test('publish hands Google a JPEG derivative rather than the raw upload', functi
     attachPromoPng($this->post);
     fakeLocalPostCreate(['state' => LocalPostState::Live->value]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(function ($request): bool {
         $sourceUrl = (string) data_get($request->data(), 'media.0.sourceUrl');
@@ -66,10 +59,10 @@ test('publish keeps the jpeg while Google is still reviewing', function (string 
     attachPromoPng($this->post);
     fakeLocalPostCreate(['state' => $googleState]);
 
-    $result = $this->publisher->publish($this->postPlatform->fresh());
+    $result = $this->publisher->publish($this->post->fresh());
 
     expect($result['state'])->toBe($recorded);
-    Storage::assertExists(GoogleBusinessDerivativeCleaner::pathFor($this->postPlatform->id));
+    Storage::assertExists(GoogleBusinessDerivativeCleaner::pathFor($this->post));
 })->with([
     [LocalPostState::Processing->value, LocalPostState::Processing->value],
     [LocalPostState::Scheduled->value, LocalPostState::Scheduled->value],
@@ -81,7 +74,7 @@ test('publish deletes the jpeg once Google is no longer reviewing', function (st
     attachPromoPng($this->post);
     fakeLocalPostCreate(['state' => $state]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     expect(Storage::allFiles(GoogleBusinessDerivativeCleaner::DIRECTORY))->toBe([]);
 })->with([
@@ -98,7 +91,7 @@ test('publish deletes the jpeg when create fails after the derivative is written
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class);
 
     expect(Storage::allFiles(GoogleBusinessDerivativeCleaner::DIRECTORY))->toBe([]);
@@ -110,16 +103,17 @@ test('publish reports the review state Google returned and the real post URL', f
         'searchUrl' => 'https://posts.google.com/999',
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['state'])->toBe(LocalPostState::Live->value)
         ->and($result['url'])->toBe('https://posts.google.com/999');
 });
 
-test('publishes a standard post with the workspace content language', function () {
+test('publishes a standard post with the author locale', function () {
+    $this->user->update(['locale' => Locale::English]);
     fakeLocalPostCreate();
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('accounts/123456789/locations/987654321/localPosts/999');
     expect($result['url'])->toBe('https://business.google.com/dashboard/l/u987654321');
@@ -135,9 +129,9 @@ test('publishes a standard post with the workspace content language', function (
 
 test('an explicitly null topic_type publishes as STANDARD', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update(['meta' => ['topic_type' => null]]);
+    $this->post->update(['meta' => ['topic_type' => null]]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'topicType') === 'STANDARD'
         && ! isset($request['event']));
@@ -147,7 +141,7 @@ test('publish throws when the account has no location', function () {
     Http::fake();
     $this->socialAccount->update(['meta' => []]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class, __('posts.errors.google_business.no_location'));
 
     Http::assertNothingSent();
@@ -157,7 +151,7 @@ test('publish throws when only one of the location resource names is stored', fu
     Http::fake();
     $this->socialAccount->update(['meta' => $meta]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class, __('posts.errors.google_business.no_location'));
 
     Http::assertNothingSent();
@@ -168,38 +162,47 @@ test('publish throws when only one of the location resource names is stored', fu
 
 test('a blank offer title throws with the offer-title message', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'OFFER',
             'event' => ['title' => '', 'start_date' => '2026-09-01', 'end_date' => '2026-09-02'],
         ],
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class, __('posts.form.google_business.offer_title_required'));
 
     Http::assertNothingSent();
 });
 
-test('a chinese workspace sends a regional language code', function () {
-    $this->workspace->update(['content_language' => 'zh']);
+test('a chinese author sends a regional language code', function () {
+    $this->user->update(['locale' => Locale::Chinese]);
     fakeLocalPostCreate();
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'languageCode') === 'zh-CN');
 });
 
+test('a post whose author was deleted falls back to the default language code', function () {
+    $this->post->update(['user_id' => null]);
+    fakeLocalPostCreate();
+
+    $this->publisher->publish($this->post->fresh());
+
+    Http::assertSent(fn ($request) => data_get($request->data(), 'languageCode') === 'en');
+});
+
 test('a blank event title throws instead of publishing an untitled event', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'EVENT',
             'event' => ['title' => '', 'start_date' => '2026-09-01', 'end_date' => '2026-09-02'],
         ],
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class, __('posts.form.google_business.event_title_required'));
 
     Http::assertNothingSent();
@@ -207,14 +210,14 @@ test('a blank event title throws instead of publishing an untitled event', funct
 
 test('a blank event start date throws instead of silently publishing today', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'EVENT',
             'event' => ['title' => 'Grand Opening', 'start_date' => '', 'end_date' => '2026-09-02'],
         ],
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class);
 
     Http::assertNothingSent();
@@ -222,14 +225,14 @@ test('a blank event start date throws instead of silently publishing today', fun
 
 test('a missing event end date throws instead of silently publishing today', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'OFFER',
             'event' => ['title' => 'Summer Sale', 'start_date' => '2026-09-01', 'end_date' => null],
         ],
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform->fresh()))
+    expect(fn () => $this->publisher->publish($this->post->fresh()))
         ->toThrow(GoogleBusinessPublishException::class);
 
     Http::assertNothingSent();
@@ -237,47 +240,47 @@ test('a missing event end date throws instead of silently publishing today', fun
 
 test('includes a call to action when configured', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => ['topic_type' => 'STANDARD', 'call_to_action' => ['action_type' => 'BOOK', 'url' => 'https://example.com/book']],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'callToAction') === ['actionType' => 'BOOK', 'url' => 'https://example.com/book']);
 });
 
 test('call omits the url even when one is stored', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => ['topic_type' => 'STANDARD', 'call_to_action' => ['action_type' => 'CALL', 'url' => 'https://example.com/should-not-go']],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'callToAction') === ['actionType' => 'CALL']);
 });
 
 test('none and deprecated get-offer call to actions are omitted', function (string $action) {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => ['topic_type' => 'STANDARD', 'call_to_action' => ['action_type' => $action, 'url' => 'https://example.com']],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => ! array_key_exists('callToAction', $request->data()));
 })->with(['NONE', 'GET_OFFER']);
 
 test('builds an event payload for EVENT topic type', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'EVENT',
             'event' => ['title' => 'Grand Opening', 'start_date' => '2026-09-01', 'end_date' => '2026-09-02'],
         ],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(function ($request) {
         $event = data_get($request->data(), 'event');
@@ -290,7 +293,7 @@ test('builds an event payload for EVENT topic type', function () {
 
 test('includes event start and end times when they are set', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'EVENT',
             'event' => [
@@ -303,7 +306,7 @@ test('includes event start and end times when they are set', function () {
         ],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(function ($request) {
         $schedule = data_get($request->data(), 'event.schedule');
@@ -315,7 +318,7 @@ test('includes event start and end times when they are set', function () {
 
 test('builds both an event and an offer payload for OFFER topic type', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'OFFER',
             'event' => ['title' => 'Summer Sale', 'start_date' => '2026-09-01', 'end_date' => '2026-09-30'],
@@ -323,7 +326,7 @@ test('builds both an event and an offer payload for OFFER topic type', function 
         ],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(function ($request) {
         return data_get($request->data(), 'topicType') === 'OFFER'
@@ -340,7 +343,7 @@ test('builds both an event and an offer payload for OFFER topic type', function 
 
 test('omits callToAction on OFFER posts because Google ignores it', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'OFFER',
             'event' => ['title' => 'Summer Sale', 'start_date' => '2026-09-01', 'end_date' => '2026-09-30'],
@@ -349,7 +352,7 @@ test('omits callToAction on OFFER posts because Google ignores it', function () 
         ],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'topicType') === 'OFFER'
         && ! array_key_exists('callToAction', $request->data()));
@@ -357,7 +360,7 @@ test('omits callToAction on OFFER posts because Google ignores it', function () 
 
 test('includes offer redeem url and terms when they are set', function () {
     fakeLocalPostCreate();
-    $this->postPlatform->update([
+    $this->post->update([
         'meta' => [
             'topic_type' => 'OFFER',
             'event' => ['title' => 'Summer Sale', 'start_date' => '2026-09-01', 'end_date' => '2026-09-30'],
@@ -369,7 +372,7 @@ test('includes offer redeem url and terms when they are set', function () {
         ],
     ]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'offer') === [
         'couponCode' => 'SUMMER20',
@@ -389,7 +392,7 @@ test('publish skips a gif and does not send it as a photo', function () {
     ]]]);
     fakeLocalPostCreate(['state' => LocalPostState::Live->value]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => ! isset($request->data()['media']));
 });
@@ -404,7 +407,7 @@ test('publish sends the original image url when the jpeg optimizer fails', funct
 
     fakeLocalPostCreate(['state' => LocalPostState::Live->value]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'media.0.sourceUrl') === Storage::url('uploads/promo.png'));
     expect(Storage::allFiles(GoogleBusinessDerivativeCleaner::DIRECTORY))->toBe([]);
@@ -420,7 +423,7 @@ test('publish sends the original url when the upload is not on disk', function (
     ]]]);
     fakeLocalPostCreate(['state' => LocalPostState::Live->value]);
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => data_get($request->data(), 'media.0.sourceUrl') === 'https://cdn.example.com/photo.png');
 });
@@ -437,7 +440,7 @@ test('rejects video media for google business posts', function () {
     ]);
     fakeLocalPostCreate();
 
-    $this->publisher->publish($this->postPlatform->fresh());
+    $this->publisher->publish($this->post->fresh());
 
     Http::assertSent(fn ($request) => ! isset($request['media']) || data_get($request->data(), 'media.0.mediaFormat') !== 'VIDEO');
 });
@@ -449,7 +452,7 @@ test('throws a structured exception on API failure', function () {
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(GoogleBusinessPublishException::class, 'summary too long');
 });
 

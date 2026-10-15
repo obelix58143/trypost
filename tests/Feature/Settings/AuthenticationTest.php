@@ -27,14 +27,32 @@ test('password can be updated', function () {
         ->from(route('app.authentication.edit'))
         ->put(route('app.authentication.update-password'), [
             'current_password' => 'password',
-            'password' => 'new-password',
-            'password_confirmation' => 'new-password',
+            'password' => strongPassword(),
+            'password_confirmation' => strongPassword(),
         ])
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('app.authentication.edit'));
 
-    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+    expect(Hash::check(strongPassword(), $user->refresh()->password))->toBeTrue();
 });
+
+test('password cannot be updated to a weak or compromised password', function (string $password) {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->from(route('app.authentication.edit'))
+        ->put(route('app.authentication.update-password'), [
+            'current_password' => 'password',
+            'password' => $password,
+            'password_confirmation' => $password,
+        ])
+        ->assertSessionHasErrors('password');
+
+    expect(Hash::check('password', $user->refresh()->password))->toBeTrue();
+})->with([
+    'weak' => ['new-password'],
+    'compromised' => [fn (): string => compromisedPassword()],
+]);
 
 test('correct password must be provided to update password', function () {
     $user = User::factory()->create();
@@ -43,8 +61,8 @@ test('correct password must be provided to update password', function () {
         ->from(route('app.authentication.edit'))
         ->put(route('app.authentication.update-password'), [
             'current_password' => 'wrong-password',
-            'password' => 'new-password',
-            'password_confirmation' => 'new-password',
+            'password' => strongPassword(),
+            'password_confirmation' => strongPassword(),
         ])
         ->assertSessionHasErrors('current_password')
         ->assertRedirect(route('app.authentication.edit'));
@@ -62,7 +80,7 @@ test('password must be confirmed', function () {
         ->from(route('app.authentication.edit'))
         ->put(route('app.authentication.update-password'), [
             'current_password' => 'password',
-            'password' => 'new-password',
+            'password' => strongPassword(),
             'password_confirmation' => 'wrong-confirmation',
         ])
         ->assertSessionHasErrors('password');
@@ -74,12 +92,12 @@ test('user without a password can set one without current_password', function ()
     $this->actingAs($user)
         ->from(route('app.authentication.edit'))
         ->put(route('app.authentication.update-password'), [
-            'password' => 'new-password',
-            'password_confirmation' => 'new-password',
+            'password' => strongPassword(),
+            'password_confirmation' => strongPassword(),
         ])
         ->assertSessionHasNoErrors();
 
-    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+    expect(Hash::check(strongPassword(), $user->refresh()->password))->toBeTrue();
 });
 
 test('disconnect provider removes the link', function () {

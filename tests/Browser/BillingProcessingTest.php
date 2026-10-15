@@ -1,0 +1,38 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\Plan;
+use App\Models\User;
+use App\Models\Workspace;
+
+test('once the subscription and plan are ready the processing page sends the user to the schedule', function () {
+    config(['trypost.self_hosted' => false]);
+
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->create([
+        'account_id' => $user->account_id,
+        'user_id' => $user->id,
+    ]);
+    $workspace->members()->attach($user->id, membershipPivot('admin'));
+    $user->update(['current_workspace_id' => $workspace->id]);
+    subscribeAccount($user->account);
+    $user->account->update(['plan_id' => Plan::query()->value('id') ?? Plan::factory()->create()->id]);
+
+    $this->actingAs($user);
+
+    $schedulePath = parse_url(route('app.posts.index'), PHP_URL_PATH);
+
+    $page = visit(route('app.billing.processing'));
+    $page->script(<<<JS
+        (async () => {
+            for (let attempt = 0; attempt < 200; attempt++) {
+                if (window.location.pathname === '{$schedulePath}') return;
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        })();
+    JS);
+
+    $page->assertPathIs($schedulePath)
+        ->assertNoJavaScriptErrors();
+});

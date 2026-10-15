@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Enums\Media\Type as MediaType;
+use App\Models\Media;
 use App\Models\Workspace;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -63,6 +65,36 @@ test('media deletes file from storage when deleted', function () {
     $media->delete();
 
     Storage::assertMissing($path);
+});
+
+test('a media delete rolled back with its transaction keeps the file', function () {
+    $workspace = Workspace::factory()->create();
+    $media = $workspace->addMedia(UploadedFile::fake()->image('logo.jpg', 100, 100), 'logo');
+
+    try {
+        DB::transaction(function () use ($media): void {
+            $media->delete();
+
+            throw new RuntimeException('rolled back');
+        });
+    } catch (RuntimeException) {
+    }
+
+    expect(Media::query()->find($media->id))->not->toBeNull();
+    Storage::assertExists($media->path);
+});
+
+test('a media file another row still uses is kept when one row is deleted', function () {
+    $workspace = Workspace::factory()->create();
+    $media = $workspace->addMedia(UploadedFile::fake()->image('logo.jpg', 100, 100), 'logo');
+    $twin = $media->replicate();
+    $twin->mediable_id = Workspace::factory()->create()->id;
+    $twin->workspace_id = $twin->mediable_id;
+    $twin->save();
+
+    $media->delete();
+
+    Storage::assertExists($media->path);
 });
 
 test('media can get temporary url', function () {

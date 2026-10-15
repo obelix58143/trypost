@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\Post;
 
+use App\Actions\Media\ResolveWorkspaceMedia;
+use App\Actions\Post\AppendPostMedia;
 use App\Dto\MediaItem;
+use App\Exceptions\Post\QueueBusyException;
 use App\Http\Resources\Api\PostResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
-use App\Models\Media;
 use App\Models\Post;
-use App\Models\Workspace;
-use App\Support\PostMediaRules;
+use App\Support\Requests\Post\PostMediaRequestRules;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -18,50 +19,47 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Attach a Media uploaded via request-media-upload-tool to a post. The upload_token is the value returned by request-media-upload-tool; the Media is resolved by that token within the current workspace, then appended to the post. The media type must be accepted by the platforms enabled on the post. Size, video duration, GIF and MOV caps per content_type (see list-content-types-tool) are checked when the post is scheduled or published, not here.')]
+#[Description('Attach a file uploaded with request-media-upload-tool to a post. The upload_token is the value request-media-upload-tool returned; the file is resolved by that token within the current workspace, then appended after the post media (to reorder or remove media, call update-post-tool with the media ids in the new order). The file type must be one the post channel accepts (allowed_media_types in list-content-types-tool). Posts that are publishing, published or failed cannot change; a scheduled post edited by a member who needs approval goes back to pending_approval. Size, video duration, GIF and MOV caps per content_type (see list-content-types-tool) are checked when the post is scheduled or published, not here. Media is added to the post itself; to give a thread reply its own media, pass the upload_token in meta.thread_replies with update-post-tool.')]
 class AttachMediaFromUploadTool extends Tool
 {
     use AuthorizesMcpTool;
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $validated = $request->validate([
-            'post_id' => ['required', 'uuid'],
-            'upload_token' => ['required', 'uuid'],
-            'alt' => ['nullable', 'string', 'max:'.PostMediaRules::ALT_TEXT_MAX_LENGTH],
-        ]);
-
+        $postId = data_get($request->validate(['post_id' => ['required', 'uuid']]), 'post_id');
         $workspaceId = $request->user()?->current_workspace_id;
 
         $post = $workspaceId
-            ? Post::where('workspace_id', $workspaceId)->find(data_get($validated, 'post_id'))
+            ? Post::where('workspace_id', $workspaceId)->find($postId)
             : null;
 
         if (! $post) {
             return Response::error('Post not found.');
         }
 
-        if ($denied = $this->denyUnlessCan($request, 'update', $post, 'Not authorized to update this post.')) {
+        if ($denied = $this->denyUnlessCan($request, 'update', $post, 'Post not found.')) {
             return $denied;
         }
 
-        $media = Media::query()
-            ->where('upload_token', data_get($validated, 'upload_token'))
-            ->where('mediable_type', (new Workspace)->getMorphClass())
-            ->where('mediable_id', $workspaceId)
-            ->first();
+        $validated = $request->validate(PostMediaRequestRules::attachFromUpload());
+
+        $media = ResolveWorkspaceMedia::byUploadTokens($post->workspace, [(string) data_get($validated, 'upload_token')])->first();
 
         if (! $media) {
-            return Response::error('Upload not found.');
+            return Response::error(__('posts.errors.media_expired'));
         }
 
-        if (! in_array($media->type, $post->allowedMediaTypes(), true)) {
-            return Response::error('No enabled platform on this post accepts this media type.');
+        if ($violation = PostMediaRequestRules::typeViolation($post, $media->type)) {
+            return Response::error($violation);
         }
 
-        $post->appendMedia([MediaItem::fromMedia($media, data_get($validated, 'alt'))->toArray()]);
+        try {
+            AppendPostMedia::execute($post, [MediaItem::fromMedia($media, data_get($validated, 'alt'))->toArray()], $request->user());
+        } catch (QueueBusyException) {
+            return Response::error(__('posts.errors.queue_busy'));
+        }
 
-        $post->refresh()->load(['postPlatforms.socialAccount', 'labels']);
+        $post->refresh()->load(['socialAccount', 'labels']);
 
         return Response::structured([
             'post' => (new PostResource($post))->resolve(),
@@ -72,7 +70,7 @@ class AttachMediaFromUploadTool extends Tool
     {
         return [
             'post_id' => $schema->string()->required()->description('UUID of the post to attach the uploaded media to.'),
-            'upload_token' => $schema->string()->required()->description('upload_token returned by RequestMediaUploadTool, after the user has POSTed the file to the upload_url.'),
+            'upload_token' => $schema->string()->required()->description('upload_token returned by request-media-upload-tool, after the file was sent to its upload_url.'),
             'alt' => $schema->string()->description('Optional accessibility alt text for the media (applies to images).'),
         ];
     }

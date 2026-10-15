@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\Social;
 
+use App\Dto\MediaItem;
+use App\Enums\YouTube\License;
+use App\Enums\YouTube\PrivacyStatus;
+use App\Exceptions\PlatformUnavailableException;
 use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\YouTubePublishException;
-use App\Models\PostPlatform;
+use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Services\Social\Concerns\HasSocialHttpClient;
+use App\Support\YouTubeDescription;
+use App\Support\YouTubeMetadata;
 use Google\Client as GoogleClient;
 use Google\Service\Exception;
 use Google\Service\YouTube;
@@ -25,19 +31,29 @@ class YouTubePublisher
 
     private const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
 
-    public function publish(PostPlatform $postPlatform): array
+    public function publish(Post $post): array
     {
-        $this->validateContentLength($postPlatform);
+        $this->validateContentLength($post);
 
-        $content = $postPlatform->post->content ? app(ContentSanitizer::class)->sanitize($postPlatform->post->content, $postPlatform->platform) : null;
+        $metadataViolation = YouTubeMetadata::violation($post->meta);
 
-        $account = $postPlatform->socialAccount;
+        if ($metadataViolation !== null) {
+            throw new YouTubePublishException(
+                userMessage: $metadataViolation[1],
+                category: ErrorCategory::ContentPolicy,
+            );
+        }
+
+        $content = app(ContentSanitizer::class)->forPost($post);
+        $description = $this->resolveDescription($post, $content);
+
+        $account = $post->socialAccount;
 
         if ($account->needsProactiveTokenRefresh()) {
             app(ConnectionVerifier::class)->refreshToken($account);
         }
 
-        $media = $postPlatform->post->mediaItems;
+        $media = $post->mediaItems;
 
         if ($media->isEmpty()) {
             throw new YouTubePublishException(
@@ -55,12 +71,12 @@ class YouTubePublisher
             );
         }
 
-        return $this->publishShort($postPlatform, $firstMedia, $account, $content);
+        return $this->publishShort($firstMedia, $account, $content, $description, $post->meta ?? []);
     }
 
     private function createGoogleClient(SocialAccount $account): GoogleClient
     {
-        $client = new GoogleClient;
+        $client = app(GoogleClient::class);
         $client->setClientId(config('services.google.client_id'));
         $client->setClientSecret(config('services.google.client_secret'));
 
@@ -83,112 +99,42 @@ class YouTubePublisher
         return $client;
     }
 
-    private function publishShort(PostPlatform $postPlatform, $media, SocialAccount $account, ?string $content): array
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function publishShort(MediaItem $media, SocialAccount $account, ?string $content, string $description, array $meta): array
     {
-        if (empty($content)) {
+        $missingTitle = YouTubeMetadata::missingTitleViolation($meta, (string) $content);
+
+        if ($missingTitle !== null) {
             throw new YouTubePublishException(
-                userMessage: 'YouTube Shorts require a title. Please add text to your post.',
+                userMessage: $missingTitle[1],
                 category: ErrorCategory::ContentPolicy,
             );
         }
 
-        $title = $this->buildTitle($content);
-        $description = $content;
-
         $tempFile = tempnam(sys_get_temp_dir(), 'yt_upload_');
-        $handle = null;
+
+        if ($tempFile === false) {
+            throw new YouTubePublishException(
+                userMessage: 'Failed to create temp file for YouTube upload',
+                category: ErrorCategory::ServerError,
+            );
+        }
 
         try {
-            // Download video to temp file (memory-safe)
-            $downloadResponse = Http::withOptions(['sink' => $tempFile])
-                ->timeout(600)
-                ->get($media->url);
-
-            if ($downloadResponse->failed()) {
-                throw new YouTubePublishException(
-                    userMessage: 'Failed to download video for YouTube upload: HTTP '.$downloadResponse->status(),
-                    category: ErrorCategory::ServerError,
-                );
-            }
-
-            $fileSize = filesize($tempFile);
-
-            if ($fileSize === false || $fileSize < 1024) {
-                throw new YouTubePublishException(
-                    userMessage: 'Downloaded video is too small or empty ('.$fileSize.' bytes), aborting upload',
-                    category: ErrorCategory::MediaFormat,
-                );
-            }
-
-            // Set up Google Client with deferred mode for resumable upload
-            $client = $this->createGoogleClient($account);
-            $client->setDefer(true);
-
-            $youtube = new YouTube($client);
-
-            // Build video metadata
-            $snippet = new VideoSnippet;
-            $snippet->setTitle($title);
-            $snippet->setDescription($description);
-            $snippet->setCategoryId('22');
-
-            $status = new VideoStatus;
-            $status->setPrivacyStatus('public');
-            $status->setSelfDeclaredMadeForKids(false);
-
-            $video = new Video;
-            $video->setSnippet($snippet);
-            $video->setStatus($status);
-
-            // Initialize resumable upload request
-            $insertRequest = $youtube->videos->insert('snippet,status', $video);
-
-            $mediaUpload = new Google_Http_MediaFileUpload(
-                $client,
-                $insertRequest,
-                $media->mime_type ?: 'video/mp4',
-                null,
-                true,
-                self::CHUNK_SIZE
-            );
-            $mediaUpload->setFileSize($fileSize);
-
-            // Upload in chunks (memory-safe for large files)
-            $uploadStatus = false;
-            $handle = fopen($tempFile, 'r');
-
-            if ($handle === false) {
-                throw new YouTubePublishException(
-                    userMessage: 'Failed to open temp file for YouTube upload',
-                    category: ErrorCategory::ServerError,
-                );
-            }
-
-            while (! $uploadStatus && ! feof($handle)) {
-                $chunk = fread($handle, self::CHUNK_SIZE);
-                $uploadStatus = $mediaUpload->nextChunk($chunk);
-            }
-
-            fclose($handle);
-            $handle = null;
-
-            $client->setDefer(false);
-
-            if (! $uploadStatus instanceof Video) {
-                throw new YouTubePublishException(
-                    userMessage: 'YouTube upload failed: no video object returned',
-                    category: ErrorCategory::ServerError,
-                );
-            }
-
-            $videoId = $uploadStatus->getId();
+            $this->downloadVideo($media, $tempFile);
+            $video = $this->uploadVideo($media, $account, $tempFile, $this->buildVideo($meta, (string) $content, $description), $this->insertParameters($meta));
+            $videoId = $video->getId();
 
             return [
                 'id' => $videoId,
                 'url' => "https://www.youtube.com/shorts/{$videoId}",
             ];
         } catch (Exception $e) {
-            $this->handleGoogleError($e);
+            throw YouTubePublishException::fromGoogleException($e);
+        } catch (PlatformUnavailableException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('YouTube upload failed', [
                 'error' => $e->getMessage(),
@@ -197,32 +143,148 @@ class YouTubePublisher
 
             throw $e;
         } finally {
-            if ($handle !== null && is_resource($handle)) {
-                fclose($handle);
-            }
-
             @unlink($tempFile);
         }
     }
 
-    private function buildTitle(string $content): string
+    private function downloadVideo(MediaItem $media, string $path): void
     {
-        $maxLength = 100;
-        $shortsTag = ' #Shorts';
-        $availableLength = $maxLength - mb_strlen($shortsTag);
+        $response = Http::withOptions(['sink' => $path])
+            ->timeout(600)
+            ->get($media->url);
 
-        $firstLine = explode("\n", $content)[0];
-        $title = explode('.', $firstLine)[0];
-
-        if (mb_strlen($title) > $availableLength) {
-            $title = mb_substr($title, 0, $availableLength - 3).'...';
+        if ($response->failed()) {
+            throw new YouTubePublishException(
+                userMessage: 'Failed to download video for YouTube upload: HTTP '.$response->status(),
+                category: ErrorCategory::ServerError,
+            );
         }
-
-        return $title.$shortsTag;
     }
 
-    private function handleGoogleError(Exception $e): never
+    /**
+     * @param  array<string, bool>  $insertParameters
+     */
+    private function uploadVideo(MediaItem $media, SocialAccount $account, string $path, Video $video, array $insertParameters): Video
     {
-        throw YouTubePublishException::fromGoogleException($e);
+        $fileSize = filesize($path);
+
+        if ($fileSize === false || $fileSize < 1024) {
+            throw new YouTubePublishException(
+                userMessage: 'Downloaded video is too small or empty ('.$fileSize.' bytes), aborting upload',
+                category: ErrorCategory::MediaFormat,
+            );
+        }
+
+        $client = $this->createGoogleClient($account);
+        $handle = fopen($path, 'r');
+
+        if ($handle === false) {
+            throw new YouTubePublishException(
+                userMessage: 'Failed to open temp file for YouTube upload',
+                category: ErrorCategory::ServerError,
+            );
+        }
+
+        try {
+            $client->setDefer(true);
+            $youtube = new YouTube($client);
+            $mediaUpload = new Google_Http_MediaFileUpload(
+                $client,
+                $youtube->videos->insert('snippet,status', $video, $insertParameters),
+                $media->mime_type ?: 'video/mp4',
+                null,
+                true,
+                self::CHUNK_SIZE
+            );
+            $mediaUpload->setFileSize($fileSize);
+
+            try {
+                $mediaUpload->getResumeUri();
+            } catch (Exception $e) {
+                throw YouTubePublishException::isServerError($e) ? $this->uploadUnavailable($e) : $e;
+            }
+
+            $uploadStatus = false;
+
+            while (! $uploadStatus && ! feof($handle)) {
+                $chunk = fread($handle, self::CHUNK_SIZE);
+                $isFinalChunk = ftell($handle) >= $fileSize;
+
+                try {
+                    $uploadStatus = $mediaUpload->nextChunk($chunk);
+                } catch (Exception $e) {
+                    throw ! $isFinalChunk && YouTubePublishException::isServerError($e) ? $this->uploadUnavailable($e) : $e;
+                }
+            }
+
+            if (! $uploadStatus instanceof Video) {
+                throw new YouTubePublishException(
+                    userMessage: 'YouTube upload failed: no video object returned',
+                    category: ErrorCategory::ServerError,
+                );
+            }
+
+            return $uploadStatus;
+        } finally {
+            fclose($handle);
+            $client->setDefer(false);
+        }
+    }
+
+    private function uploadUnavailable(Exception $e): PlatformUnavailableException
+    {
+        return new PlatformUnavailableException(
+            message: "YouTube returned {$e->getCode()} during upload",
+            httpStatus: $e->getCode() >= 500 ? $e->getCode() : null,
+        );
+    }
+
+    private function resolveDescription(Post $post, ?string $content): string
+    {
+        $description = YouTubeDescription::resolve($post->meta, $content);
+        $violation = YouTubeDescription::violation(data_get($post->meta, 'description'))
+            ?? YouTubeDescription::violation($description);
+
+        if ($violation !== null) {
+            throw new YouTubePublishException(
+                userMessage: __($violation),
+                category: ErrorCategory::ContentPolicy,
+            );
+        }
+
+        return $description;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array<string, bool>
+     */
+    private function insertParameters(array $meta): array
+    {
+        return data_get($meta, 'notify_subscribers', true) ? [] : ['notifySubscribers' => false];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function buildVideo(array $meta, string $content, string $description): Video
+    {
+        $snippet = new VideoSnippet;
+        $snippet->setTitle(YouTubeMetadata::title($meta, $content));
+        $snippet->setDescription($description);
+        $snippet->setCategoryId(YouTubeMetadata::categoryId($meta));
+
+        $status = new VideoStatus;
+        $status->setPrivacyStatus((PrivacyStatus::tryFrom((string) data_get($meta, 'privacy_status')) ?? PrivacyStatus::DEFAULT)->value);
+        $status->setLicense((License::tryFrom((string) data_get($meta, 'license')) ?? License::DEFAULT)->value);
+        $status->setEmbeddable((bool) data_get($meta, 'embeddable', true));
+        $status->setSelfDeclaredMadeForKids((bool) data_get($meta, 'made_for_kids', false));
+        $status->setContainsSyntheticMedia((bool) data_get($meta, 'is_ai_generated', false));
+
+        $video = new Video;
+        $video->setSnippet($snippet);
+        $video->setStatus($status);
+
+        return $video;
     }
 }

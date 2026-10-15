@@ -25,7 +25,7 @@ test('list labels', function () {
     );
 
     $response->assertOk();
-    $response->assertJsonCount(3);
+    $response->assertJsonCount(3, 'data');
 });
 
 test('create label', function () {
@@ -191,7 +191,7 @@ test('list labels returns correct structure', function () {
         ->getJson(route('api.labels.index'))
         ->assertOk()
         ->assertJsonStructure([
-            '*' => ['id', 'name', 'color', 'created_at', 'updated_at'],
+            'data' => ['*' => ['id', 'name', 'color', 'created_at', 'updated_at']],
         ]);
 });
 

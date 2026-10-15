@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'title' => 'Repurpose',
-    'description' => 'Replica automáticamente en tus otras redes lo que publicas fuera de TryPost.',
     'new' => 'Nuevo repurpose',
 
     'flow' => [
@@ -13,15 +12,12 @@ return [
     ],
 
     'publish_mode' => [
-
         'title' => 'Publicación',
 
         'description' => 'Qué ocurre cuando aparece una publicación nueva.',
-
     ],
 
     'publish_modes' => [
-
         'publish' => 'Publicar automáticamente',
 
         'publish_hint' => 'Cada publicación nueva se programa en cuanto se encuentra.',
@@ -29,7 +25,6 @@ return [
         'draft' => 'Crear como borrador',
 
         'draft_hint' => 'Cada publicación nueva se convierte en un borrador para que lo revises y publiques.',
-
     ],
 
     'formats' => [
@@ -41,8 +36,8 @@ return [
     'source' => [
         'title' => 'Origen',
         'description' => 'TryPost vigila esta cuenta en busca de publicaciones nuevas del formato de abajo.',
-        'account_label' => 'Cuenta',
         'watch_label' => 'Vigilar',
+        'watch_description' => 'El tipo de publicación que inicia un repost.',
         'needs_reconnect' => 'Necesita reconectarse',
     ],
 
@@ -58,8 +53,6 @@ return [
     ],
 
     'table' => [
-        'flow' => 'Flujo',
-        'status' => 'Estado',
         'published' => 'Replicados',
         'last_polled' => 'Última comprobación',
     ],
@@ -97,7 +90,6 @@ return [
     ],
 
     'destinations' => [
-        'paused_note' => 'Desactivadas y omitidas hasta que las reactives: :accounts',
         'title' => 'Destinos',
         'description' => 'Elige las cuentas que lo recibirán. Cada una publica en el formato que elijas.',
         'hint' => 'El texto solo se adapta por red cuando supera el límite de esa red.',
@@ -150,9 +142,7 @@ return [
     ],
 
     'menu' => [
-
         'label' => 'Más acciones',
-
     ],
 
     'danger' => [
@@ -175,6 +165,7 @@ return [
         'source_unusable' => 'Vuelve a conectar la cuenta que observa esta automatización antes de iniciarla.',
         'destinations_required' => 'Elige al menos un destino antes de activar.',
         'destination_needs_video' => 'Ese formato no admite vídeo.',
+        'destination_not_supported' => 'Google Business no puede ser destino: sus publicaciones no admiten vídeo.',
         'only_paused_resumes' => 'Solo se puede reanudar un repurpose en pausa.',
         'only_active_pauses' => 'Solo se puede pausar un repurpose activo.',
         'only_running_disables' => 'Solo se puede desactivar un repurpose en marcha.',

@@ -4,22 +4,20 @@ declare(strict_types=1);
 
 use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
-use App\Enums\UserWorkspace\Role;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Social\PendingConnection;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
 beforeEach(function () {
-    Http::preventStrayRequests();
-
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
 });
 
 test('facebook authorize url reopens the page selection', function () {
@@ -48,13 +46,11 @@ test('facebook connect redirects to oauth provider', function () {
 
     $response->assertRedirect('https://www.facebook.com/v25.0/dialog/oauth?test=1');
 
-    expect(session('social_connect_workspace'))->toBe($this->workspace->id);
+    expect(PendingConnection::current()?->workspaceId())->toBe($this->workspace->id);
 });
 
 test('facebook oauth callback creates account with single page', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -85,9 +81,9 @@ test('facebook oauth callback creates account with single page', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->component('accounts/PopupCallback'));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     $this->assertDatabaseHas('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -100,9 +96,7 @@ test('facebook oauth callback creates account with single page', function () {
 });
 
 test('facebook callback redirects to page selection when multiple pages', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -140,14 +134,21 @@ test('facebook callback redirects to page selection when multiple pages', functi
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertRedirect(route('app.social.facebook.select-page'));
-    expect(session('facebook_oauth'))->not->toBeNull();
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    expect(PendingConnection::current()->identityKeys())->toBe(['facebook:page_1', 'facebook:page_2']);
+
+    assertFinishedOnChannel(finishSocialConnect(Platform::Facebook, ['facebook:page_2']));
+
+    $account = $this->workspace->socialAccounts()->sole();
+
+    expect($account->platform_user_id)->toBe('page_2')
+        ->and($account->username)->toBe('page2')
+        ->and($account->access_token)->toBe('token-2')
+        ->and(data_get($account->meta, 'user_token'))->toBe('test-user-token');
 });
 
 test('facebook callback fails when no pages found', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -170,15 +171,13 @@ test('facebook callback fails when no pages found', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'No Facebook Pages found. You need to be an admin of at least one page.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    expect(socialConnectFailure())->toBe('no_facebook_pages');
 });
 
 test('facebook callback fails with error connecting when the first accounts request fails', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -199,19 +198,14 @@ test('facebook callback fails with error connecting when the first accounts requ
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page
-        ->where('success', false)
-        ->where('message', __('accounts.popup_callback.error_connecting'))
-    );
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    expect(socialConnectFailure())->toBe('error_connecting');
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(0);
 });
 
 test('facebook callback follows accounts pagination and shows picker for pages across pages', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -258,18 +252,16 @@ test('facebook callback follows accounts pagination and shows picker for pages a
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertRedirect(route('app.social.facebook.select-page'));
-    expect(session('facebook_oauth.pages'))->toHaveCount(2)
-        ->and(data_get(session('facebook_oauth.pages'), '0.id'))->toBe('page_1')
-        ->and(data_get(session('facebook_oauth.pages'), '1.id'))->toBe('page_2');
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    expect(PendingConnection::current()->identities())->toHaveCount(2)
+        ->and(data_get(PendingConnection::current()->identities(), '0.platform_user_id'))->toBe('page_1')
+        ->and(data_get(PendingConnection::current()->identities(), '1.platform_user_id'))->toBe('page_2');
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/me/accounts'));
 });
 
 test('facebook callback connects authorized page when first accounts page is empty', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -308,8 +300,8 @@ test('facebook callback connects authorized page when first accounts page is emp
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     $this->assertDatabaseHas('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -320,9 +312,7 @@ test('facebook callback connects authorized page when first accounts page is emp
 });
 
 test('facebook callback fails without connecting when accounts pagination is incomplete', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -359,9 +349,9 @@ test('facebook callback fails without connecting when accounts pagination is inc
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', __('accounts.popup_callback.error_connecting')));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    expect(socialConnectFailure())->toBe('error_connecting');
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(0);
 });
@@ -371,21 +361,18 @@ test('facebook callback fails with expired session', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    expect(socialConnectFailure())->toBeNull();
 });
 
 test('user can connect multiple facebook accounts', function () {
-
     SocialAccount::factory()->facebook()->create([
         'workspace_id' => $this->workspace->id,
         'platform_user_id' => 'page_existing',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_456');
@@ -415,16 +402,14 @@ test('user can connect multiple facebook accounts', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(2);
 });
 
 test('facebook callback handles oauth errors gracefully', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $mock = Mockery::mock();
     $mock->shouldReceive('user')->andThrow(new Exception('OAuth error'));
@@ -435,110 +420,41 @@ test('facebook callback handles oauth errors gracefully', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    expect(socialConnectFailure())->toBe('error_connecting');
 });
 
-test('facebook page selection creates account', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'facebook_oauth' => [
-            'user_token' => 'test-user-token',
-            'user_id' => 'facebook_user_123',
-            'pages' => [
-                [
-                    'id' => 'page_123',
-                    'name' => 'My Facebook Page',
-                    'username' => 'myfbpage',
-                    'picture' => null,
-                    'access_token' => 'page-access-token',
-                ],
-                [
-                    'id' => 'page_456',
-                    'name' => 'Other Page',
-                    'username' => 'otherpage',
-                    'picture' => null,
-                    'access_token' => 'other-page-token',
-                ],
-            ],
-        ],
-    ]);
+test('facebook confirmation page without a pending connection says it expired', function () {
+    $this->actingAs($this->user)
+        ->get(route('app.social.connect.show', Platform::Facebook))
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('state', 'expired')->where('identities', []));
+});
 
-    $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
-        'page_id' => 'page_123',
-    ]);
+test('facebook finish without a pending connection connects nothing', function () {
+    $this->actingAs($this->user)
+        ->post(route('app.social.connect.finish', Platform::Facebook), ['identities' => ['facebook:page_123']])
+        ->assertSessionHasErrors('identities.0');
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page
-        ->component('accounts/PopupCallback')
-        ->where('success', true)
-    );
+    $this->assertDatabaseCount('social_accounts', 0);
+});
 
-    $this->assertDatabaseHas('social_accounts', [
-        'workspace_id' => $this->workspace->id,
-        'platform' => Platform::Facebook->value,
-        'platform_user_id' => 'page_123',
-        'username' => 'myfbpage',
+test('facebook finish refuses a page id the login did not offer', function () {
+    startSocialConnect($this->workspace, Platform::Facebook)->offer([
+        PendingConnection::identity(Platform::Facebook, 'page_123', 'My Facebook Page', 'mypage', null, 'page', [
+            'username' => 'mypage',
+            'display_name' => 'My Facebook Page',
+            'access_token' => 'page-access-token',
+            'scopes' => ['pages_manage_posts'],
+            'meta' => ['page_id' => 'page_123', 'user_id' => 'facebook_user_123', 'user_token' => 'test-user-token'],
+        ]),
     ]);
 
     $this->actingAs($this->user)
-        ->get(route('app.social.facebook.select-page'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->component('accounts/PopupCallback')
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.session_expired'))
-        );
-});
+        ->post(route('app.social.connect.finish', Platform::Facebook), ['identities' => ['facebook:invalid_page_id']])
+        ->assertSessionHasErrors('identities.0');
 
-test('facebook select page returns popup callback when the session expired', function () {
-    $this->actingAs($this->user)
-        ->get(route('app.social.facebook.select-page'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->component('accounts/PopupCallback')
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.session_expired'))
-        );
-});
-
-test('facebook page selection fails with expired session', function () {
-    // No session data
-
-    $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
-        'page_id' => 'page_123',
-    ]);
-
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
-});
-
-test('facebook page selection fails with invalid page id', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'facebook_oauth' => [
-            'user_token' => 'test-user-token',
-            'user_id' => 'facebook_user_123',
-            'pages' => [
-                [
-                    'id' => 'page_123',
-                    'name' => 'My Facebook Page',
-                    'picture' => null,
-                    'access_token' => 'page-access-token',
-                ],
-            ],
-        ],
-    ]);
-
-    $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
-        'page_id' => 'invalid_page_id',
-    ]);
-
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Page not found.'));
+    $this->assertDatabaseCount('social_accounts', 0);
 });
 
 test('facebook connect remembers the reconnect account from the query string', function () {
@@ -565,8 +481,8 @@ test('facebook connect remembers the reconnect account from the query string', f
 
     $response->assertRedirect('https://www.facebook.com/v25.0/dialog/oauth?test=1');
 
-    expect(session('social_connect_workspace'))->toBe($this->workspace->id)
-        ->and(session('social_reconnect_id'))->toBe($account->id);
+    expect(PendingConnection::current()?->workspaceId())->toBe($this->workspace->id)
+        ->and(PendingConnection::current()?->reconnectId())->toBe($account->id);
 });
 
 test('facebook connect ignores a reconnect id from another workspace', function () {
@@ -591,7 +507,7 @@ test('facebook connect ignores a reconnect id from another workspace', function 
         ->get(route('app.social.facebook.connect', ['reconnect' => $foreign->id]))
         ->assertRedirect('https://www.facebook.com/v25.0/dialog/oauth?test=1');
 
-    expect(session('social_reconnect_id'))->toBeNull();
+    expect(PendingConnection::current()?->reconnectId())->toBeNull();
 });
 
 test('facebook connect ignores a reconnect id from another network', function () {
@@ -617,7 +533,7 @@ test('facebook connect ignores a reconnect id from another network', function ()
         ->get(route('app.social.facebook.connect', ['reconnect' => $linkedin->id]))
         ->assertRedirect('https://www.facebook.com/v25.0/dialog/oauth?test=1');
 
-    expect(session('social_reconnect_id'))->toBeNull();
+    expect(PendingConnection::current()?->reconnectId())->toBeNull();
 });
 
 test('facebook reconnect keeps the original card when multiple pages are returned', function () {
@@ -629,10 +545,7 @@ test('facebook reconnect keeps the original card when multiple pages are returne
         'access_token' => 'expired-token',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook, $account->id);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -670,12 +583,8 @@ test('facebook reconnect keeps the original card when multiple pages are returne
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page
-        ->component('accounts/PopupCallback')
-        ->where('success', true)
-        ->where('message', __('accounts.popup_callback.reconnected'))
-    );
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(1);
 
@@ -693,10 +602,7 @@ test('facebook reconnect shows page_not_found when the page is missing from grap
         'platform_user_id' => 'page_missing',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook, $account->id);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -727,80 +633,68 @@ test('facebook reconnect shows page_not_found when the page is missing from grap
 
     $this->actingAs($this->user)
         ->get(route('app.social.facebook.callback'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.page_not_found'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    expect(socialConnectFailure())->toBe('page_not_found');
 });
 
-test('facebook select ignores a stored reconnect id from another network', function () {
+test('facebook finish ignores a stored reconnect id from another network', function () {
     $linkedin = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::LinkedIn,
         'platform_user_id' => 'linkedin-member',
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'facebook_oauth' => [
-            'user_token' => 'test-user-token',
-            'user_id' => 'facebook_user_123',
-            'reconnect_id' => $linkedin->id,
-            'pages' => [
-                [
-                    'id' => 'page_123',
-                    'name' => 'My Facebook Page',
-                    'username' => 'mypage',
-                    'picture' => null,
-                    'access_token' => 'page-access-token',
-                ],
-            ],
-        ],
+    startSocialConnect($this->workspace, Platform::Facebook, $linkedin)->offer([
+        PendingConnection::identity(Platform::Facebook, 'page_123', 'My Facebook Page', 'mypage', null, 'page', [
+            'username' => 'mypage',
+            'display_name' => 'My Facebook Page',
+            'access_token' => 'page-access-token',
+            'scopes' => ['pages_manage_posts'],
+            'meta' => ['page_id' => 'page_123', 'user_id' => 'facebook_user_123', 'user_token' => 'test-user-token'],
+        ]),
     ]);
 
-    $this->actingAs($this->user)
-        ->post(route('app.social.facebook.select'), ['page_id' => 'page_123'])
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $this->actingAs($this->user);
+
+    assertFinishedOnChannel(finishSocialConnect(Platform::Facebook));
 
     expect($linkedin->fresh()->platform)->toBe(Platform::LinkedIn)
         ->and($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(1);
 });
 
-test('facebook page picker refuses a user who can no longer manage accounts', function () {
+test('facebook confirmation page refuses a user who can no longer manage accounts', function () {
     $outsider = User::factory()->create();
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'facebook_oauth' => [
-            'user_token' => 'user-token',
-            'user_id' => 'fb-user',
-            'pages' => [
-                ['id' => 'page-1', 'name' => 'My Page', 'access_token' => 'page-token'],
-            ],
-        ],
+    startSocialConnect($this->workspace, Platform::Facebook)->offer([
+        PendingConnection::identity(Platform::Facebook, 'page_123', 'My Facebook Page', 'mypage', null, 'page', [
+            'username' => 'mypage',
+            'display_name' => 'My Facebook Page',
+            'access_token' => 'page-access-token',
+            'scopes' => ['pages_manage_posts'],
+            'meta' => ['page_id' => 'page_123', 'user_id' => 'facebook_user_123', 'user_token' => 'test-user-token'],
+        ]),
     ]);
 
     $this->actingAs($outsider)
-        ->get(route('app.social.facebook.select-page'))
-        ->assertOk()
+        ->get(route('app.social.connect.show', Platform::Facebook))
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->component('accounts/PopupCallback')
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.workspace_not_found'))
+            ->where('state', 'error')
+            ->where('reason', __('accounts.connect.errors.workspace_not_found'))
+            ->where('identities', [])
         );
+
+    expect(PendingConnection::current()->isReady())->toBeFalse();
 });
 
-test('facebook says every page is connected', function () {
-
+test('facebook offers a page already connected so it can be refreshed', function () {
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::Facebook,
         'platform_user_id' => 'page-1',
     ]);
 
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('fb-user');
@@ -830,17 +724,18 @@ test('facebook says every page is connected', function () {
 
     $this->actingAs($this->user)
         ->get(route('app.social.facebook.callback'))
-        ->assertOk()
+        ->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    $this->get(route('app.social.connect.show', Platform::Facebook))
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.all_connected'))
+            ->where('state', 'select')
+            ->where('identities.0.key', 'facebook:page-1')
+            ->where('identities.0.locked', true)
         );
 });
 
 test('facebook callback connects a page the user only administers through a business portfolio', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -873,7 +768,7 @@ test('facebook callback connects a page the user only administers through a busi
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     $this->assertDatabaseHas('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -885,9 +780,7 @@ test('facebook callback connects a page the user only administers through a busi
 });
 
 test('facebook callback still reports no pages when the portfolio has none either', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -908,15 +801,11 @@ test('facebook callback still reports no pages when the portfolio has none eithe
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertInertia(fn (AssertableInertia $page) => $page
-        ->where('success', false)
-        ->where('message', __('accounts.popup_callback.no_facebook_pages')));
+    expect(socialConnectFailure())->toBe('no_facebook_pages');
 });
 
 test('facebook callback offers every portfolio page when the portfolio holds more than one', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -959,20 +848,18 @@ test('facebook callback offers every portfolio page when the portfolio holds mor
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertRedirect(route('app.social.facebook.select-page'));
-    expect(session('facebook_oauth.pages'))->toHaveCount(2)
-        ->and(data_get(session('facebook_oauth.pages'), '0.id'))->toBe('page_owned')
-        ->and(data_get(session('facebook_oauth.pages'), '1.id'))->toBe('page_client');
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    expect(PendingConnection::current()->identities())->toHaveCount(2)
+        ->and(data_get(PendingConnection::current()->identities(), '0.platform_user_id'))->toBe('page_owned')
+        ->and(data_get(PendingConnection::current()->identities(), '1.platform_user_id'))->toBe('page_client');
 
     $this->actingAs($this->user)
-        ->get(route('app.social.facebook.select-page'))
+        ->get(route('app.social.connect.show', Platform::Facebook))
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->component('accounts/FacebookPageSelect')
-            ->has('pages', 2));
+            ->component('accounts/ConnectFinish')
+            ->has('identities', 2));
 
-    $this->actingAs($this->user)
-        ->post(route('app.social.facebook.select'), ['page_id' => 'page_client'])
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    finishSocialConnect(Platform::Facebook, ['facebook:page_client'])->assertRedirect();
 
     $account = SocialAccount::where('platform_user_id', 'page_client')->sole();
 
@@ -983,9 +870,7 @@ test('facebook callback offers every portfolio page when the portfolio holds mor
 });
 
 test('facebook callback merges a portfolio page with the one me/accounts already returned', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1028,15 +913,13 @@ test('facebook callback merges a portfolio page with the one me/accounts already
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertRedirect(route('app.social.facebook.select-page'));
-    expect(collect(session('facebook_oauth.pages'))->pluck('id')->all())
+    $response->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+    expect(collect(PendingConnection::current()->identities())->pluck('platform_user_id')->all())
         ->toBe(['page_role', 'page_portfolio']);
 });
 
 test('facebook callback says the permission is missing when meta lists a page without a token', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1062,17 +945,13 @@ test('facebook callback says the permission is missing when meta lists a page wi
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertInertia(fn (AssertableInertia $page) => $page
-        ->where('success', false)
-        ->where('message', __('accounts.popup_callback.pages_missing_permission')));
+    expect(socialConnectFailure())->toBe('pages_missing_permission');
 
     $this->assertDatabaseCount('social_accounts', 0);
 });
 
 test('facebook drops a scope meta reports as declined', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1103,6 +982,7 @@ test('facebook drops a scope meta reports as declined', function () {
     ]);
 
     $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     expect(SocialAccount::where('platform_user_id', 'page_123')->sole()->scopes)
         ->toContain('pages_manage_posts')
@@ -1110,9 +990,7 @@ test('facebook drops a scope meta reports as declined', function () {
 });
 
 test('facebook keeps a scope meta never mentions rather than guessing it was refused', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1141,15 +1019,14 @@ test('facebook keeps a scope meta never mentions rather than guessing it was ref
     ]);
 
     $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     expect(SocialAccount::where('platform_user_id', 'page_123')->sole()->scopes)
         ->toContain('pages_manage_posts');
 });
 
 test('facebook falls back to the requested scopes when meta will not list permissions', function () {
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1176,6 +1053,7 @@ test('facebook falls back to the requested scopes when meta will not list permis
     ]);
 
     $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     expect(SocialAccount::where('platform_user_id', 'page_123')->sole()->scopes)
         ->toContain('business_management');
@@ -1190,10 +1068,7 @@ test('facebook reconnects a card whose page is now only reachable through a port
         'status' => Status::Disconnected,
     ]);
 
-    session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
-    ]);
+    startSocialConnect($this->workspace->id, Platform::Facebook, $account->id);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1230,8 +1105,9 @@ test('facebook reconnects a card whose page is now only reachable through a port
     ]);
 
     $this->actingAs($this->user)
-        ->get(route('app.social.facebook.callback'))
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+        ->get(route('app.social.facebook.callback'));
+
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::Facebook->value)->count())->toBe(1);
 
@@ -1243,7 +1119,7 @@ test('facebook reconnects a card whose page is now only reachable through a port
 });
 
 test('facebook refuses a login that declined the permission needed to publish', function () {
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1263,17 +1139,16 @@ test('facebook refuses a login that declined the permission needed to publish', 
     ]);
 
     $this->actingAs($this->user)
-        ->get(route('app.social.facebook.callback'))
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.publish_permission_refused')));
+        ->get(route('app.social.facebook.callback'));
+
+    expect(socialConnectFailure())->toBe('publish_permission_missing');
 
     $this->assertDatabaseCount('social_accounts', 0);
     Http::assertNotSent(fn ($request) => str_contains($request->url(), '/me/accounts'));
 });
 
 test('facebook asks rather than auto-connecting a lone page found by an incomplete walk', function () {
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1305,14 +1180,14 @@ test('facebook asks rather than auto-connecting a lone page found by an incomple
 
     $this->actingAs($this->user)
         ->get(route('app.social.facebook.callback'))
-        ->assertRedirect(route('app.social.facebook.select-page'));
+        ->assertRedirect(route('app.social.connect.show', Platform::Facebook));
 
-    expect(session('facebook_oauth.pages'))->toHaveCount(1);
+    expect(PendingConnection::current()->identities())->toHaveCount(1);
     $this->assertDatabaseCount('social_accounts', 0);
 });
 
 test('facebook still connects a lone page when the walk saw everything', function () {
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1339,14 +1214,15 @@ test('facebook still connects a lone page when the walk saw everything', functio
     ]);
 
     $this->actingAs($this->user)
-        ->get(route('app.social.facebook.callback'))
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+        ->get(route('app.social.facebook.callback'));
+
+    finishSocialConnect(Platform::Facebook)->assertRedirect();
 
     $this->assertDatabaseCount('social_accounts', 1);
 });
 
 test('facebook says the walk was cut short rather than claiming there are no pages', function () {
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1372,21 +1248,19 @@ test('facebook says the walk was cut short rather than claiming there are no pag
     ]);
 
     $this->actingAs($this->user)
-        ->get(route('app.social.facebook.callback'))
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.pages_read_incomplete')));
+        ->get(route('app.social.facebook.callback'));
+
+    expect(socialConnectFailure())->toBe('pages_read_incomplete');
 });
 
-test('facebook says the walk was cut short rather than claiming everything is connected', function () {
-
+test('facebook still offers the connected page an incomplete walk read, to refresh it', function () {
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::Facebook,
         'platform_user_id' => 'page_taken',
     ]);
 
-    session(['social_connect_workspace' => $this->workspace->id]);
+    startSocialConnect($this->workspace->id, Platform::Facebook);
 
     $socialiteUser = Mockery::mock(SocialiteUser::class);
     $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
@@ -1416,7 +1290,8 @@ test('facebook says the walk was cut short rather than claiming everything is co
 
     $this->actingAs($this->user)
         ->get(route('app.social.facebook.callback'))
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.pages_read_incomplete')));
+        ->assertRedirect(route('app.social.connect.show', Platform::Facebook));
+
+    expect(socialConnectFailure())->toBeNull()
+        ->and(PendingConnection::current()->identityKeys())->toBe(['facebook:page_taken']);
 });

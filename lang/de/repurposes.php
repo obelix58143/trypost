@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'title' => 'Repurpose',
-    'description' => 'Was du außerhalb von TryPost postest, automatisch auf deinen anderen Netzwerken wiederveröffentlichen.',
     'new' => 'Neues Repurpose',
 
     'flow' => [
@@ -13,15 +12,12 @@ return [
     ],
 
     'publish_mode' => [
-
         'title' => 'Veröffentlichung',
 
         'description' => 'Was passiert, wenn ein neuer Beitrag auftaucht.',
-
     ],
 
     'publish_modes' => [
-
         'publish' => 'Automatisch veröffentlichen',
 
         'publish_hint' => 'Jeder neue Beitrag wird eingeplant, sobald er gefunden wird.',
@@ -29,7 +25,6 @@ return [
         'draft' => 'Als Entwurf anlegen',
 
         'draft_hint' => 'Jeder neue Beitrag wird hier zum Entwurf, den du prüfen und veröffentlichen kannst.',
-
     ],
 
     'formats' => [
@@ -41,8 +36,8 @@ return [
     'source' => [
         'title' => 'Quelle',
         'description' => 'TryPost beobachtet dieses Konto auf neue Beiträge im unten gewählten Format.',
-        'account_label' => 'Konto',
         'watch_label' => 'Beobachten',
+        'watch_description' => 'Die Art von Beitrag, die einen Repost auslöst.',
         'needs_reconnect' => 'Neu verbinden nötig',
     ],
 
@@ -58,8 +53,6 @@ return [
     ],
 
     'table' => [
-        'flow' => 'Ablauf',
-        'status' => 'Status',
         'published' => 'Repliziert',
         'last_polled' => 'Zuletzt geprüft',
     ],
@@ -97,7 +90,6 @@ return [
     ],
 
     'destinations' => [
-        'paused_note' => 'Deaktiviert und übersprungen, bis du sie wieder einschaltest: :accounts',
         'title' => 'Ziele',
         'description' => 'Wähle die Konten, die es erhalten. Jedes veröffentlicht im Format deiner Wahl.',
         'hint' => 'Der Text wird nur dann pro Netzwerk angepasst, wenn er dessen Limit überschreitet.',
@@ -150,9 +142,7 @@ return [
     ],
 
     'menu' => [
-
         'label' => 'Weitere Aktionen',
-
     ],
 
     'danger' => [
@@ -175,6 +165,7 @@ return [
         'source_unusable' => 'Verbinde das überwachte Konto erneut, bevor du diese Automatisierung startest.',
         'destinations_required' => 'Wähle vor dem Aktivieren mindestens ein Ziel.',
         'destination_needs_video' => 'Dieses Format kann kein Video tragen.',
+        'destination_not_supported' => 'Google Business kann kein Ziel sein: Die Beiträge unterstützen kein Video.',
         'only_paused_resumes' => 'Nur ein pausiertes Repurpose kann fortgesetzt werden.',
         'only_active_pauses' => 'Nur ein aktives Repurpose kann pausiert werden.',
         'only_running_disables' => 'Nur ein laufendes Repurpose kann deaktiviert werden.',

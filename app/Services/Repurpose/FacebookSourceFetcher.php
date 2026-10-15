@@ -8,7 +8,9 @@ use App\Dto\SourceMedia;
 use App\Enums\Facebook\StoryMediaType;
 use App\Enums\Facebook\StoryStatus;
 use App\Enums\Repurpose\SourceFormat;
+use App\Exceptions\Repurpose\SourceFetchException;
 use App\Models\SocialAccount;
+use App\Services\Social\Meta\GraphError;
 use Carbon\CarbonInterface;
 
 class FacebookSourceFetcher extends MetaSourceFetcher
@@ -120,10 +122,11 @@ class FacebookSourceFetcher extends MetaSourceFetcher
         return new SourceMedia(
             id: (string) data_get($row, 'post_id', $mediaId),
             format: SourceFormat::Story,
-            downloadUrl: $this->videoSource($account, $mediaId),
+            downloadUrl: null,
             caption: '',
             permalink: data_get($row, 'url'),
             createdAt: $this->timestamp($row, 'creation_time'),
+            downloadUrlResolver: fn (): ?string => $this->videoSource($account, $mediaId),
         );
     }
 
@@ -135,7 +138,15 @@ class FacebookSourceFetcher extends MetaSourceFetcher
 
         $response = $this->http($account)->get("{$this->graphApi()}/{$videoId}", ['fields' => 'source']);
 
-        return $response->successful() ? $response->json('source') : null;
+        if ($response->successful()) {
+            return $response->json('source');
+        }
+
+        if (GraphError::isTransientFailure($response)) {
+            throw new SourceFetchException($response);
+        }
+
+        return null;
     }
 
     private function graphApi(): string

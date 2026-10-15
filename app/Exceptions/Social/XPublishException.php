@@ -4,11 +4,23 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Social;
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\TokenExpiredException;
 use Illuminate\Http\Client\Response;
 
 class XPublishException extends SocialPublishException
 {
+    /**
+     * Problem types X documents as caused by the account itself:
+     * not-authorized-for-resource is "No access to private/protected
+     * content". invalid-request (our request), resource-not-found (an id we
+     * sent), client-forbidden (our app's enrollment), usage-capped (our app's
+     * cap) and rate-limit-exceeded (per user or per app) stay reported.
+     *
+     * @var list<string>
+     */
+    private const array USER_REJECTION_TYPES = ['not-authorized-for-resource'];
+
     public static function fromApiResponse(mixed $response): static
     {
         /** @var Response $response */
@@ -26,50 +38,6 @@ class XPublishException extends SocialPublishException
             throw new TokenExpiredException(
                 message: $detail ?: 'Access token has expired or been revoked',
                 platformErrorCode: $typeSuffix ?: (string) $statusCode,
-            );
-        }
-
-        if (str_contains((string) $rawResponse, 'invalid URL')) {
-            return new static(
-                userMessage: 'Post contains an invalid URL.',
-                category: ErrorCategory::ContentPolicy,
-                platformErrorCode: $typeSuffix ?: null,
-                rawResponse: $rawResponse,
-            );
-        }
-
-        if (str_contains((string) $rawResponse, 'video longer than 2 minutes')) {
-            return new static(
-                userMessage: 'Video exceeds the 2-minute limit.',
-                category: ErrorCategory::MediaFormat,
-                platformErrorCode: $typeSuffix ?: null,
-                rawResponse: $rawResponse,
-            );
-        }
-
-        $firstErrorMessage = (string) data_get($body, 'errors.0.message', '');
-
-        if (
-            str_contains((string) $rawResponse, 'media IDs are invalid')
-            || str_contains($firstErrorMessage, 'media IDs are invalid')
-        ) {
-            return new static(
-                userMessage: 'X rejected the attached media. Please re-upload and try again.',
-                category: ErrorCategory::MediaFormat,
-                platformErrorCode: $typeSuffix ?: null,
-                rawResponse: $rawResponse,
-            );
-        }
-
-        if (
-            str_contains((string) $rawResponse, 'Request body must be a JSON object')
-            || str_contains($firstErrorMessage, 'Request body must be a JSON object')
-        ) {
-            return new static(
-                userMessage: 'X rejected the media upload request. Please try again.',
-                category: ErrorCategory::ServerError,
-                platformErrorCode: $typeSuffix ?: null,
-                rawResponse: $rawResponse,
             );
         }
 
@@ -91,6 +59,15 @@ class XPublishException extends SocialPublishException
             );
         }
 
+        if ($statusCode === 429 && ! in_array($typeSuffix, ['usage-capped', 'rate-limit-exceeded'], true)) {
+            return (new static(
+                userMessage: 'Rate limit exceeded. Please try again later.',
+                category: ErrorCategory::RateLimit,
+                platformErrorCode: (string) $statusCode,
+                rawResponse: $rawResponse,
+            ))->withNetworkReset($response);
+        }
+
         [$message, $category] = match ($typeSuffix) {
             'usage-capped' => ['Usage limit exceeded. Please try again later.', ErrorCategory::RateLimit],
             'rate-limit-exceeded' => ['Rate limit exceeded. Please try again later.', ErrorCategory::RateLimit],
@@ -98,15 +75,15 @@ class XPublishException extends SocialPublishException
             'client-forbidden' => ['App not enrolled or lacks required access.', ErrorCategory::Permission],
             'not-authorized-for-resource' => ['Not authorized for this resource.', ErrorCategory::Permission],
             'resource-not-found' => ['Resource not found.', ErrorCategory::ContentPolicy],
-            default => [$detail ?: $title ?: 'An unknown X error occurred.', ErrorCategory::Unknown],
+            default => [self::providerMessage($response, 'detail', 'title') ?? __('posts.errors.unrecognized_error', ['platform' => Platform::X->label()]), ErrorCategory::Unknown],
         };
 
-        return new static(
+        return (new static(
             userMessage: $message,
             category: $category,
             platformErrorCode: $typeSuffix ?: null,
             rawResponse: $rawResponse,
-        );
+        ))->withNetworkReset($response)->asNetworkRejectionIf(in_array($typeSuffix, self::USER_REJECTION_TYPES, true));
     }
 
     public function platform(): string

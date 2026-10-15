@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
-use App\Enums\UserWorkspace\Role;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Social\PendingConnection;
 use Illuminate\Support\Facades\Http;
-use Inertia\Testing\AssertableInertia;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
     $this->workspace = Workspace::factory()->create(['user_id' => $this->user->id]);
     $this->user->update(['current_workspace_id' => $this->workspace->id]);
-    $this->workspace->members()->attach($this->user->id, ['role' => Role::Member->value]);
+    $this->workspace->members()->attach($this->user->id, membershipPivot('member'));
 });
 
 test('threads connect redirects to oauth', function () {
@@ -23,30 +22,30 @@ test('threads connect redirects to oauth', function () {
         ->get(route('app.social.threads.connect'));
 
     expect($response->headers->get('Location'))
-        ->toStartWith('https://threads.net/oauth/authorize');
+        ->toStartWith(config('trypost.platforms.threads.oauth_url').'/oauth/authorize');
 
-    expect(session('social_connect_workspace'))->toBe($this->workspace->id);
+    expect(PendingConnection::current()?->workspaceId())->toBe($this->workspace->id);
     expect(session('threads_oauth_state'))->not->toBeNull();
 });
 
 test('threads oauth callback creates account', function () {
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads);
     session([
-        'social_connect_workspace' => $this->workspace->id,
         'threads_oauth_state' => $state,
     ]);
 
     Http::fake([
-        'https://graph.threads.net/oauth/access_token' => Http::response([
+        config('trypost.platforms.threads.auth_api').'/oauth/access_token' => Http::response([
             'access_token' => 'short-lived-token',
             'user_id' => '123456789',
         ], 200),
-        'https://graph.threads.net/access_token*' => Http::response([
+        config('trypost.platforms.threads.auth_api').'/access_token*' => Http::response([
             'access_token' => 'long-lived-token',
             'expires_in' => 5184000, // 60 days
         ], 200),
-        'https://graph.threads.net/v1.0/123456789*' => Http::response([
+        config('trypost.platforms.threads.graph_api').'/123456789*' => Http::response([
             'id' => '123456789',
             'username' => 'testuser',
             'name' => 'Test User',
@@ -59,9 +58,9 @@ test('threads oauth callback creates account', function () {
         'state' => $state,
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->component('accounts/PopupCallback'));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    finishSocialConnect(Platform::Threads)->assertRedirect();
 
     $this->assertDatabaseHas('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -73,8 +72,8 @@ test('threads oauth callback creates account', function () {
 });
 
 test('threads callback fails with invalid state', function () {
+    startSocialConnect($this->workspace->id, Platform::Threads);
     session([
-        'social_connect_workspace' => $this->workspace->id,
         'threads_oauth_state' => 'correct-state',
     ]);
 
@@ -83,9 +82,9 @@ test('threads callback fails with invalid state', function () {
         'state' => 'wrong-state',
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Invalid state. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    expect(socialConnectFailure())->toBe('invalid_state');
 
     $this->assertDatabaseMissing('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -101,9 +100,9 @@ test('threads callback fails with expired session', function () {
         'state' => 'test-state',
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    expect(socialConnectFailure())->toBeNull();
 });
 
 test('user can connect multiple threads accounts', function () {
@@ -115,21 +114,21 @@ test('user can connect multiple threads accounts', function () {
 
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads);
     session([
-        'social_connect_workspace' => $this->workspace->id,
         'threads_oauth_state' => $state,
     ]);
 
     Http::fake([
-        'https://graph.threads.net/oauth/access_token' => Http::response([
+        config('trypost.platforms.threads.auth_api').'/oauth/access_token' => Http::response([
             'access_token' => 'new-token',
             'user_id' => '987654321',
         ], 200),
-        'https://graph.threads.net/access_token*' => Http::response([
+        config('trypost.platforms.threads.auth_api').'/access_token*' => Http::response([
             'access_token' => 'long-lived-token',
             'expires_in' => 5184000,
         ], 200),
-        'https://graph.threads.net/v1.0/987654321*' => Http::response([
+        config('trypost.platforms.threads.graph_api').'/987654321*' => Http::response([
             'id' => '987654321',
             'username' => 'anotheruser',
             'name' => 'Another User',
@@ -141,8 +140,8 @@ test('user can connect multiple threads accounts', function () {
         'state' => $state,
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+    finishSocialConnect(Platform::Threads)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::Threads)->count())->toBe(2);
 });
@@ -150,13 +149,13 @@ test('user can connect multiple threads accounts', function () {
 test('threads callback handles token exchange failure', function () {
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads);
     session([
-        'social_connect_workspace' => $this->workspace->id,
         'threads_oauth_state' => $state,
     ]);
 
     Http::fake([
-        'https://graph.threads.net/oauth/access_token' => Http::response([
+        config('trypost.platforms.threads.auth_api').'/oauth/access_token' => Http::response([
             'error' => 'invalid_grant',
             'error_description' => 'The authorization code has expired.',
         ], 400),
@@ -167,16 +166,16 @@ test('threads callback handles token exchange failure', function () {
         'state' => $state,
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    expect(socialConnectFailure())->toBe('error_connecting');
 });
 
 test('threads callback fails the connect when the long-lived token exchange fails', function () {
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads);
     session([
-        'social_connect_workspace' => $this->workspace->id,
         'threads_oauth_state' => $state,
     ]);
 
@@ -193,9 +192,9 @@ test('threads callback fails the connect when the long-lived token exchange fail
         'state' => $state,
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', __('accounts.popup_callback.error_connecting')));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    expect(socialConnectFailure())->toBe('error_connecting');
 
     // A short-lived-only account would silently die within the hour and never be
     // picked up by the refresh cron, so the connect must not persist one.
@@ -208,8 +207,8 @@ test('threads callback fails the connect when the long-lived token exchange fail
 test('threads callback records a 60-day expiry when the long-lived exchange omits expires_in', function () {
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads);
     session([
-        'social_connect_workspace' => $this->workspace->id,
         'threads_oauth_state' => $state,
     ]);
 
@@ -233,8 +232,8 @@ test('threads callback records a 60-day expiry when the long-lived exchange omit
         'state' => $state,
     ]));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.connect.show', Platform::Threads));
+    finishSocialConnect(Platform::Threads)->assertRedirect();
 
     $account = $this->workspace->socialAccounts()
         ->where('platform', Platform::Threads)
@@ -256,9 +255,8 @@ test('threads callback reconnects the original card', function () {
 
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads, $account->id);
     session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
         'threads_oauth_state' => $state,
     ]);
 
@@ -284,11 +282,9 @@ test('threads callback reconnects the original card', function () {
 
     $this->actingAs($this->user)
         ->get(route('app.social.threads.callback', ['code' => 'test-auth-code', 'state' => $state]))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', true)
-            ->where('message', __('accounts.popup_callback.reconnected'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    finishSocialConnect(Platform::Threads)->assertRedirect();
 
     expect($this->workspace->socialAccounts()->count())->toBe(1)
         ->and($account->fresh()->username)->toBe('testuser')
@@ -305,9 +301,8 @@ test('threads reconnect that authorizes another account says so instead of conne
 
     $state = bin2hex(random_bytes(16));
 
+    startSocialConnect($this->workspace->id, Platform::Threads, $account->id);
     session([
-        'social_connect_workspace' => $this->workspace->id,
-        'social_reconnect_id' => $account->id,
         'threads_oauth_state' => $state,
     ]);
 
@@ -333,11 +328,9 @@ test('threads reconnect that authorizes another account says so instead of conne
 
     $this->actingAs($this->user)
         ->get(route('app.social.threads.callback', ['code' => 'test-auth-code', 'state' => $state]))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('success', false)
-            ->where('message', __('accounts.popup_callback.wrong_account'))
-        );
+        ->assertRedirect(route('app.social.connect.show', Platform::Threads));
+
+    expect(socialConnectFailure())->toBe('wrong_account');
 
     expect($this->workspace->socialAccounts()->count())->toBe(1)
         ->and($account->fresh()->platform_user_id)->toBe('123456789');

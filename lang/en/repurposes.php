@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 return [
     'title' => 'Repurpose',
-    'description' => 'Replicate what you post outside TryPost to your other networks, automatically.',
     'new' => 'New repurpose',
 
     'flow' => [
@@ -13,15 +12,12 @@ return [
     ],
 
     'publish_mode' => [
-
         'title' => 'Publishing',
 
         'description' => 'What happens when a new post shows up.',
-
     ],
 
     'publish_modes' => [
-
         'publish' => 'Publish automatically',
 
         'publish_hint' => 'Each new post is scheduled the moment it is found.',
@@ -29,7 +25,6 @@ return [
         'draft' => 'Create as draft',
 
         'draft_hint' => 'Each new post becomes a draft here for you to review and publish.',
-
     ],
 
     'formats' => [
@@ -41,8 +36,8 @@ return [
     'source' => [
         'title' => 'Source',
         'description' => 'TryPost watches this account for new posts of the format below.',
-        'account_label' => 'Account',
         'watch_label' => 'Watch for',
+        'watch_description' => 'The kind of post that starts a repost.',
         'needs_reconnect' => 'Needs reconnecting',
     ],
 
@@ -58,8 +53,6 @@ return [
     ],
 
     'table' => [
-        'flow' => 'Flow',
-        'status' => 'Status',
         'published' => 'Replicated',
         'last_polled' => 'Last checked',
     ],
@@ -97,7 +90,6 @@ return [
     ],
 
     'destinations' => [
-        'paused_note' => 'Switched off and skipped until you turn them back on: :accounts',
         'title' => 'Destinations',
         'description' => 'Pick the accounts that receive it. Each one publishes in the format you choose.',
         'hint' => 'Captions are adapted per network only when they exceed that network\'s limit.',
@@ -150,9 +142,7 @@ return [
     ],
 
     'menu' => [
-
         'label' => 'More actions',
-
     ],
 
     'danger' => [
@@ -175,6 +165,7 @@ return [
         'source_unusable' => 'Reconnect the account this repurpose watches before starting it.',
         'destinations_required' => 'Pick at least one destination before activating.',
         'destination_needs_video' => 'That format cannot carry a video.',
+        'destination_not_supported' => 'Google Business cannot be a destination: its posts do not accept video.',
         'only_paused_resumes' => 'Only a paused repurpose can be resumed.',
         'only_active_pauses' => 'Only an active repurpose can be paused.',
         'only_running_disables' => 'Only a running repurpose can be turned off.',

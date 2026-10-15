@@ -7,7 +7,6 @@ namespace App\Mcp\Tools\Webhook;
 use App\Http\Resources\Api\WebhookResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Mcp\Concerns\ResolvesWorkspaceWebhook;
-use App\Mcp\Requests\Webhook\WebhookIdRequest;
 use App\Models\Webhook;
 use App\Models\Workspace;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -27,22 +26,22 @@ class GetWebhookTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'manageWebhooks',
-            'Not authorized to manage webhooks.',
-        );
+        $workspace = $this->currentWorkspace($request);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate(WebhookIdRequest::rules());
+        $validated = $request->validate(['webhook_id' => ['required', 'string', 'uuid']]);
 
         $webhook = $this->webhookInWorkspace($workspace, data_get($validated, 'webhook_id'));
 
         if (! $webhook instanceof Webhook) {
             return $webhook;
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'view', $webhook, 'Webhook not found.')) {
+            return $denied;
         }
 
         return Response::structured(

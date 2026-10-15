@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exceptions\Social;
 
 use App\Exceptions\TokenExpiredException;
+use App\Services\Social\Meta\GraphError;
 use Illuminate\Http\Client\Response;
 
 class ThreadsPublishException extends SocialPublishException
@@ -35,13 +36,13 @@ class ThreadsPublishException extends SocialPublishException
             );
         }
 
-        if ($statusCode === 429) {
-            return new static(
+        if ($statusCode === 429 || in_array($errorCode, GraphError::RATE_LIMIT_CODES, true)) {
+            return (new static(
                 userMessage: 'Rate limit exceeded. Please try again later.',
                 category: ErrorCategory::RateLimit,
                 platformErrorCode: (string) $statusCode,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response)->asNetworkRejectionIf(in_array($errorCode, GraphError::ACCOUNT_RATE_LIMIT_CODES, true));
         }
 
         if ($statusCode >= 500) {

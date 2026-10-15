@@ -17,26 +17,20 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('List Discord text/announcement channels the bot can post to for a connected Discord server. Use the returned channel id as platforms[].meta.channel_id when creating or updating a Discord post (required to publish).')]
+#[Description('List Discord text/announcement channels the bot can post to for a connected Discord server. Use the returned channel id as meta.channel_id (destinations[].meta.channel_id in create-posts-tool) when creating or updating a Discord post (required to publish).')]
 class ListDiscordChannelsTool extends Tool
 {
     use AuthorizesMcpTool;
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'createPost',
-            'Not authorized to manage posts.',
-        );
+        $workspace = $this->authorizeCurrentWorkspace($request, 'view');
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate([
-            'account_id' => ['required', 'string', 'uuid'],
-        ]);
+        $validated = $request->validate(['account_id' => ['required', 'string', 'uuid']]);
 
         $account = SocialAccount::where('workspace_id', $workspace->id)
             ->find(data_get($validated, 'account_id'));

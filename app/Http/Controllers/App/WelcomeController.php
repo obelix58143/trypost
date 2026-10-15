@@ -8,19 +8,12 @@ use App\Actions\Billing\StartSubscriptionCheckout;
 use App\Enums\Billing\Interval;
 use App\Enums\PostHog\CheckoutEvent;
 use App\Enums\PostHog\WelcomeEvent;
-use App\Enums\SocialAccount\Platform as SocialPlatform;
-use App\Enums\SocialAccount\Status;
 use App\Enums\User\Goal;
 use App\Enums\User\Persona;
-use App\Enums\User\ReferralSource;
-use App\Http\Requests\App\Welcome\StoreWelcomeConnectRequest;
 use App\Http\Requests\App\Welcome\StoreWelcomeGoalsRequest;
 use App\Http\Requests\App\Welcome\StoreWelcomePersonaRequest;
 use App\Http\Requests\App\Welcome\StoreWelcomePlanRequest;
-use App\Http\Requests\App\Welcome\StoreWelcomeReferralSourceRequest;
 use App\Http\Resources\App\PlanResource;
-use App\Http\Resources\App\SocialAccountResource;
-use App\Http\Resources\App\WelcomeSummaryResource;
 use App\Models\Plan;
 use App\Services\PostHogService;
 use Illuminate\Http\RedirectResponse;
@@ -43,7 +36,6 @@ class WelcomeController extends Controller
         return Inertia::render('welcome/Persona', [
             'personas' => array_map(fn (Persona $persona): string => $persona->value, Persona::cases()),
             'selected' => $user->persona?->value,
-            'welcome' => WelcomeSummaryResource::make($user),
         ]);
     }
 
@@ -82,7 +74,6 @@ class WelcomeController extends Controller
         return Inertia::render('welcome/Goals', [
             'goals' => array_map(fn (Goal $goal): string => $goal->value, Goal::cases()),
             'selected' => $user->goals ?? [],
-            'welcome' => WelcomeSummaryResource::make($user),
         ]);
     }
 
@@ -107,97 +98,12 @@ class WelcomeController extends Controller
             $user->account,
         );
 
-        return redirect()->route('app.welcome.referral-source');
-    }
-
-    public function referralSource(Request $request): InertiaResponse|RedirectResponse
-    {
-        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true)) {
-            return $redirect;
-        }
-
-        $user = $request->user();
-
-        return Inertia::render('welcome/ReferralSource', [
-            'sources' => array_map(fn (ReferralSource $source): string => $source->value, ReferralSource::cases()),
-            'selected' => $user->referral_source?->value,
-            'welcome' => WelcomeSummaryResource::make($user),
-        ]);
-    }
-
-    public function storeReferralSource(
-        StoreWelcomeReferralSourceRequest $request,
-        PostHogService $postHog,
-    ): RedirectResponse {
-        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true)) {
-            return $redirect;
-        }
-
-        $user = $request->user();
-        $referralSource = (string) $request->validated('referral_source');
-
-        $user->update(['referral_source' => $referralSource]);
-
-        $postHog->identify($user->id, [
-            'referral_source' => $referralSource,
-        ]);
-        $postHog->capture(
-            $user->id,
-            WelcomeEvent::Referral->value,
-            ['referral_source' => $referralSource],
-            $user->account,
-        );
-
-        return redirect()->route('app.welcome.connect');
-    }
-
-    public function connect(Request $request): InertiaResponse|RedirectResponse
-    {
-        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true, requireReferral: true)) {
-            return $redirect;
-        }
-
-        $user = $request->user();
-        $workspace = $user->currentWorkspace;
-
-        abort_unless($workspace !== null, Response::HTTP_NOT_FOUND);
-
-        return Inertia::render('welcome/Connect', [
-            'platforms' => SocialPlatform::connectableOptions(),
-            'accounts' => SocialAccountResource::collection(
-                $workspace->socialAccounts()->orderBy('id')->get(),
-            )->resolve(),
-            'welcome' => WelcomeSummaryResource::make($user),
-        ]);
-    }
-
-    public function storeConnect(StoreWelcomeConnectRequest $request, PostHogService $postHog): RedirectResponse
-    {
-        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true, requireReferral: true)) {
-            return $redirect;
-        }
-
-        abort_unless($request->user()->currentWorkspace !== null, Response::HTTP_NOT_FOUND);
-
-        $user = $request->user();
-
-        try {
-            $postHog->capture(
-                $user->id,
-                WelcomeEvent::Connect->value,
-                ['platforms' => $request->connectedPlatforms()],
-                $user->account,
-            );
-        } catch (Throwable $e) {
-            report($e);
-        }
-
         return redirect()->route('app.welcome.plan');
     }
 
     public function plan(Request $request): InertiaResponse|RedirectResponse
     {
-        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true, requireReferral: true, requireConnect: true)) {
+        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true)) {
             return $redirect;
         }
 
@@ -205,7 +111,6 @@ class WelcomeController extends Controller
             'plans' => PlanResource::collection(
                 Plan::active()->orderBy('sort')->get(),
             )->resolve(),
-            'welcome' => WelcomeSummaryResource::make($request->user()),
         ]);
     }
 
@@ -214,7 +119,7 @@ class WelcomeController extends Controller
         StartSubscriptionCheckout $checkout,
         PostHogService $postHog,
     ): Response|RedirectResponse {
-        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true, requireReferral: true, requireConnect: true)) {
+        if ($redirect = $this->redirectIfStepIncomplete($request, requireGoals: true)) {
             return $redirect;
         }
 
@@ -260,8 +165,6 @@ class WelcomeController extends Controller
     private function redirectIfStepIncomplete(
         Request $request,
         bool $requireGoals = false,
-        bool $requireReferral = false,
-        bool $requireConnect = false,
     ): ?RedirectResponse {
         if ($redirect = $this->redirectIfUnavailable($request)) {
             return $redirect;
@@ -275,17 +178,6 @@ class WelcomeController extends Controller
 
         if ($requireGoals && ! Goal::containsCurrent($user->goals)) {
             return redirect()->route('app.welcome.goals');
-        }
-
-        if ($requireReferral && ! $user->referral_source) {
-            return redirect()->route('app.welcome.referral-source');
-        }
-
-        if ($requireConnect && ! $user->currentWorkspace?->socialAccounts()
-            ->where('status', Status::Connected)
-            ->exists()
-        ) {
-            return redirect()->route('app.welcome.connect');
         }
 
         return null;

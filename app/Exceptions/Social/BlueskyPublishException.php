@@ -19,6 +19,15 @@ class BlueskyPublishException extends SocialPublishException
         $error = data_get($body, 'error', '');
         $errorMessage = data_get($body, 'message', 'An unknown Bluesky error occurred.');
 
+        if (self::isEmailUnconfirmed($response)) {
+            return (new static(
+                userMessage: 'Confirm your email in Bluesky settings, then try publishing again.',
+                category: ErrorCategory::Permission,
+                platformErrorCode: 'unconfirmed_email',
+                rawResponse: $rawResponse,
+            ))->asNetworkRejection();
+        }
+
         if (self::isConfirmedDeadToken($response)) {
             throw new TokenExpiredException(
                 message: $errorMessage,
@@ -45,12 +54,12 @@ class BlueskyPublishException extends SocialPublishException
         }
 
         if ($status === 429) {
-            return new static(
+            return (new static(
                 userMessage: 'Rate limit exceeded. Please try again later.',
                 category: ErrorCategory::RateLimit,
                 platformErrorCode: $error ?: null,
                 rawResponse: $rawResponse,
-            );
+            ))->withNetworkReset($response);
         }
 
         if ($status >= 500) {
@@ -73,6 +82,13 @@ class BlueskyPublishException extends SocialPublishException
     public function platform(): string
     {
         return 'bluesky';
+    }
+
+    public static function isEmailUnconfirmed(Response $response): bool
+    {
+        $error = $response->json('jobStatus.error') ?? $response->json('error');
+
+        return $response->clientError() && $error === 'unconfirmed_email';
     }
 
     /**

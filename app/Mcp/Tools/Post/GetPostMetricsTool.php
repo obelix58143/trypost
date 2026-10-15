@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\Post;
 
+use App\Actions\Analytics\ReadPublicationAnalytics;
+use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Models\Post;
-use App\Services\Post\PostMetricsFetcher;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -15,27 +16,34 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('Fetch engagement metrics (likes, comments, shares, etc.) for a published post across all platforms it was posted to. Returns "unsupported" entries for platforms that do not expose post-level metrics or for unpublished platforms.')]
+#[Description('Read the latest saved analytics of a published TryPost post, including reactions, comments, saves, reach, views, and watch time where supported. Values may lag the provider until the next analytics job. metrics is "unsupported" for an unpublished post or a network without analytics.')]
 class GetPostMetricsTool extends Tool
 {
+    use AuthorizesMcpTool;
+
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
             'post_id' => ['required', 'uuid'],
         ]);
 
-        $post = Post::where('workspace_id', $request->user()->current_workspace_id)
-            ->with(['postPlatforms.socialAccount'])
-            ->find(data_get($validated, 'post_id'));
+        $workspace = $request->user()?->currentWorkspace;
+
+        $post = $workspace
+            ? Post::where('workspace_id', $workspace->id)
+                ->with(['socialAccount'])
+                ->find(data_get($validated, 'post_id'))
+            : null;
 
         if (! $post) {
             return Response::error('Post not found.');
         }
 
-        return Response::structured([
-            'post_id' => $post->id,
-            'platforms' => app(PostMetricsFetcher::class)->forPost($post)->all(),
-        ]);
+        if ($denied = $this->denyUnlessCan($request, 'view', $post, 'Post not found.')) {
+            return $denied;
+        }
+
+        return Response::structured(app(ReadPublicationAnalytics::class)->forPost($post));
     }
 
     public function schema(JsonSchema $schema): array

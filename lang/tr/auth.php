@@ -66,9 +66,7 @@ return [
     'github_email_unavailable' => 'GitHub\'dan e-postanız alınamadı. GitHub e-postanızı herkese açık yapın veya e-posta iznini verin, ardından tekrar deneyin.',
 
     'login' => [
-        'title' => 'Hesabınıza giriş yapın',
-        'description' => 'Giriş yapmak için e-posta ve parolanızı aşağıya girin',
-        'description_without_password' => 'Devam etmek için kurum hesabınızla giriş yapın',
+        'title' => 'TryPost\'a giriş yapın',
         'page_title' => 'Giriş yap',
         'email' => 'E-posta adresi',
         'password' => 'Parola',
@@ -82,10 +80,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'Tüm sosyal takviminiz tek bir yerde',
-        'description' => 'Hesabınızı oluşturun ve her ağda gönderi zamanlamaya başlayın.',
+        'title' => 'TryPost hesabı oluşturun',
         'page_title' => 'Kayıt ol',
-        'signup_with_email' => 'E-posta ile kayıt ol',
         'name' => 'Ad',
         'name_placeholder' => 'Ad soyad',
         'email' => 'E-posta adresi',
@@ -95,6 +91,12 @@ return [
         'submit' => 'Hesap oluştur',
         'has_account' => 'Zaten bir hesabınız var mı?',
         'log_in' => 'Giriş yap',
+        'password_requirements' => [
+            'min' => 'En az :count karakter',
+            'mixed_case' => 'Büyük ve küçük harfler',
+            'number' => 'En az 1 rakam',
+            'symbol' => 'En az 1 sembol',
+        ],
     ],
 
     'forgot_password' => [

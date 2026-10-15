@@ -8,6 +8,7 @@ use App\Actions\User\CreateUser;
 use App\Http\Controllers\Auth\Concerns\PreservesAttributionParameters;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\App\Auth\RegisterRequest;
+use App\Support\Auth\PasswordRequirements;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ class RegisteredUserController extends Controller
         return Inertia::render('auth/Register', [
             'email' => $request->query('email'),
             'invite' => $request->query('invite'),
+            'passwordRequirements' => PasswordRequirements::checklist(),
         ]);
     }
 
@@ -41,6 +43,9 @@ class RegisteredUserController extends Controller
             'is_invite' => $invite !== null,
             'registration_ip' => $request->ip(),
             'locale' => $request->validated('locale'),
+            'timezone' => $request->validated('timezone'),
+            'week_starts_on' => $request->validated('week_starts_on'),
+            'time_format' => $request->validated('time_format'),
         ], $attributionParameters);
 
         event(new Registered($user));

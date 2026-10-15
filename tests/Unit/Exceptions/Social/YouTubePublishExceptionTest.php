@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\YouTubePublishException;
 use App\Exceptions\TokenExpiredException;
@@ -58,13 +59,48 @@ test('unauthorized reason throws TokenExpiredException', function () {
     YouTubePublishException::fromGoogleException($e);
 })->throws(TokenExpiredException::class);
 
-test('unknown reason falls through to Unknown category with original message', function () {
+test('an unknown reason shows the message Google sent', function () {
     $e = new Exception('original error message', 400, null, [['reason' => 'someUnknownReason', 'message' => 'original error message']]);
 
     $exception = YouTubePublishException::fromGoogleException($e);
 
     expect($exception->category)->toBe(ErrorCategory::Unknown)
-        ->and($exception->userMessage)->toBe('original error message');
+        ->and($exception->userMessage)->toBe('original error message')
+        ->and($exception->rawResponse)->toBe('original error message');
+});
+
+test('a Google 5xx that reaches the mapper fails as an unconfirmed upload', function (int $status, array $errors) {
+    $e = new Exception('<!DOCTYPE html><html lang=en><title>Error 502 (Server Error)!!1</title></html>', $status, null, $errors);
+
+    $exception = YouTubePublishException::fromGoogleException($e);
+
+    expect(YouTubePublishException::isServerError($e))->toBeTrue()
+        ->and($exception->category)->toBe(ErrorCategory::ServerError)
+        ->and($exception->userMessage)->toBe(__('posts.errors.youtube.upload_unconfirmed'));
+})->with([
+    '502 html page' => [502, []],
+    '503 backendError' => [503, [['reason' => 'backendError', 'message' => 'Backend Error']]],
+    '500 internalError' => [500, [['reason' => 'internalError', 'message' => 'Internal error']]],
+    '400 backendError' => [400, [['reason' => 'backendError', 'message' => 'Backend Error']]],
+    'internalError without a status' => [0, [['reason' => 'internalError', 'message' => 'Internal error']]],
+    '504 gateway timeout' => [504, []],
+]);
+
+test('a 5xx the resumable upload guide does not list as retryable is not a server error', function () {
+    $e = new Exception('Not implemented', 501, null, [['reason' => 'notImplemented', 'message' => 'Not implemented']]);
+
+    expect(YouTubePublishException::isServerError($e))->toBeFalse();
+});
+
+test('a failure without a documented reason never reaches the user message', function () {
+    $e = new Exception('<!DOCTYPE html><html lang=en><p><b>400.</b> That’s an error.</html>', 400);
+
+    $exception = YouTubePublishException::fromGoogleException($e);
+
+    expect($exception->category)->toBe(ErrorCategory::Unknown)
+        ->and($exception->userMessage)->toBe(__('posts.errors.unrecognized_error', ['platform' => Platform::YouTube->label()]))
+        ->and($exception->userMessage)->not->toContain('<')
+        ->and($exception->rawResponse)->toContain('<!DOCTYPE html>');
 });
 
 test('platform returns youtube', function () {
@@ -99,7 +135,7 @@ test('fromApiResponse with invalidTitle reason maps to ContentPolicy', function 
         ->and($exception->platformErrorCode)->toBe('invalidTitle');
 });
 
-test('fromApiResponse with unknown reason uses fallback message and Unknown category', function () {
+test('fromApiResponse with an unknown reason shows the message Google sent', function () {
     $response = Http::response([
         'error' => [
             'code' => 400,
@@ -117,3 +153,48 @@ test('fromApiResponse with unknown reason uses fallback message and Unknown cate
     expect($exception->category)->toBe(ErrorCategory::Unknown)
         ->and($exception->userMessage)->toBe('Something went wrong on YouTube.');
 });
+
+test('only a reason YouTube documents as caused by the user is marked as a network rejection', function (string $reason, int $status, bool $marked) {
+    $fakeResponse = Http::fake(['*' => Http::response([
+        'error' => ['code' => $status, 'message' => 'Rejected', 'errors' => [['reason' => $reason, 'message' => 'Rejected']]],
+    ], $status)])->post(config('trypost.platforms.youtube.data_api').'/videos');
+
+    expect(YouTubePublishException::fromApiResponse($fakeResponse)->isNetworkRejection())->toBe($marked);
+})->with([
+    'invalid title' => ['invalidTitle', 400, true],
+    'channel upload limit' => ['uploadLimitExceeded', 400, true],
+    'invalid description' => ['invalidDescription', 400, true],
+    'channel upload rate limit' => ['uploadRateLimitExceeded', 403, true],
+    'our project quota' => ['quotaExceeded', 403, false],
+    'category we send' => ['invalidCategoryId', 400, false],
+    'privacy value we send' => ['forbiddenPrivacySetting', 403, false],
+    'undescribed forbidden' => ['forbidden', 403, false],
+    'video body missing from our request' => ['mediaBodyRequired', 400, false],
+]);
+
+test('a Google exception is marked only for a reason caused by the user', function (string $reason, bool $marked) {
+    $exception = new Exception('Rejected', 400, null, [['reason' => $reason, 'message' => 'Rejected']]);
+
+    expect(YouTubePublishException::fromGoogleException($exception)->isNetworkRejection())->toBe($marked);
+})->with([
+    'invalid title' => ['invalidTitle', true],
+    'our project quota' => ['quotaExceeded', false],
+]);
+
+test('an unknown reason without a Google message shows the generic message', function () {
+    $e = new Exception('{"error":{}}', 400, null, [['reason' => 'someUnknownReason']]);
+
+    expect(YouTubePublishException::fromGoogleException($e)->userMessage)
+        ->toBe(__('posts.errors.unrecognized_error', ['platform' => Platform::YouTube->label()]));
+});
+
+test('fromApiResponse shows the generic message without a Google message or on a 5xx', function (int $status, array $body) {
+    $fakeResponse = Http::fake(['*' => Http::response($body, $status)])
+        ->post(config('trypost.platforms.youtube.data_api').'/videos');
+
+    expect(YouTubePublishException::fromApiResponse($fakeResponse)->userMessage)
+        ->toBe(__('posts.errors.unrecognized_error', ['platform' => Platform::YouTube->label()]));
+})->with([
+    'no message' => [400, ['error' => ['code' => 400, 'errors' => [['reason' => 'weirdUnknownReason']]]]],
+    'a 5xx' => [503, ['error' => ['code' => 503, 'message' => 'Backend unavailable', 'errors' => [['reason' => 'weirdUnknownReason']]]]],
+]);

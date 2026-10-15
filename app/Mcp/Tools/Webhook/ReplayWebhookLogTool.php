@@ -7,7 +7,6 @@ namespace App\Mcp\Tools\Webhook;
 use App\Actions\Webhook\ReplayWebhookLog;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Mcp\Concerns\ResolvesWorkspaceWebhook;
-use App\Mcp\Requests\Webhook\ReplayWebhookLogRequest;
 use App\Models\Webhook;
 use App\Models\WebhookLog;
 use App\Models\Workspace;
@@ -28,17 +27,16 @@ class ReplayWebhookLogTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'manageWebhooks',
-            'Not authorized to manage webhooks.',
-        );
+        $workspace = $this->currentWorkspace($request);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate(ReplayWebhookLogRequest::rules());
+        $validated = $request->validate([
+            'webhook_id' => ['required', 'string', 'uuid'],
+            'log_id' => ['required', 'string', 'uuid'],
+        ]);
 
         $webhook = $this->webhookInWorkspace($workspace, data_get($validated, 'webhook_id'));
 
@@ -50,6 +48,10 @@ class ReplayWebhookLogTool extends Tool
 
         if (! $log instanceof WebhookLog) {
             return $log;
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'replay', [$log, $webhook], 'Webhook log not found.')) {
+            return $denied;
         }
 
         ReplayWebhookLog::execute($webhook, $log);

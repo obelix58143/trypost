@@ -2,9 +2,9 @@
 import type { HTMLAttributes, Ref } from "vue"
 import { useMediaQuery, useVModel } from "@vueuse/core"
 import { TooltipProvider } from "reka-ui"
-import { computed, ref } from "vue"
+import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { cn } from "@/lib/utils"
-import { provideSidebarContext, SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME, SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON } from "./utils"
+import { provideSidebarContext, SIDEBAR_COOKIE_MAX_AGE, SIDEBAR_COOKIE_NAME, SIDEBAR_RESIZE_SETTLE_MS, SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON, sidebarResizing } from "./utils"
 
 const props = withDefaults(defineProps<{
   defaultOpen?: boolean
@@ -19,7 +19,7 @@ const emits = defineEmits<{
   "update:open": [open: boolean]
 }>()
 
-const isMobile = useMediaQuery("(max-width: 768px)")
+const isMobile = useMediaQuery("(max-width: 767px)")
 const openMobile = ref(false)
 
 const open = useVModel(props, "open", emits, {
@@ -30,20 +30,40 @@ const open = useVModel(props, "open", emits, {
 const setOpen = (value: boolean) => {
   open.value = value // emits('update:open', value)
 
-  // This sets the cookie to keep the sidebar state.
-  document.cookie = `${SIDEBAR_COOKIE_NAME}=${open.value}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+  if (window.matchMedia("(min-width: 1024px)").matches) {
+    document.cookie = `${SIDEBAR_COOKIE_NAME}=${value}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+  }
 }
+
+let resizeSettleTimer: ReturnType<typeof setTimeout> | undefined
+
+const markResizing = () => {
+  sidebarResizing.value = true
+  clearTimeout(resizeSettleTimer)
+  resizeSettleTimer = setTimeout(() => {
+    sidebarResizing.value = false
+  }, SIDEBAR_RESIZE_SETTLE_MS)
+}
+
+watch(open, markResizing)
+
+onBeforeUnmount(() => {
+  clearTimeout(resizeSettleTimer)
+  sidebarResizing.value = false
+})
 
 const setOpenMobile = (value: boolean) => {
   openMobile.value = value
 }
 
-// Helper to toggle the sidebar. Desktop toggling is intentionally a no-op:
-// the app does not support hiding/collapsing the sidebar on desktop.
 const toggleSidebar = () => {
   if (isMobile.value) {
     setOpenMobile(!openMobile.value)
+
+    return
   }
+
+  setOpen(!open.value)
 }
 
 // We add a state so that we can do data-state="expanded" or "collapsed".

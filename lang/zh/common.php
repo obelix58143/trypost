@@ -8,7 +8,6 @@ return [
     'back' => '返回',
 
     'confirm_modal' => [
-        'cannot_be_undone' => '此操作无法撤销。',
         'type' => '输入',
         'to_confirm' => '以确认。',
         'copy_to_clipboard' => '复制到剪贴板',
@@ -59,11 +58,25 @@ return [
     'cancel' => '取消',
     'clear' => '清除',
     'close' => '关闭',
+    'more' => '更多',
+    'play' => '播放',
+    'loading' => '加载中…',
     'loading_more' => '加载更多…',
 
     'actions' => [
         'copy' => '复制',
         'copied' => '已复制',
         'copy_failed' => '复制到剪贴板失败',
+    ],
+
+    'media_lightbox' => [
+        'title' => '媒体预览',
+        'previous' => '上一个',
+        'next' => '下一个',
+        'zoom_in' => '放大',
+        'zoom_out' => '缩小',
+        'counter' => ':current / :total',
+        'go_to' => '显示第 :number 项',
+        'open' => '打开预览',
     ],
 ];

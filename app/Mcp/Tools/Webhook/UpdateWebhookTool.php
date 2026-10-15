@@ -10,10 +10,10 @@ use App\Enums\Webhook\Status;
 use App\Http\Resources\Api\WebhookResource;
 use App\Mcp\Concerns\AuthorizesMcpTool;
 use App\Mcp\Concerns\ResolvesWorkspaceWebhook;
-use App\Mcp\Requests\Webhook\UpdateWebhookRequest;
 use App\Models\Webhook;
 use App\Models\Workspace;
 use App\Services\WebhookService;
+use App\Support\Requests\Webhook\WebhookRequestRules;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Arr;
 use Laravel\Mcp\Request;
@@ -33,22 +33,25 @@ class UpdateWebhookTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'manageWebhooks',
-            'Not authorized to manage webhooks.',
-        );
+        $workspace = $this->currentWorkspace($request);
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate(UpdateWebhookRequest::rules());
+        $validated = $request->validate([
+            'webhook_id' => ['required', 'string', 'uuid'],
+            ...WebhookRequestRules::update(),
+        ]);
 
         $webhook = $this->webhookInWorkspace($workspace, data_get($validated, 'webhook_id'));
 
         if (! $webhook instanceof Webhook) {
             return $webhook;
+        }
+
+        if ($denied = $this->denyUnlessCan($request, 'update', $webhook, 'Webhook not found.')) {
+            return $denied;
         }
 
         try {

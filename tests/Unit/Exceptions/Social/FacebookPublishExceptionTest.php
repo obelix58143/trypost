@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\SocialAccount\Platform;
 use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\FacebookPublishException;
 use App\Exceptions\TokenExpiredException;
@@ -171,3 +172,57 @@ test('subcode 463 throws TokenExpiredException', function () {
 
     FacebookPublishException::fromApiResponse($fakeResponse);
 })->throws(TokenExpiredException::class);
+
+test('only a Graph code caused by the Page is marked as a network rejection', function (int $code, bool $marked) {
+    $fakeResponse = Http::fake(['*' => Http::response([
+        'error' => ['code' => $code, 'message' => 'Rejected'],
+    ], 400)])->post(config('trypost.platforms.facebook.graph_api').'/123/feed');
+
+    expect(FacebookPublishException::fromApiResponse($fakeResponse)->isNetworkRejection())->toBe($marked);
+})->with([
+    'unsupported video format' => [1363024, true],
+    'video above the maximum size' => [1363023, true],
+    'video below the minimum size' => [1363022, true],
+    'file is not a valid video' => [1363032, true],
+    'video too short' => [1363025, true],
+    'video too long' => [1363026, true],
+    'duplicate post' => [506, true],
+    'user request limit' => [17, true],
+    'Page BUC limit' => [80001, true],
+    'app request limit' => [4, false],
+    'user or app Page limit' => [32, false],
+    'application limit' => [341, false],
+    'custom limit' => [613, false],
+    'no video file in our request' => [1363020, false],
+    'upload problem to retry and report' => [6000, false],
+    'no permission to upload, fixed with a valid token' => [1363042, false],
+    'undocumented reel encoding code' => [1363047, false],
+    'undocumented caption code' => [1390008, false],
+    'undocumented rate limit' => [1349125, false],
+]);
+
+test('no rupload failure is marked as a network rejection', function (string $type) {
+    $fakeResponse = Http::fake(['*' => Http::response(['debug_info' => ['type' => $type, 'message' => 'Failed']], 400)])
+        ->post('https://'.config('trypost.platforms.facebook.rupload_host').'/video-upload/v25.0/1');
+
+    expect(FacebookPublishException::fromApiResponse($fakeResponse)->isNetworkRejection())->toBeFalse();
+})->with([
+    'processing failed' => ['ProcessingFailedError'],
+    'our partial request' => ['PartialRequestError'],
+    'invalid upload offset' => ['OffsetInvalidError'],
+]);
+
+test('a rupload failure without a usable type has no platform error code', function (mixed $type) {
+    $fakeResponse = Http::fake(['*' => Http::response(['debug_info' => ['type' => $type, 'message' => 'Failed']], 400)])
+        ->post('https://'.config('trypost.platforms.facebook.rupload_host').'/video-upload/v25.0/1');
+
+    $exception = FacebookPublishException::fromApiResponse($fakeResponse);
+
+    expect($exception->platformErrorCode)->toBeNull()
+        ->and($exception->category)->toBe(ErrorCategory::Unknown)
+        ->and($exception->userMessage)->toBe(__('posts.errors.unrecognized_error', ['platform' => Platform::Facebook->label()]));
+})->with([
+    'empty type' => [''],
+    'array type' => [['ProcessingFailedError']],
+    'integer type' => [42],
+]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Post\UpdatePost;
 use App\Enums\Post\CreatedVia;
+use App\Enums\Post\PublishStatus;
 use App\Enums\Post\Status as PostStatus;
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
@@ -13,13 +14,13 @@ use App\Events\Webhook\LogUpdated;
 use App\Jobs\DispatchWebhook;
 use App\Mail\WebhookPausedMail;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Webhook;
 use App\Models\WebhookLog;
 use App\Models\Workspace;
 use App\Models\WorkspaceLabel;
+use App\Services\Http\HostResolver;
 use App\Services\WebhookService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Event;
@@ -183,9 +184,14 @@ test('dispatch webhook job sends the published post payload as data', function (
         'example.com/webhook' => Http::response('OK', 200),
     ]);
 
-    $post = Post::factory()->published()->createQuietly([
-        'workspace_id' => $this->workspace->id,
+    $account = SocialAccount::factory()->linkedin()->recycle($this->workspace)->create([
+        'display_name' => 'Paulo Castellano',
+        'username' => 'paulocastellano',
+        'avatar_url' => 'avatars/li.jpg',
+    ]);
+    $post = Post::factory()->forAccount($account, ContentType::LinkedInPost)->published()->createQuietly([
         'user_id' => $this->user->id,
+        'meta' => ['document_title' => 'TryPost launch deck'],
         'content' => '<p>Launch day. TryPost is live.</p>',
         'created_via' => CreatedVia::Web,
         'media' => [
@@ -207,17 +213,6 @@ test('dispatch webhook job sends the published post payload as data', function (
     ]);
     $post->labels()->attach($label);
 
-    $account = SocialAccount::factory()->linkedin()->recycle($this->workspace)->create([
-        'display_name' => 'Paulo Castellano',
-        'username' => 'paulocastellano',
-        'avatar_url' => 'avatars/li.jpg',
-    ]);
-    PostPlatform::factory()->published()->recycle($post, $account)->create([
-        'platform' => Platform::LinkedIn,
-        'content_type' => ContentType::LinkedInPost,
-        'meta' => ['document_title' => 'TryPost launch deck'],
-    ]);
-
     $payload = app(WebhookService::class)->postPayload($post->fresh());
 
     $job = new DispatchWebhook(
@@ -228,7 +223,7 @@ test('dispatch webhook job sends the published post payload as data', function (
 
     app()->call([$job, 'handle']);
 
-    Http::assertSent(function ($request) use ($job, $payload) {
+    Http::assertSent(function ($request) use ($job, $payload, $account) {
         $body = $request->data();
 
         return $body['id'] === $job->logId
@@ -241,9 +236,13 @@ test('dispatch webhook job sends the published post payload as data', function (
             && data_get($body, 'data.workspace.name') === $this->workspace->name
             && data_get($body, 'data.labels.0.name') === 'Launch'
             && data_get($body, 'data.media.0.type') === 'image'
-            && data_get($body, 'data.platforms.0.platform') === Platform::LinkedIn->value
-            && data_get($body, 'data.platforms.0.meta.document_title') === 'TryPost launch deck'
-            && ! array_key_exists('access_token', data_get($body, 'data.platforms.0.social_account', []));
+            && data_get($body, 'data.platform') === Platform::LinkedIn->value
+            && data_get($body, 'data.social_account_id') === $account->id
+            && data_get($body, 'data.publish_status') === PublishStatus::Published->value
+            && data_get($body, 'data.meta.document_title') === 'TryPost launch deck'
+            && ! array_key_exists('platforms', data_get($body, 'data', []))
+            && ! array_key_exists('error_context', data_get($body, 'data', []))
+            && ! array_key_exists('access_token', data_get($body, 'data.social_account', []));
     });
 });
 
@@ -282,7 +281,7 @@ test('unscheduling a post delivers the log id on the webhook envelope', function
         'events' => [WebhookEvent::PostUnscheduled->value],
     ]);
 
-    $post = Post::factory()->scheduled()->createQuietly([
+    $post = Post::factory()->linkedin()->scheduled()->createQuietly([
         'workspace_id' => $this->workspace->id,
         'user_id' => $this->user->id,
         'content' => 'Was scheduled',
@@ -678,4 +677,79 @@ test('dispatch webhook job broadcasts a slim log update when the endpoint is blo
             && ! array_key_exists('payload', $event->broadcastWith())
             && ! array_key_exists('response_body', $event->broadcastWith());
     });
+});
+
+function webhookDns(array $answers): void
+{
+    $calls = [];
+
+    test()->mock(HostResolver::class)
+        ->shouldReceive('addresses')
+        ->andReturnUsing(function (string $host) use ($answers, &$calls): array {
+            $index = $calls[$host] = ($calls[$host] ?? -1) + 1;
+            $replies = $answers[$host] ?? [[]];
+
+            return $replies[min($index, count($replies) - 1)];
+        });
+}
+
+test('dispatch webhook job posts to the vetted address only, even when the host rebinds', function () {
+    webhookDns(['hooks.example.test' => [['93.184.216.34'], ['127.0.0.1']]]);
+    $this->webhook->update(['endpoint' => 'https://hooks.example.test/webhook']);
+    $pins = [];
+    Http::fake(function ($request, array $options) use (&$pins) {
+        $pins[] = data_get($options, 'curl.'.CURLOPT_RESOLVE);
+
+        return Http::response('OK', 200);
+    });
+
+    app()->call([new DispatchWebhook($this->webhook, WebhookEvent::PostPublished->value, ['id' => 'x']), 'handle']);
+
+    expect($pins)->toBe([['hooks.example.test:443:93.184.216.34']])
+        ->and(WebhookLog::query()->where('webhook_id', $this->webhook->id)->sole()->delivered_at)->not->toBeNull();
+});
+
+test('dispatch webhook job refuses a host that resolves to a private address and logs it', function () {
+    webhookDns(['hooks.example.test' => [['10.0.0.5']]]);
+    $this->webhook->update(['endpoint' => 'https://hooks.example.test/webhook']);
+    Http::fake();
+
+    expect(fn () => app()->call([new DispatchWebhook($this->webhook, WebhookEvent::PostPublished->value, ['id' => 'x']), 'handle']))
+        ->toThrow(RuntimeException::class);
+
+    expect(WebhookLog::query()->where('webhook_id', $this->webhook->id)->sole())
+        ->failed_at->not->toBeNull()
+        ->response_body->toBe(__('http.errors.private_network'));
+
+    Http::assertNothingSent();
+});
+
+test('dispatch webhook job streams the response and logs only its first 2000 bytes as text', function (bool $gzip) {
+    $raw = $gzip ? gzencode(str_repeat('a', 3 * 1024 * 1024)) : str_repeat('a', 3 * 1024 * 1024);
+    $options = null;
+    Http::fake(function ($request, array $requestOptions) use (&$options, $raw, $gzip) {
+        $options = $requestOptions;
+
+        return Http::response($raw, 200, $gzip ? ['Content-Encoding' => 'gzip'] : []);
+    });
+
+    app()->call([new DispatchWebhook($this->webhook, WebhookEvent::PostPublished->value, ['id' => 'x']), 'handle']);
+
+    $log = WebhookLog::query()->where('webhook_id', $this->webhook->id)->sole();
+
+    expect(data_get($options, 'stream'))->toBeTrue()
+        ->and($log->response_body)->toBe(mb_scrub(str_replace("\0", '', substr($raw, 0, 2000)), 'UTF-8'))
+        ->and(strlen($log->response_body))->toBeLessThanOrEqual(2000)
+        ->and($log->delivered_at)->not->toBeNull();
+})->with(['plain' => false, 'binary gzip bytes' => true]);
+
+test('dispatch webhook job never stores a multibyte character cut in half', function () {
+    Http::fake(fn () => Http::response('a'.str_repeat('é', 2000), 200));
+
+    app()->call([new DispatchWebhook($this->webhook, WebhookEvent::PostPublished->value, ['id' => 'x']), 'handle']);
+
+    $stored = WebhookLog::query()->where('webhook_id', $this->webhook->id)->sole()->response_body;
+
+    expect(mb_check_encoding($stored, 'UTF-8'))->toBeTrue()
+        ->and(strlen($stored))->toBeLessThanOrEqual(2000);
 });

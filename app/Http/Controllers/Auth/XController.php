@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
+use App\Models\SocialAccount;
+use App\Services\Social\ConnectionVerifier;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 class XController extends SocialController
@@ -34,8 +36,13 @@ class XController extends SocialController
         return $this->redirectToProvider($request, $this->driver, $this->scopes);
     }
 
-    public function callback(Request $request): InertiaResponse
+    public function callback(Request $request): RedirectResponse
     {
-        return $this->handleCallback($request, $this->driver);
+        return $this->handleCallback($request, $this->driver, $this->scopes);
+    }
+
+    protected function afterConnected(SocialAccount $account): void
+    {
+        rescue(fn (): bool => app(ConnectionVerifier::class)->verifyAccessToken($account), report: false);
     }
 }

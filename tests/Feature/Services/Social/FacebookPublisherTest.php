@@ -5,29 +5,20 @@ declare(strict_types=1);
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
 use App\Exceptions\PlatformUnavailableException;
+use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\Social\FacebookPublishException;
 use App\Exceptions\TokenExpiredException;
 use App\Models\Post;
-use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Media\MediaOptimizer;
 use App\Services\Social\FacebookPublisher;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
-use Intervention\Image\Drivers\Gd\Driver;
-use Intervention\Image\ImageManager;
-
-function facebookJpegBytes(int $width = 1200, int $height = 800): string
-{
-    $manager = new ImageManager(Driver::class);
-    $image = $manager->createImage($width, $height)->fill('888888');
-
-    return (string) $image->encodeUsingMediaType('image/jpeg', quality: 80);
-}
 
 /**
  * @return array<int, array<string, string>>
@@ -93,18 +84,12 @@ beforeEach(function () {
         ],
     ]);
 
-    $this->post = Post::factory()->create([
-        'workspace_id' => $this->workspace->id,
+    $this->post = Post::factory()->forAccount($this->socialAccount)->create([
         'user_id' => $this->user->id,
         'content' => 'Check out this Facebook post!',
-    ]);
-
-    $this->postPlatform = PostPlatform::factory()->facebook()->create([
-        'post_id' => $this->post->id,
-        'social_account_id' => $this->socialAccount->id,
-        'platform' => Platform::Facebook,
         'content_type' => ContentType::FacebookPost,
     ]);
+    $this->post->setRelation('socialAccount', $this->socialAccount);
 
     $this->publisher = new FacebookPublisher;
 });
@@ -116,7 +101,7 @@ test('facebook publisher can publish text only post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result)->toHaveKey('id');
     expect($result)->toHaveKey('url');
@@ -150,7 +135,7 @@ test('facebook publisher can publish single image post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result)->toHaveKey('id');
     expect($result['id'])->toBe('page_123_photo_post_456');
@@ -185,7 +170,7 @@ test('facebook publisher can publish multi image post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result)->toHaveKey('id');
     expect($result['id'])->toBe('page_123_multi_post_789');
@@ -215,7 +200,7 @@ test('facebook publisher sends graph api requests as form-urlencoded not json', 
         '*/page_123/photos' => Http::response(['id' => 'photo_123', 'post_id' => 'post_123'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), '/page_123/photos')
@@ -243,7 +228,7 @@ test('facebook publisher can publish video post', function () {
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result)->toHaveKey('id');
     expect($result['id'])->toBe('video_123');
@@ -255,32 +240,86 @@ test('facebook publisher can publish video post', function () {
     });
 });
 
-test('facebook publisher rejects image story', function () {
-    $this->postPlatform->update(['content_type' => ContentType::FacebookStory]);
+test('facebook publisher fits an image story to 9:16 and publishes it through photo_stories', function () {
+    Storage::fake();
+    $this->post->update(['content_type' => ContentType::FacebookStory]);
+    $this->post->update(['media' => [[
+        'id' => 'test-media-story',
+        'path' => 'media/2026-01/story.jpg',
+        'url' => 'https://example.com/media/2026-01/story.jpg',
+        'mime_type' => 'image/jpeg',
+        'original_filename' => 'story.jpg',
+    ]]]);
 
-    $this->post->update([
-        'media' => [
-            [
-                'id' => 'test-media-story',
-                'path' => 'media/2026-01/story.jpg',
-                'url' => 'https://example.com/media/2026-01/story.jpg',
-                'mime_type' => 'image/jpeg',
-                'original_filename' => 'story.jpg',
-            ],
-        ],
+    $optimizer = Mockery::mock(MediaOptimizer::class);
+    $optimizer->shouldReceive('fitToCanvas')->once()->with(Mockery::type('string'), 1080, 1920)->andReturnUsing(function (string $tempFile): string {
+        $fitted = tempnam(sys_get_temp_dir(), 'fb_fit_');
+        copy($tempFile, $fitted);
+
+        return $fitted;
+    });
+    app()->instance(MediaOptimizer::class, $optimizer);
+
+    Http::fake([
+        '*/page_123/photos' => Http::response(['id' => 'photo_story_1'], 200),
+        '*/page_123/photo_stories' => Http::response(['success' => true, 'post_id' => 'story_789'], 200),
+        '*' => Http::response(file_get_contents(__DIR__.'/../../../fixtures/1x1.png'), 200, ['Content-Type' => 'image/png']),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
-        ->toThrow(FacebookPublishException::class, 'Facebook Stories require a video file.');
+    $result = $this->publisher->publish($this->post);
+
+    expect($result)->toBe([
+        'id' => 'story_789',
+        'url' => 'https://www.facebook.com/stories/page_123/story_789',
+    ]);
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')
+        && $request['published'] === 'false'
+        && str_contains((string) $request['url'], 'social-crops/')
+        && ! str_contains((string) $request['url'], 'example.com'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photo_stories')
+        && $request['photo_id'] === 'photo_story_1');
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'video_stories'));
+});
+
+test('facebook publisher fails an image story when the photo upload is refused', function () {
+    Storage::fake();
+    $this->post->update(['content_type' => ContentType::FacebookStory]);
+    $this->post->update(['media' => [[
+        'id' => 'test-media-story',
+        'path' => 'media/2026-01/story.jpg',
+        'url' => 'https://example.com/media/2026-01/story.jpg',
+        'mime_type' => 'image/jpeg',
+        'original_filename' => 'story.jpg',
+    ]]]);
+
+    $optimizer = Mockery::mock(MediaOptimizer::class);
+    $optimizer->shouldReceive('fitToCanvas')->andReturnUsing(function (string $tempFile): string {
+        $fitted = tempnam(sys_get_temp_dir(), 'fb_fit_');
+        copy($tempFile, $fitted);
+
+        return $fitted;
+    });
+    app()->instance(MediaOptimizer::class, $optimizer);
+
+    Http::fake([
+        '*/page_123/photos' => Http::response(['error' => ['message' => 'Invalid image', 'code' => 100]], 400),
+        '*' => Http::response(file_get_contents(__DIR__.'/../../../fixtures/1x1.png'), 200, ['Content-Type' => 'image/png']),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->post))
+        ->toThrow(FacebookPublishException::class, 'Facebook could not upload the story photo.');
+
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), 'photo_stories'));
 });
 
 test('facebook publisher rejects a reel without a video', function (array $media) {
-    $this->postPlatform->update(['content_type' => ContentType::FacebookReel]);
+    $this->post->update(['content_type' => ContentType::FacebookReel]);
     $this->post->update(['media' => $media]);
 
     Http::fake();
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook Reels require a video file.');
 
     Http::assertNothingSent();
@@ -296,24 +335,24 @@ test('facebook publisher rejects a reel without a video', function (array $media
 ]);
 
 test('facebook publisher rejects a story without media', function () {
-    $this->postPlatform->update(['content_type' => ContentType::FacebookStory]);
+    $this->post->update(['content_type' => ContentType::FacebookStory]);
     $this->post->update(['media' => []]);
 
     Http::fake();
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
-        ->toThrow(FacebookPublishException::class, 'Facebook Stories require a video file.');
+    expect(fn () => $this->publisher->publish($this->post))
+        ->toThrow(FacebookPublishException::class, 'Facebook Stories require an image or a video file.');
 
     Http::assertNothingSent();
 });
 
 test('facebook publisher can publish reel', function () {
-    $this->postPlatform->update(['content_type' => ContentType::FacebookReel]);
+    $this->post->update(['content_type' => ContentType::FacebookReel]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     Http::fake(facebookVideoUploadFakes('video_reels'));
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('reel_456');
     expect($result['url'])->toBe('https://www.facebook.com/reel/reel_456');
@@ -326,12 +365,12 @@ test('facebook publisher can publish reel', function () {
 });
 
 test('facebook publisher can publish video story', function () {
-    $this->postPlatform->update(['content_type' => ContentType::FacebookStory]);
+    $this->post->update(['content_type' => ContentType::FacebookStory]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     Http::fake(facebookVideoUploadFakes('video_stories'));
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('story_456');
     expect($result['url'])->toBe('https://www.facebook.com/stories/page_123/story_456');
@@ -343,12 +382,12 @@ test('facebook publisher can publish video story', function () {
 });
 
 test('facebook publisher hands meta the hosted url and never downloads the video', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     Http::fake(facebookVideoUploadFakes($edge));
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         if (! str_contains($request->url(), config('trypost.platforms.facebook.rupload_host'))) {
@@ -372,7 +411,7 @@ test('facebook publisher hands meta the hosted url and never downloads the video
 })->with('facebook resumable video formats');
 
 test('facebook publisher waits for meta to fetch the video before finishing', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -385,7 +424,7 @@ test('facebook publisher waits for meta to fetch the video before finishing', fu
             ->push(['status' => ['video_status' => 'processing', 'uploading_phase' => ['status' => 'complete']]], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Sleep::assertSleptTimes(2);
     Sleep::assertSequence([
@@ -394,22 +433,71 @@ test('facebook publisher waits for meta to fetch the video before finishing', fu
     ]);
 })->with('facebook resumable video formats');
 
+test('facebook publisher retries a rupload failure meta documents as retryable', function (int $status, array $body) {
+    $this->post->update(['content_type' => ContentType::FacebookReel]);
+    $this->post->update(['media' => facebookVideoMedia()]);
+
+    $rupload = 'https://'.config('trypost.platforms.facebook.rupload_host');
+
+    Http::fake([
+        ...facebookVideoUploadFakes('video_reels'),
+        "{$rupload}/*" => Http::response($body, $status),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->post))
+        ->toThrow(PlatformUnavailableException::class);
+
+    Http::assertNotSent(fn ($request) => ($request['upload_phase'] ?? null) === 'finish');
+})->with([
+    'retriable flag' => [400, ['debug_info' => ['retriable' => true, 'type' => 'OtherError', 'message' => 'Temporary failure']]],
+    'server error' => [503, ['debug_info' => ['retriable' => false, 'type' => 'ServiceUnavailable', 'message' => 'Service unavailable']]],
+]);
+
+test('facebook publisher fails a rupload error meta flags not retriable by its documented type', function (string $type, string $message, ErrorCategory $category) {
+    $this->post->update(['content_type' => ContentType::FacebookReel]);
+    $this->post->update(['media' => facebookVideoMedia()]);
+
+    $rupload = 'https://'.config('trypost.platforms.facebook.rupload_host');
+
+    Http::fake([
+        ...facebookVideoUploadFakes('video_reels'),
+        "{$rupload}/*" => Http::response(['debug_info' => [
+            'retriable' => false,
+            'type' => $type,
+            'message' => 'The video file could not be read from file_url.',
+        ]], 400),
+    ]);
+
+    expect(fn () => $this->publisher->publish($this->post))
+        ->toThrow(fn (FacebookPublishException $exception) => expect($exception->userMessage)
+            ->toBe(__($message, ['platform' => Platform::Facebook->label()]))
+            ->and($exception->category)->toBe($category)
+            ->and($exception->platformErrorCode)->toBe($type));
+
+    Http::assertNotSent(fn ($request) => ($request['upload_phase'] ?? null) === 'finish');
+})->with([
+    'processing failed' => ['ProcessingFailedError', 'posts.errors.facebook.processing_failed', ErrorCategory::MediaFormat],
+    'partial request' => ['PartialRequestError', 'posts.errors.facebook.upload_incomplete', ErrorCategory::ServerError],
+    'invalid upload offset' => ['OffsetInvalidError', 'posts.errors.facebook.upload_incomplete', ErrorCategory::ServerError],
+    'undocumented type' => ['InvalidFileError', 'posts.errors.unrecognized_error', ErrorCategory::Unknown],
+]);
+
 test('facebook publisher fails when start does not return upload_url', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     Http::fake([
         "*/page_123/{$edge}" => Http::response(['video_id' => 'video_123'], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook did not start the video upload. Please try again.');
 
     Http::assertSentCount(1);
 })->with('facebook resumable video formats');
 
 test('facebook publisher rejects an upload_url outside the rupload host', function (ContentType $contentType, string $edge, string $uploadUrl) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     Http::fake([
@@ -419,7 +507,7 @@ test('facebook publisher rejects an upload_url outside the rupload host', functi
         ], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook returned an invalid upload URL.');
 
     Http::assertSentCount(1);
@@ -433,7 +521,7 @@ test('facebook publisher rejects an upload_url outside the rupload host', functi
 test('facebook publisher trusts the rupload host from config', function () {
     config()->set('trypost.platforms.facebook.rupload_host', 'rupload.example.test');
 
-    $this->postPlatform->update(['content_type' => ContentType::FacebookStory]);
+    $this->post->update(['content_type' => ContentType::FacebookStory]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     Http::fake([
@@ -441,7 +529,7 @@ test('facebook publisher trusts the rupload host from config', function () {
         'https://rupload.example.test/*' => Http::response(['success' => true], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('story_456');
 
@@ -449,7 +537,7 @@ test('facebook publisher trusts the rupload host from config', function () {
 });
 
 test('facebook publisher maps a rupload rejection and does not finish', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $rupload = 'https://'.config('trypost.platforms.facebook.rupload_host');
@@ -459,7 +547,7 @@ test('facebook publisher maps a rupload rejection and does not finish', function
         "{$rupload}/*" => Http::response(['error' => ['message' => 'Problem with file', 'code' => 6000]], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Problem with file. Try with another file.');
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), "/page_123/{$edge}")
@@ -467,7 +555,7 @@ test('facebook publisher maps a rupload rejection and does not finish', function
 })->with('facebook resumable video formats');
 
 test('facebook publisher does not finish when rupload does not confirm success', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $rupload = 'https://'.config('trypost.platforms.facebook.rupload_host');
@@ -477,7 +565,7 @@ test('facebook publisher does not finish when rupload does not confirm success',
         "{$rupload}/*" => Http::response(['success' => false], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook did not accept the video. Please try again.');
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), "/page_123/{$edge}")
@@ -485,7 +573,7 @@ test('facebook publisher does not finish when rupload does not confirm success',
 })->with('facebook resumable video formats');
 
 test('facebook publisher reschedules when rupload cannot be reached', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $rupload = 'https://'.config('trypost.platforms.facebook.rupload_host');
@@ -495,7 +583,7 @@ test('facebook publisher reschedules when rupload cannot be reached', function (
         "{$rupload}/*" => fn () => throw new ConnectionException('cURL error 28: Connection timed out after 10003 milliseconds'),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(function (PlatformUnavailableException $exception): void {
             expect($exception->retryDelaySeconds)->toBe(60)
                 ->and($exception->getMessage())->toContain('video upload unreachable');
@@ -506,7 +594,7 @@ test('facebook publisher reschedules when rupload cannot be reached', function (
 })->with('facebook resumable video formats');
 
 test('facebook publisher reschedules when the status check cannot be reached and keeps the token out of the message', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -516,7 +604,7 @@ test('facebook publisher reschedules when the status check cannot be reached and
         "{$graph}/video_123?fields=status*" => fn ($request) => throw new ConnectionException("cURL error 28: Operation timed out for {$request->url()}"),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(function (PlatformUnavailableException $exception): void {
             expect($exception->getMessage())
                 ->toContain('video status unreachable')
@@ -526,7 +614,7 @@ test('facebook publisher reschedules when the status check cannot be reached and
 })->with('facebook resumable video formats');
 
 test('facebook publisher keeps polling the video status through a transient graph error', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -538,13 +626,13 @@ test('facebook publisher keeps polling the video status through a transient grap
             ->push(['status' => ['video_status' => 'processing', 'uploading_phase' => ['status' => 'complete']]], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Sleep::assertSleptTimes(1);
 })->with('facebook resumable video formats');
 
 test('facebook publisher stops polling the video status on a confirmed graph rejection', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -556,7 +644,7 @@ test('facebook publisher stops polling the video status on a confirmed graph rej
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Unsupported get request.');
 
     Sleep::assertNeverSlept();
@@ -566,7 +654,7 @@ test('facebook publisher stops polling the video status on a confirmed graph rej
 })->with('facebook resumable video formats');
 
 test('facebook publisher surfaces the video processing error instead of finishing', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -585,7 +673,7 @@ test('facebook publisher surfaces the video processing error instead of finishin
         ], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Resolution too low. Video must have a minimum resolution of 540p.');
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), "/page_123/{$edge}")
@@ -593,7 +681,7 @@ test('facebook publisher surfaces the video processing error instead of finishin
 })->with('facebook resumable video formats');
 
 test('facebook publisher fails when the upload session expires', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -603,12 +691,12 @@ test('facebook publisher fails when the upload session expires', function (Conte
         "{$graph}/video_123?fields=status*" => Http::response(['status' => ['video_status' => 'expired']], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook could not process the video. Please try another file.');
 })->with('facebook resumable video formats');
 
 test('facebook publisher gives up on a video fetch that never completes', function (ContentType $contentType, string $edge) {
-    $this->postPlatform->update(['content_type' => $contentType]);
+    $this->post->update(['content_type' => $contentType]);
     $this->post->update(['media' => facebookVideoMedia()]);
 
     $graph = config('trypost.platforms.facebook.graph_api');
@@ -620,7 +708,7 @@ test('facebook publisher gives up on a video fetch that never completes', functi
         ], 200),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook took too long to fetch the video. Please try again.');
 
     Sleep::assertSleptTimes(59);
@@ -634,7 +722,7 @@ test('facebook publisher reschedules a graph post when facebook cannot be reache
         '*/page_123/feed' => fn () => throw new ConnectionException('cURL error 28: Connection timed out'),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(PlatformUnavailableException::class);
 });
 
@@ -649,7 +737,7 @@ test('facebook publisher throws exception on api error', function () {
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class);
 });
 
@@ -664,7 +752,7 @@ test('facebook publisher throws token expired exception on oauth error', functio
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(TokenExpiredException::class);
 });
 
@@ -680,14 +768,14 @@ test('facebook publisher throws token expired exception on session expired subco
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(TokenExpiredException::class);
 });
 
 test('facebook publisher throws exception for unsupported content type', function () {
-    $this->postPlatform->update(['content_type' => ContentType::InstagramFeed]);
+    $this->post->update(['content_type' => ContentType::InstagramFeed]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Unsupported Facebook content type');
 });
 
@@ -711,7 +799,7 @@ test('facebook publisher throws exception when multi image upload fails', functi
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Failed to upload any images to Facebook');
 });
 
@@ -736,7 +824,7 @@ test('facebook publisher publishes the multi image post with the photos facebook
         '*/page_123/feed' => Http::response(['id' => 'page_123_partial_789'], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('page_123_partial_789');
 
@@ -751,7 +839,7 @@ test('facebook publisher rejects a text post that is only whitespace', function 
 
     Http::fake();
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Facebook text posts require content');
 
     Http::assertNothingSent();
@@ -770,14 +858,14 @@ test('facebook publisher throws exception for unsupported media type', function 
         ],
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Unsupported media type for Facebook');
 });
 
 test('facebook publisher throws exception for text post with null content', function () {
     $this->post->update(['content' => null]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(Exception::class, 'Facebook text posts require content');
 });
 
@@ -802,7 +890,7 @@ test('facebook publisher can publish single image with null content', function (
         ], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('post-123');
 });
@@ -825,7 +913,7 @@ test('single image post without caption omits message from payload', function ()
         '*/page_123/photos' => Http::response(['id' => 'photo-123', 'post_id' => 'post-123'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), '/page_123/photos')
@@ -854,7 +942,7 @@ test('multi-image post without caption omits message from payload', function () 
         '*/page_123/feed' => Http::response(['id' => 'multi_post_789'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), '/page_123/feed')
@@ -880,7 +968,7 @@ test('video post without description omits description from payload', function (
         '*/page_123/videos' => Http::response(['id' => 'video_123'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), '/page_123/videos')
@@ -889,7 +977,7 @@ test('video post without description omits description from payload', function (
 });
 
 test('reel post without description omits description from payload (finish phase)', function () {
-    $this->postPlatform->update(['content_type' => ContentType::FacebookReel]);
+    $this->post->update(['content_type' => ContentType::FacebookReel]);
 
     $this->post->update([
         'content' => null,
@@ -906,7 +994,7 @@ test('reel post without description omits description from payload (finish phase
 
     Http::fake(facebookVideoUploadFakes('video_reels'));
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         if (! str_contains($request->url(), '/page_123/video_reels')) {
@@ -920,10 +1008,10 @@ test('reel post without description omits description from payload (finish phase
     });
 });
 
-test('facebook single image post applies the selected aspect ratio crop and uploads the crop', function (string $ratio, float $expected) {
+test('facebook single image post publishes the original image and ignores a legacy aspect ratio', function (?string $legacyRatio) {
     Storage::fake();
 
-    $this->postPlatform->update(['meta' => ['aspect_ratio' => $ratio]]);
+    $this->post->update(['meta' => $legacyRatio === null ? [] : ['aspect_ratio' => $legacyRatio]]);
     $this->post->update([
         'media' => [
             ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
@@ -931,35 +1019,30 @@ test('facebook single image post applies the selected aspect ratio crop and uplo
     ]);
 
     Http::fake([
-        'https://example.com/media/a.jpg' => Http::response(facebookJpegBytes(1600, 900), 200),
         '*/page_123/photos' => Http::response(['id' => 'photo_1', 'post_id' => 'post_1'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
-    $crops = collect(Storage::allFiles())->filter(fn (string $path) => str_starts_with($path, 'social-crops/'));
-    expect($crops)->toHaveCount(1);
+    expect($result['id'])->toBe('post_1')
+        ->and(Storage::allFiles())->toBeEmpty();
 
-    $manager = new ImageManager(Driver::class);
-    $tempFile = tempnam(sys_get_temp_dir(), 'verify_');
-    file_put_contents($tempFile, Storage::get($crops->first()));
-    $image = $manager->decodePath($tempFile);
-    expect(round($image->width() / $image->height(), 2))->toBe(round($expected, 2));
-    @unlink($tempFile);
-
+    Http::assertSentCount(1);
     Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')
-        && str_contains($request['url'], 'social-crops/')
-        && ! str_contains($request['url'], 'example.com'));
+        && $request['url'] === 'https://example.com/media/a.jpg');
+    Http::assertNotSent(fn ($request) => $request->url() === 'https://example.com/media/a.jpg');
 })->with([
-    '1:1' => ['1:1', 1.0],
-    '4:5' => ['4:5', 4 / 5],
-    '16:9' => ['16:9', 16 / 9],
+    'no ratio' => [null],
+    'legacy 1:1' => ['1:1'],
+    'legacy 4:5' => ['4:5'],
+    'legacy 16:9' => ['16:9'],
+    'legacy original' => ['original'],
 ]);
 
-test('facebook multi image post applies the chosen aspect ratio crop to every image', function (string $aspectRatio, float $expected) {
+test('facebook multi image post uploads every original image and ignores a legacy aspect ratio', function () {
     Storage::fake();
 
-    $this->postPlatform->update(['meta' => ['aspect_ratio' => $aspectRatio]]);
+    $this->post->update(['meta' => ['aspect_ratio' => '4:5']]);
     $this->post->update([
         'media' => [
             ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
@@ -968,134 +1051,32 @@ test('facebook multi image post applies the chosen aspect ratio crop to every im
     ]);
 
     Http::fake([
-        'https://example.com/media/a.jpg' => Http::response(facebookJpegBytes(1600, 900), 200),
-        'https://example.com/media/b.jpg' => Http::response(facebookJpegBytes(900, 1600), 200),
         '*/page_123/photos' => Http::sequence()
             ->push(['id' => 'up_1'], 200)
             ->push(['id' => 'up_2'], 200),
         '*/page_123/feed' => Http::response(['id' => 'post_1'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
-    $crops = collect(Storage::allFiles())->filter(fn (string $path) => str_starts_with($path, 'social-crops/'));
-    expect($crops)->toHaveCount(2);
+    expect(Storage::allFiles())->toBeEmpty();
 
-    $manager = new ImageManager(Driver::class);
-    foreach ($crops as $cropPath) {
-        $tempFile = tempnam(sys_get_temp_dir(), 'verify_');
-        file_put_contents($tempFile, Storage::get($cropPath));
-        $image = $manager->decodePath($tempFile);
-        expect(abs($image->width() / $image->height() - $expected))->toBeLessThan(0.01);
-        @unlink($tempFile);
-    }
+    $photoUrls = collect(Http::recorded())
+        ->map(fn (array $pair) => $pair[0])
+        ->filter(fn ($request) => str_contains($request->url(), '/page_123/photos'))
+        ->map(fn ($request) => [$request['url'], $request['published']])
+        ->values()
+        ->all();
 
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')
-        && str_contains($request['url'] ?? '', 'social-crops/'));
-})->with([
-    '1:1' => ['1:1', 1.0],
-    '4:5' => ['4:5', 4 / 5],
-]);
-
-test('facebook multi image post aborts entirely when one image cannot be downloaded for cropping', function () {
-    Storage::fake();
-
-    $this->postPlatform->update(['meta' => ['aspect_ratio' => '4:5']]);
-    $this->post->update([
-        'media' => [
-            ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
-            ['id' => 'm2', 'path' => 'media/b.jpg', 'url' => 'https://example.com/media/b.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'b.jpg'],
-        ],
+    expect($photoUrls)->toBe([
+        ['https://example.com/media/a.jpg', 'false'],
+        ['https://example.com/media/b.jpg', 'false'],
     ]);
 
-    Http::fake([
-        'https://example.com/media/a.jpg' => Http::response('', 404),
-        'https://example.com/media/b.jpg' => Http::response(facebookJpegBytes(900, 1600), 200),
-        '*/page_123/photos' => Http::response(['id' => 'up'], 200),
-        '*/page_123/feed' => Http::response(['id' => 'post_1'], 200),
-    ]);
-
-    expect(fn () => $this->publisher->publish($this->postPlatform))
-        ->toThrow(FacebookPublishException::class, 'Failed to download image for cropping');
-});
-
-test('facebook image post throws when the source image cannot be downloaded for cropping', function () {
-    Storage::fake();
-
-    $this->postPlatform->update(['meta' => ['aspect_ratio' => '4:5']]);
-    $this->post->update([
-        'media' => [
-            ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
-        ],
-    ]);
-
-    Http::fake([
-        'https://example.com/media/a.jpg' => Http::response('', 404),
-    ]);
-
-    expect(fn () => $this->publisher->publish($this->postPlatform))
-        ->toThrow(FacebookPublishException::class, 'Failed to download image for cropping');
-});
-
-test('facebook image post throws a clean exception when the crop source is not decodable', function () {
-    Storage::fake();
-
-    $this->postPlatform->update(['meta' => ['aspect_ratio' => '4:5']]);
-    $this->post->update([
-        'media' => [
-            ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
-        ],
-    ]);
-
-    Http::fake([
-        'https://example.com/media/a.jpg' => Http::response('<html>error</html>', 200, ['Content-Type' => 'text/html']),
-    ]);
-
-    expect(fn () => $this->publisher->publish($this->postPlatform))
-        ->toThrow(FacebookPublishException::class, 'Failed to process image for cropping');
-});
-
-test('facebook single image post without aspect ratio uploads the original image (no crop)', function () {
-    Storage::fake();
-
-    $this->post->update([
-        'media' => [
-            ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
-        ],
-    ]);
-
-    Http::fake([
-        '*/page_123/photos' => Http::response(['id' => 'photo_1', 'post_id' => 'post_1'], 200),
-    ]);
-
-    $this->publisher->publish($this->postPlatform);
-
-    expect(collect(Storage::allFiles())->filter(fn (string $path) => str_starts_with($path, 'social-crops/')))->toBeEmpty();
-
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')
-        && $request['url'] === 'https://example.com/media/a.jpg');
-});
-
-test('facebook single image post with original aspect ratio uploads the original image (no crop)', function () {
-    Storage::fake();
-
-    $this->postPlatform->update(['meta' => ['aspect_ratio' => 'original']]);
-    $this->post->update([
-        'media' => [
-            ['id' => 'm1', 'path' => 'media/a.jpg', 'url' => 'https://example.com/media/a.jpg', 'mime_type' => 'image/jpeg', 'original_filename' => 'a.jpg'],
-        ],
-    ]);
-
-    Http::fake([
-        '*/page_123/photos' => Http::response(['id' => 'photo_1', 'post_id' => 'post_1'], 200),
-    ]);
-
-    $this->publisher->publish($this->postPlatform);
-
-    expect(collect(Storage::allFiles())->filter(fn (string $path) => str_starts_with($path, 'social-crops/')))->toBeEmpty();
-
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')
-        && $request['url'] === 'https://example.com/media/a.jpg');
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
+        && $request['attached_media[0]'] === json_encode(['media_fbid' => 'up_1'])
+        && $request['attached_media[1]'] === json_encode(['media_fbid' => 'up_2']));
+    Http::assertNotSent(fn ($request) => str_starts_with($request->url(), 'https://example.com/'));
 });
 
 test('facebook publisher sends capped alt text on single image post', function () {
@@ -1118,7 +1099,7 @@ test('facebook publisher sends capped alt text on single image post', function (
         '*/page_123/photos' => Http::response(['id' => 'photo_123', 'post_id' => 'post_123'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     $expectedAlt = mb_substr($longAlt, 0, Platform::Facebook->altTextMaxLength());
 
@@ -1161,7 +1142,7 @@ test('facebook publisher sends capped alt text for each image in multi image pos
         '*/page_123/feed' => Http::response(['id' => 'multi_post_alt'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     $expectedAlt1 = mb_substr($longAlt1, 0, Platform::Facebook->altTextMaxLength());
     $expectedAlt2 = mb_substr($longAlt2, 0, Platform::Facebook->altTextMaxLength());
@@ -1194,7 +1175,7 @@ test('facebook publisher omits alt_text_custom from photos payload when no alt t
         '*/page_123/photos' => Http::response(['id' => 'photo_123', 'post_id' => 'post_123'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(function ($request) {
         return str_contains($request->url(), '/page_123/photos')
@@ -1209,11 +1190,24 @@ test('facebook publisher keeps links intact', function () {
 
     Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
         && $request['message'] === 'New post: https://acme.com/blog'
         && $request['link'] === 'https://acme.com/blog');
+});
+
+test('facebook publisher sends no link when the user dropped the link preview', function () {
+    $this->post->update(['content' => 'New post: https://acme.com/blog']);
+    $this->post->update(['meta' => ['link_preview' => false]]);
+
+    Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
+
+    $this->publisher->publish($this->post);
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
+        && $request['message'] === 'New post: https://acme.com/blog'
+        && ! array_key_exists('link', $request->data()));
 });
 
 test('facebook publisher retries a text post without the link when the scrape fails', function () {
@@ -1225,7 +1219,7 @@ test('facebook publisher retries a text post without the link when the scrape fa
             ->push(['id' => 'page_123_post_456'], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('page_123_post_456');
 
@@ -1251,7 +1245,7 @@ test('facebook publisher does not log an error when the rejected link is publish
             ->push(['id' => 'page_123_post_456'], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Log::shouldHaveReceived('warning')->once();
     Log::shouldNotHaveReceived('error');
@@ -1268,7 +1262,7 @@ test('facebook publisher logs an error when a text post fails for a reason other
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class);
 
     Log::shouldHaveReceived('error')->once();
@@ -1284,7 +1278,7 @@ test('facebook publisher does not drop the link on an unrelated feed error', fun
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class);
 
     Http::assertSentCount(1);
@@ -1295,7 +1289,7 @@ test('facebook publisher does not send a facebook-owned url as the link', functi
 
     Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('page_123_post_456');
 
@@ -1318,7 +1312,7 @@ test('facebook publisher uses the first url that facebook can preview', function
 
     Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
         && $request['message'] === 'See https://www.facebook.com/page and https://example.com/post.'
@@ -1330,7 +1324,7 @@ test('facebook publisher still attaches a link on a host that only looks like fa
 
     Http::fake(['*/page_123/feed' => Http::response(['id' => 'page_123_post_456'], 200)]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/feed')
         && $request['link'] === 'https://notfacebook.com/post');
@@ -1345,7 +1339,7 @@ test('facebook publisher retries without the link when facebook rejects the url'
             ->push(['id' => 'page_123_post_456'], 200),
     ]);
 
-    $result = $this->publisher->publish($this->postPlatform);
+    $result = $this->publisher->publish($this->post);
 
     expect($result['id'])->toBe('page_123_post_456');
 
@@ -1371,7 +1365,7 @@ test('facebook publisher does not drop the link on a permissions error without t
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class);
 
     Http::assertSentCount(1);
@@ -1388,7 +1382,7 @@ test('facebook publisher fails the post when the retry without the link is rejec
             ->push(['error' => ['message' => 'Duplicate post', 'code' => 506]], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(FacebookPublishException::class, 'Duplicate post detected. Please modify content.');
 
     Http::assertSentCount(2);
@@ -1405,7 +1399,7 @@ test('facebook publisher does not retry a text post with a link when the token i
         ], 400),
     ]);
 
-    expect(fn () => $this->publisher->publish($this->postPlatform))
+    expect(fn () => $this->publisher->publish($this->post))
         ->toThrow(TokenExpiredException::class);
 
     Http::assertSentCount(1);
@@ -1430,7 +1424,7 @@ test('facebook publisher does not attach a link card when the post has media', f
         ], 200),
     ]);
 
-    $this->publisher->publish($this->postPlatform);
+    $this->publisher->publish($this->post);
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), '/page_123/feed'));
     Http::assertSent(fn ($request) => str_contains($request->url(), '/page_123/photos')

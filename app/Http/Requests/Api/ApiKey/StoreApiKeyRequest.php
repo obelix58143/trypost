@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\ApiKey;
 
-use App\Actions\ApiKey\CreateApiKey;
+use App\Support\Requests\ApiKey\ApiKeyRequestRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreApiKeyRequest extends FormRequest
@@ -23,9 +23,6 @@ class StoreApiKeyRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'name' => ['required', 'string', 'max:255'],
-            'expires_at' => CreateApiKey::expiresAtRules(),
-        ];
+        return ApiKeyRequestRules::store();
     }
 }

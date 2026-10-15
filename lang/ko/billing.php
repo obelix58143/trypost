@@ -19,7 +19,6 @@ return [
     ],
 
     'plans' => [
-        'title' => '요금제',
         'description' => '언제든지 업그레이드하거나 다운그레이드하세요.',
         'monthly' => '월간',
         'yearly' => '연간',
@@ -46,8 +45,8 @@ return [
             'networks_all_tooltip' => '이 모든 네트워크에 게시할 수 있습니다.',
             'accounts_unlimited' => '소셜 계정 무제한',
             'accounts_unlimited_tooltip' => '원하는 만큼 계정을 연결할 수 있고, 같은 네트워크 여러 개도 가능합니다. 예를 들어 인스타그램 3개.',
-            'calendar' => '캘린더: 월·주·일 보기',
-            'calendar_tooltip' => '한 달을 한눈에: 계획 중, 예약됨, 이미 게시된 게시물을 모두 볼 수 있어요. 자세히 보려면 주 또는 일 보기로 전환하세요.',
+            'calendar' => '캘린더: 월·주 보기',
+            'calendar_tooltip' => '한 달을 한눈에: 계획 중, 예약됨, 이미 게시된 게시물을 모두 볼 수 있습니다. 자세히 보려면 주 보기로 전환하세요.',
             'ai' => 'TryPost Copilot',
             'ai_tooltip' => '게시물 작성과 검토를 돕는 AI 어시스턴트.',
             'mcp' => 'MCP: Claude, ChatGPT, Grok에서 게시',
@@ -61,10 +60,14 @@ return [
         ],
     ],
 
-    'plan' => [
-        'trial' => '체험',
-        'cancelling' => '취소 중',
-        'trial_ends' => '체험 종료',
+    'current_plan' => [
+        'change' => '요금제 변경',
+        'price_monthly' => ':price/월',
+        'price_yearly' => ':price/년',
+        'trial_until' => ':date까지 체험',
+        'renews' => '자동 갱신',
+        'cancelled' => '취소됨, :date에 종료',
+        'workspaces_usage' => '워크스페이스: :count / :limit',
     ],
 
     'subscription' => [
@@ -79,6 +82,7 @@ return [
         'title' => '청구서',
         'description' => '지난 청구서를 다운로드하세요.',
         'paid' => '결제 완료',
+        'download' => '인보이스 다운로드',
     ],
 
     'flash' => [

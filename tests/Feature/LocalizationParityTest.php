@@ -2,17 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Enums\Analytics\MetricKey;
+use App\Enums\Analytics\PublicationContentType;
 use App\Enums\User\Locale;
-use App\Enums\Workspace\ContentLanguage;
 use Illuminate\Support\Arr;
-
-test('every UI locale is a supported content language', function () {
-    expect(Locale::values())->toEqualCanonicalizing(ContentLanguage::values());
-});
-
-test('the default UI locale is a supported content language', function () {
-    expect(Locale::DEFAULT->value)->toBeIn(ContentLanguage::values());
-});
 
 test('locale ships every base translation file with identical keys', function (string $locale) {
     $missingFiles = [];
@@ -46,6 +39,59 @@ test('locale ships every base translation file with identical keys', function (s
     expect($keyDrift)->toBe([], "{$locale} has key drift: ".json_encode($keyDrift, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 })->with(Locale::values());
 
+test('every analytics enum value has a display translation', function (string $locale) {
+    $analytics = require lang_path("{$locale}/analytics.php");
+
+    foreach (MetricKey::cases() as $metric) {
+        expect(Arr::has($analytics, "metrics.{$metric->value}") || Arr::has($analytics, "detail.labels.{$metric->value}"))
+            ->toBeTrue("{$locale} is missing a label for metric {$metric->value}");
+    }
+
+    foreach (PublicationContentType::cases() as $contentType) {
+        expect(Arr::has($analytics, "detail.content_types.{$contentType->value}"))
+            ->toBeTrue("{$locale} is missing a label for content type {$contentType->value}");
+    }
+
+    expect(Arr::get($analytics, 'title'))->toBeString()->not->toBeEmpty();
+    foreach (['insights.export.button', 'insights.sync.title', 'insights.sync.new_posts', 'insights.columns', 'insights.channels_shown'] as $key) {
+        expect(Arr::get($analytics, $key))->toBeString()->not->toBeEmpty("{$locale} is missing {$key}");
+    }
+})->with(Locale::values());
+
+test('analytics interface copy does not fall back to English', function (string $locale) {
+    $english = require lang_path('en/analytics.php');
+    $translated = require lang_path("{$locale}/analytics.php");
+
+    foreach ([
+        'detail.labels.watch_time_milliseconds',
+        'detail.awaiting_metrics',
+        'insights.sync.title',
+        'insights.sync.new_posts',
+        'insights.channels_shown',
+        'insights.about.performance',
+        'dashboard.no_follower_data',
+        'dashboard.import_in_progress',
+        'dashboard.no_data_body',
+    ] as $key) {
+        expect(Arr::get($translated, $key))
+            ->not->toBe(Arr::get($english, $key), "{$locale} still uses English for {$key}");
+    }
+})->with(array_values(array_diff(Locale::values(), [Locale::English->value])));
+
 // Key presence alone cannot catch stale wording (same key, incomplete sentence).
 // Destructive account/workspace delete copy is additionally asserted in
 // tests/Unit/Settings/DeleteAccountCopyTest.php with per-locale content markers.
+
+test('the mcp authorize copy is translated in every locale', function (Locale $locale) {
+    $english = require lang_path('en/mcp.php');
+    $translated = require lang_path("{$locale->value}/mcp.php");
+    $allowedSameAsEnglish = ['workspace' => ['de', 'es', 'it', 'nl', 'pt-BR'], 'error_code' => ['es']];
+
+    $untranslated = collect($english['authorize'])
+        ->filter(fn (string $value, string $key) => data_get($translated, "authorize.{$key}") === $value)
+        ->reject(fn (string $value, string $key) => in_array($locale->value, $allowedSameAsEnglish[$key] ?? [], true))
+        ->keys()
+        ->all();
+
+    expect($untranslated)->toBe([]);
+})->with(array_filter(Locale::cases(), fn (Locale $locale) => $locale !== Locale::English));

@@ -7,6 +7,22 @@ use App\Exceptions\Social\ErrorCategory;
 use App\Exceptions\TokenExpiredException;
 use Illuminate\Support\Facades\Http;
 
+test('an unconfirmed Bluesky email is a user action with the original error preserved', function (array $body) {
+    $response = Http::fake(['*' => Http::response($body, 401)])
+        ->post('https://video.bsky.app/xrpc/app.bsky.video.uploadVideo');
+
+    $exception = BlueskyPublishException::fromApiResponse($response);
+
+    expect($exception->category)->toBe(ErrorCategory::Permission)
+        ->and($exception->platformErrorCode)->toBe('unconfirmed_email')
+        ->and($exception->rawResponse)->toBe($response->body())
+        ->and($exception->userMessage)->toBe('Confirm your email in Bluesky settings, then try publishing again.')
+        ->and($exception->isNetworkRejection())->toBeTrue();
+})->with([
+    'video service' => [['jobStatus' => ['did' => '', 'error' => 'unconfirmed_email', 'jobId' => '', 'state' => '']]],
+    'top level' => [['error' => 'unconfirmed_email']],
+]);
+
 test('ExpiredToken error throws TokenExpiredException', function () {
     $response = Http::response(['error' => 'ExpiredToken', 'message' => 'Token has expired.'], 401);
     $fakeResponse = Http::fake(['*' => $response])->post('https://bsky.social/xrpc/test');
@@ -79,3 +95,13 @@ test('platform returns bluesky', function () {
 
     expect($exception->platform())->toBe('bluesky');
 });
+
+test('an invalid request and a rate limit from Bluesky are not network rejections', function (string $error, int $status) {
+    $fakeResponse = Http::fake(['*' => Http::response(['error' => $error, 'message' => 'Rejected'], $status)])
+        ->post(config('trypost.platforms.bluesky.default_service').'/xrpc/com.atproto.repo.createRecord');
+
+    expect(BlueskyPublishException::fromApiResponse($fakeResponse)->isNetworkRejection())->toBeFalse();
+})->with([
+    'our invalid request' => ['InvalidRequest', 400],
+    'an account or IP rate limit' => ['RateLimitExceeded', 429],
+]);

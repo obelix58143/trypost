@@ -8,6 +8,7 @@ use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
+use App\Support\Timezone;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -34,6 +35,7 @@ class SocialAccountFactory extends Factory
             'scopes' => [],
             'meta' => [],
             'status' => Status::Connected,
+            'timezone' => Timezone::DEFAULT,
         ];
     }
 
@@ -57,7 +59,7 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::X,
-            'scopes' => Platform::X->requiredPublishScopes(),
+            'scopes' => ['tweet.read', 'tweet.write', 'users.read', 'media.write', 'offline.access'],
         ]);
     }
 
@@ -65,7 +67,7 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::TikTok,
-            'scopes' => Platform::TikTok->requiredPublishScopes(),
+            'scopes' => ['user.info.basic', 'user.info.profile', 'user.info.stats', 'video.publish', 'video.upload', 'video.list'],
         ]);
     }
 
@@ -73,7 +75,12 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::YouTube,
-            'scopes' => Platform::YouTube->requiredPublishScopes(),
+            'scopes' => [
+                'https://www.googleapis.com/auth/youtube.upload',
+                'https://www.googleapis.com/auth/youtube.readonly',
+                'https://www.googleapis.com/auth/youtube.force-ssl',
+                'https://www.googleapis.com/auth/yt-analytics.readonly',
+            ],
         ]);
     }
 
@@ -81,7 +88,7 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::Facebook,
-            'scopes' => Platform::Facebook->requiredPublishScopes(),
+            'scopes' => ['public_profile', 'pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'read_insights', 'business_management'],
         ]);
     }
 
@@ -89,7 +96,7 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::Instagram,
-            'scopes' => Platform::Instagram->requiredPublishScopes(),
+            'scopes' => ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_insights'],
         ]);
     }
 
@@ -97,7 +104,7 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::Threads,
-            'scopes' => Platform::Threads->requiredPublishScopes(),
+            'scopes' => ['threads_basic', 'threads_content_publish', 'threads_manage_insights'],
         ]);
     }
 
@@ -105,7 +112,7 @@ class SocialAccountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'platform' => Platform::Pinterest,
-            'scopes' => Platform::Pinterest->requiredPublishScopes(),
+            'scopes' => ['boards:read', 'boards:write', 'pins:read', 'pins:write', 'user_accounts:read'],
         ]);
     }
 

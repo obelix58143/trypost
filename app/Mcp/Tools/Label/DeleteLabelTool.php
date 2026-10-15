@@ -24,17 +24,13 @@ class DeleteLabelTool extends Tool
 
     public function handle(Request $request): Response|ResponseFactory
     {
-        $workspace = $this->authorizeCurrentWorkspace(
-            $request,
-            'createPost',
-            'Not authorized to manage labels.',
-        );
+        $workspace = $this->authorizeCurrentWorkspace($request, 'createPost');
 
         if (! $workspace instanceof Workspace) {
             return $workspace;
         }
 
-        $validated = $request->validate(['label_id' => ['required', 'string']]);
+        $validated = $request->validate(['label_id' => ['required', 'string', 'uuid']]);
 
         $label = WorkspaceLabel::where('workspace_id', $workspace->id)
             ->find(data_get($validated, 'label_id'));

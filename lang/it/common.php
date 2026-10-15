@@ -8,11 +8,10 @@ return [
     'back' => 'Indietro',
 
     'confirm_modal' => [
-        'cannot_be_undone' => 'Questa azione non può essere annullata.',
         'type' => 'Digita',
         'to_confirm' => 'per confermare.',
         'copy_to_clipboard' => 'Copia negli appunti',
-        'delete_keyword' => 'elimina',
+        'delete_keyword' => 'ELIMINA',
     ],
 
     'photo_upload' => [
@@ -59,11 +58,25 @@ return [
     'cancel' => 'Annulla',
     'clear' => 'Cancella',
     'close' => 'Chiudi',
+    'more' => 'Altro',
+    'play' => 'Riproduci',
+    'loading' => 'Caricamento...',
     'loading_more' => 'Caricamento in corso...',
 
     'actions' => [
         'copy' => 'Copia',
         'copied' => 'Copiato',
         'copy_failed' => 'Impossibile copiare negli appunti',
+    ],
+
+    'media_lightbox' => [
+        'title' => 'Anteprima media',
+        'previous' => 'Precedente',
+        'next' => 'Successivo',
+        'zoom_in' => 'Ingrandisci',
+        'zoom_out' => 'Riduci',
+        'counter' => ':current / :total',
+        'go_to' => 'Mostra elemento :number',
+        'open' => 'Apri anteprima',
     ],
 ];

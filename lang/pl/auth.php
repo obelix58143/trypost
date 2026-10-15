@@ -64,9 +64,7 @@ return [
     'github_email_unavailable' => 'Nie udało się pobrać Twojego adresu e-mail z GitHuba. Ustaw swój adres e-mail w GitHubie jako publiczny lub przyznaj uprawnienie do e-maila, a następnie spróbuj ponownie.',
 
     'login' => [
-        'title' => 'Zaloguj się na swoje konto',
-        'description' => 'Wprowadź poniżej swój e-mail i hasło, aby się zalogować',
-        'description_without_password' => 'Zaloguj się kontem swojej organizacji, aby kontynuować',
+        'title' => 'Zaloguj się do TryPost',
         'page_title' => 'Zaloguj się',
         'email' => 'Adres e-mail',
         'password' => 'Hasło',
@@ -80,10 +78,8 @@ return [
     ],
 
     'register' => [
-        'title' => 'Cały Twój kalendarz społecznościowy w jednym miejscu',
-        'description' => 'Załóż konto i zacznij planować posty w każdej sieci.',
+        'title' => 'Utwórz konto TryPost',
         'page_title' => 'Rejestracja',
-        'signup_with_email' => 'Zarejestruj się przez e-mail',
         'name' => 'Imię i nazwisko',
         'name_placeholder' => 'Imię i nazwisko',
         'email' => 'Adres e-mail',
@@ -93,6 +89,12 @@ return [
         'submit' => 'Utwórz konto',
         'has_account' => 'Masz już konto?',
         'log_in' => 'Zaloguj się',
+        'password_requirements' => [
+            'min' => 'Co najmniej :count znaków',
+            'mixed_case' => 'Wielkie i małe litery',
+            'number' => 'Co najmniej 1 cyfra',
+            'symbol' => 'Co najmniej 1 symbol',
+        ],
     ],
 
     'forgot_password' => [

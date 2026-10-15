@@ -5,23 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
-use App\Enums\SocialAccount\Status;
-use App\Exceptions\SocialAccount\ConnectPopupException;
-use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
-use App\Models\SocialAccount;
-use App\Models\Workspace;
 use App\Services\Social\Meta\ManagedPages;
+use App\Support\Social\PendingConnection;
+use Exception;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response as ClientResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Uri;
 use Inertia\Inertia;
-use Inertia\Response as InertiaResponse;
 use Laravel\Socialite\Facades\Socialite;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -29,7 +24,7 @@ class InstagramFacebookController extends MetaController
 {
     protected string $pageFields = 'id,name,username,picture{url},access_token,instagram_business_account';
 
-    protected string $noPagesKey = 'accounts.popup_callback.no_facebook_instagram_pages';
+    protected string $noPagesKey = 'no_facebook_instagram_pages';
 
     protected SocialPlatform $platform = SocialPlatform::InstagramFacebook;
 
@@ -61,22 +56,22 @@ class InstagramFacebookController extends MetaController
 
         $this->rememberConnectSession($request, $workspace);
 
-        $url = Socialite::driver($this->driver)
+        $driver = Socialite::driver($this->driver)
             ->usingGraphVersion($this->graphVersion())
             ->setScopes($this->scopes)
-            ->redirectUrl(route('app.social.instagram-facebook.callback'))
-            ->reRequest()
-            ->redirect()
-            ->getTargetUrl();
+            ->redirectUrl(route('app.social.instagram-facebook.callback'));
 
-        return Inertia::location($url);
+        $driver = $this->switchingAccount($request)
+            ? $driver->with(['auth_type' => self::SWITCH_ACCOUNT_AUTH_TYPE])
+            : $driver->reRequest();
+
+        return Inertia::location($driver->redirect()->getTargetUrl());
     }
 
-    public function callback(Request $request): InertiaResponse|RedirectResponse
+    public function callback(Request $request): RedirectResponse
     {
         $workspace = $this->connectWorkspace($request);
-
-        $existingAccount = $this->reconnectAccount($workspace);
+        $reconnect = $this->reconnectAccount($workspace);
 
         try {
             $socialUser = Socialite::driver($this->driver)
@@ -88,7 +83,7 @@ class InstagramFacebookController extends MetaController
 
             $granted = $this->grantedScopes($socialUser->token);
 
-            if ($granted instanceof InertiaResponse) {
+            if ($granted instanceof RedirectResponse) {
                 return $granted;
             }
 
@@ -105,145 +100,64 @@ class InstagramFacebookController extends MetaController
                 return $this->noPagesOnOffer($walk, $listed);
             }
 
-            $connectable = $this->filterConnectableIdentities(
-                $workspace,
-                $publishable,
-                'instagram_business_account.id',
-                $existingAccount,
+            $connectable = collect($publishable)
+                ->filter(fn (array $page): bool => $this->connectableIdentities($workspace, [[
+                    'platform' => $this->platform->value,
+                    'platform_user_id' => (string) data_get($page, 'instagram_business_account.id'),
+                ]], $reconnect) !== [])
+                ->values()
+                ->all();
+
+            $identities = array_map(
+                fn (array $page): array => $this->toIdentity($page, $granted),
+                $this->describeInstagramAccounts($connectable),
             );
 
-            if (empty($connectable)) {
-                return $this->noConnectableIdentities($existingAccount, 'page_not_found', $walk->complete);
-            }
-
-            $pages = $this->describeInstagramAccounts($connectable);
-
-            if (count($pages) === 1 && ($walk->complete || $existingAccount !== null)) {
-                return $this->connectInstagramAccount($workspace, $pages[0], $existingAccount, $granted);
-            }
-
-            // Multiple pages — show selection
-            session([
-                'instagram_facebook_oauth' => [
-                    'user_token' => $socialUser->token,
-                    'scopes' => $granted,
-                    'pages' => $pages,
-                    'reconnect_id' => $existingAccount?->id,
-                ],
-            ]);
-
-            return redirect()->route('app.social.instagram-facebook.select-page');
-        } catch (NetworkAlreadyConnectedException $e) {
-            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
-        } catch (\Exception $e) {
+            return $this->offerIdentities($workspace, $identities, $reconnect, 'page_not_found', $walk->complete);
+        } catch (Exception $e) {
             Log::error('Instagram via Facebook OAuth Error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
-        }
-    }
-
-    public function selectPage(Request $request): InertiaResponse
-    {
-        $oauthData = session('instagram_facebook_oauth');
-
-        if (! $oauthData) {
-            throw new ConnectPopupException('session_expired', $this->platform);
-        }
-
-        $workspace = $this->connectWorkspace($request);
-
-        $pages = collect(data_get($oauthData, 'pages'))
-            ->map(fn ($page) => Arr::except($page, ['page_access_token']))
-            ->toArray();
-
-        return Inertia::render('accounts/InstagramFacebookPageSelect', [
-            'workspace' => $workspace,
-            'pages' => $pages,
-        ]);
-    }
-
-    public function select(Request $request): InertiaResponse
-    {
-        $request->validate([
-            'page_id' => 'required|string',
-        ]);
-
-        $oauthData = session('instagram_facebook_oauth');
-
-        if (! $oauthData) {
-            throw new ConnectPopupException('session_expired', $this->platform);
-        }
-
-        $workspace = $this->connectWorkspace($request);
-
-        $existingAccount = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
-
-        try {
-            $selectedPage = collect(data_get($oauthData, 'pages'))->firstWhere('page_id', $request->page_id);
-
-            if (! $selectedPage) {
-                return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
-            }
-
-            $result = $this->connectInstagramAccount(
-                $workspace,
-                $selectedPage,
-                $existingAccount,
-                data_get($oauthData, 'scopes', $this->scopes),
-            );
-
-            session()->forget('instagram_facebook_oauth');
-
-            return $result;
-        } catch (NetworkAlreadyConnectedException $e) {
-            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
-        } catch (\Exception $e) {
-            Log::error('Instagram via Facebook page selection error', ['error' => $e->getMessage()]);
-
-            return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
+            return $this->failConnection('error_connecting');
         }
     }
 
     /**
-     * @param  array<string, mixed>  $pageData
+     * A lookup we never made says nothing about the handle or avatar a reconnect
+     * already has, so an undescribed account leaves both as they are.
+     *
+     * @param  array<string, mixed>  $page
      * @param  array<int, string>  $scopes
+     * @return array<string, mixed>
      */
-    private function connectInstagramAccount(Workspace $workspace, array $pageData, ?SocialAccount $existingAccount, array $scopes): InertiaResponse
+    private function toIdentity(array $page, array $scopes): array
     {
-        $avatarPath = data_get($pageData, 'ig_picture') ? uploadFromUrl(data_get($pageData, 'ig_picture')) : null;
+        $described = (bool) data_get($page, 'ig_described');
+        $name = data_get($page, 'ig_name') ?? data_get($page, 'ig_username') ?? data_get($page, 'page_name');
 
-        // A lookup we never made says nothing about the handle a reconnect already has.
-        $described = (bool) data_get($pageData, 'ig_described');
-
-        SocialAccount::connectIdentity(
-            $workspace,
+        return PendingConnection::identity(
             $this->platform,
-            (string) data_get($pageData, 'ig_id'),
+            (string) data_get($page, 'ig_id'),
+            $name,
+            data_get($page, 'ig_username'),
+            data_get($page, 'ig_picture'),
+            $this->platform->identityType()->value,
             array_diff_key([
-                'username' => data_get($pageData, 'ig_username'),
-                'display_name' => data_get($pageData, 'ig_name')
-                    ?? data_get($pageData, 'ig_username')
-                    ?? data_get($pageData, 'page_name'),
-                'avatar_url' => $avatarPath,
-                'access_token' => data_get($pageData, 'page_access_token'),
+                'username' => data_get($page, 'ig_username'),
+                'display_name' => $name,
+                'access_token' => data_get($page, 'page_access_token'),
                 'refresh_token' => null,
                 'token_expires_at' => null,
                 'scopes' => $scopes,
-                'status' => Status::Connected,
-                'error_message' => null,
-                'disconnected_at' => null,
                 'meta' => [
-                    'page_id' => data_get($pageData, 'page_id'),
-                    'page_name' => data_get($pageData, 'page_name'),
+                    'page_id' => data_get($page, 'page_id'),
+                    'page_name' => data_get($page, 'page_name'),
                 ],
-            ], $described ? [] : ['username' => true, 'avatar_url' => true]),
-            $existingAccount,
+            ], $described ? [] : ['username' => true]),
+            keepsAvatar: ! $described,
         );
-
-        return $this->connectedCallback($existingAccount);
     }
 
     /**

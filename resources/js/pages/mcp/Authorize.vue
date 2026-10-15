@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { IconChevronDown } from '@tabler/icons-vue';
-import { trans } from 'laravel-vue-i18n';
 import { computed, ref } from 'vue';
 
 import { Button } from '@/components/ui/button';
@@ -49,9 +48,7 @@ const selectedWorkspace = ref<WorkspaceOption | undefined>(
     ) ?? props.workspaces[0],
 );
 
-const workspaceIdForSubmit = computed(
-    () => selectedWorkspace.value?.id ?? '',
-);
+const workspaceIdForSubmit = computed(() => selectedWorkspace.value?.id ?? '');
 
 const canApprove = computed(() => workspaceIdForSubmit.value !== '');
 
@@ -60,26 +57,8 @@ const csrfToken =
     document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
         ?.content ?? '';
 
-const pageTitle = computed(() => trans('mcp.authorize.page_title'));
-
-const heading = computed(() =>
-    trans('mcp.authorize.heading', {
-        client: props.client.name,
-    }),
-);
-
-const description = computed(
-    () =>
-        `${trans('mcp.authorize.intro')} ${trans('mcp.authorize.intro_capability')}`,
-);
-
-const scopeLabel = (scope: Scope): string =>
-    scope.id === 'mcp:use'
-        ? trans('mcp.authorize.scope_mcp_use')
-        : scope.description;
-
 const onApproveSubmit = (event: Event): void => {
-    if (! canApprove.value) {
+    if (!canApprove.value) {
         event.preventDefault();
 
         return;
@@ -116,9 +95,9 @@ const onDenySubmit = (): void => {
 
 <template>
     <AuthorizeLayout
-        :page-title="pageTitle"
-        :title="heading"
-        :description="description"
+        :page-title="$t('mcp.authorize.page_title')"
+        :title="$t('mcp.authorize.heading', { client: client.name })"
+        :description="`${$t('mcp.authorize.intro')} ${$t('mcp.authorize.intro_capability')}`"
     >
         <div class="space-y-4">
             <div class="space-y-1.5">
@@ -144,7 +123,8 @@ const onDenySubmit = (): void => {
                         <ComboboxTrigger as-child>
                             <button
                                 type="button"
-                                class="flex h-10 w-full items-center justify-between rounded-md border-2 border-foreground bg-card px-3 py-2 text-sm font-medium text-foreground shadow-2xs transition-colors hover:bg-muted/40"
+                                data-testid="mcp-authorize-workspace"
+                                class="flex h-10 w-full items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-2xs transition-colors hover:bg-muted/40"
                             >
                                 <span
                                     :class="
@@ -166,9 +146,7 @@ const onDenySubmit = (): void => {
                     </ComboboxAnchor>
                     <ComboboxList>
                         <ComboboxInput
-                            :placeholder="
-                                $t('mcp.authorize.search_workspace')
-                            "
+                            :placeholder="$t('mcp.authorize.search_workspace')"
                         />
                         <ComboboxEmpty>
                             {{ $t('mcp.authorize.no_workspace_found') }}
@@ -200,11 +178,11 @@ const onDenySubmit = (): void => {
                     :key="scope.id"
                     class="flex items-start gap-2"
                 >
-                    <div class="mt-0.5 rounded-full bg-primary/10 p-1">
-                        <div class="size-1.5 rounded-full bg-primary" />
+                    <div class="mt-0.5 rounded-full bg-primary-subtle p-1">
+                        <div class="size-1.5 rounded-full bg-primary-strong" />
                     </div>
                     <span class="text-sm text-muted-foreground">
-                        {{ scopeLabel(scope) }}
+                        {{ scope.id === 'mcp:use' ? $t('mcp.authorize.scope_mcp_use') : scope.description }}
                     </span>
                 </li>
             </ul>
@@ -231,6 +209,7 @@ const onDenySubmit = (): void => {
                 <Button
                     type="submit"
                     class="w-full"
+                    data-testid="mcp-authorize-approve"
                     :class="{
                         'pointer-events-none opacity-25': !canApprove,
                     }"
@@ -255,6 +234,7 @@ const onDenySubmit = (): void => {
                     type="submit"
                     variant="outline"
                     class="w-full"
+                    data-testid="mcp-authorize-cancel"
                 >
                     {{ $t('mcp.authorize.cancel') }}
                 </Button>

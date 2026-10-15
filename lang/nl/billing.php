@@ -19,7 +19,6 @@ return [
     ],
 
     'plans' => [
-        'title' => 'Plannen',
         'description' => 'Upgrade of downgrade wanneer je wilt.',
         'monthly' => 'Maandelijks',
         'yearly' => 'Jaarlijks',
@@ -46,8 +45,8 @@ return [
             'networks_all_tooltip' => 'Je kunt op al deze netwerken posten.',
             'accounts_unlimited' => 'Onbeperkte social accounts',
             'accounts_unlimited_tooltip' => 'Koppel zoveel accounts als je wilt, ook meerdere van hetzelfde netwerk. Drie Instagrams, bijvoorbeeld.',
-            'calendar' => 'Kalender: maand-, week- en dagweergave',
-            'calendar_tooltip' => 'Zie je hele maand in één oogopslag: wat gepland, ingepland en al gepubliceerd is. Schakel naar week of dag als je detail nodig hebt.',
+            'calendar' => 'Kalender: maand- en weekweergave',
+            'calendar_tooltip' => 'Zie je hele maand in één oogopslag: wat gepland, ingepland en al gepubliceerd is. Schakel naar week als je detail nodig hebt.',
             'ai' => 'TryPost Copilot',
             'ai_tooltip' => 'Je AI-assistent voor het schrijven en nakijken van posts.',
             'mcp' => 'MCP: post via Claude, ChatGPT of Grok',
@@ -61,10 +60,14 @@ return [
         ],
     ],
 
-    'plan' => [
-        'trial' => 'Proefperiode',
-        'cancelling' => 'Wordt opgezegd',
-        'trial_ends' => 'Proefperiode eindigt',
+    'current_plan' => [
+        'change' => 'Plan wijzigen',
+        'price_monthly' => ':price/maand',
+        'price_yearly' => ':price/jaar',
+        'trial_until' => 'Proefperiode tot :date',
+        'renews' => 'Wordt automatisch verlengd',
+        'cancelled' => 'Opgezegd, eindigt op :date',
+        'workspaces_usage' => 'Workspaces: :count van :limit',
     ],
 
     'subscription' => [
@@ -79,6 +82,7 @@ return [
         'title' => 'Facturen',
         'description' => 'Download je eerdere facturen.',
         'paid' => 'Betaald',
+        'download' => 'Factuur downloaden',
     ],
 
     'flash' => [

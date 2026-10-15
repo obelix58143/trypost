@@ -3,17 +3,20 @@
 declare(strict_types=1);
 
 use App\Enums\GoogleBusiness\TopicType;
+use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
 use App\Enums\TikTok\PrivacyLevel;
 use App\Rules\ContentFitsPlatformLimits;
 use App\Support\PostPlatformMetaRules;
 use Illuminate\Support\Facades\Validator;
 
-test('custom meta messages only cover pinterest title and link', function () {
+test('custom meta messages cover pinterest, instagram collaborators and google business', function () {
     expect(PostPlatformMetaRules::messages())->toBe([
         'meta.link.url' => __('posts.form.pinterest.link_invalid'),
         'meta.link.max' => __('posts.form.pinterest.link_max'),
         'meta.title.max' => __('posts.form.pinterest.title_max'),
+        'meta.collaborators.max' => __('posts.form.instagram.collaborators.max', ['max' => PostPlatformMetaRules::INSTAGRAM_MAX_COLLABORATORS]),
+        'meta.collaborators.*.regex' => __('posts.form.instagram.collaborators.invalid'),
         'meta.event.end_date.after_or_equal' => __('posts.form.google_business.event_end_date_before_start'),
         'meta.event.title.max' => __('posts.form.google_business.title_max'),
     ]);
@@ -453,4 +456,16 @@ test('the documentation describes the youtube title as the first line of the con
     expect(PostPlatformMetaRules::documentation())
         ->toContain('derived from the first non-empty line of the content')
         ->not->toContain('first sentence');
+});
+
+test('instagram music and trial reel rules apply only to reels', function () {
+    $trialWithCollaborators = ['collaborators' => ['alice'], 'trial_graduation' => 'MANUAL'];
+    $music = ['audio' => ['id' => '1234567890']];
+
+    expect(PostPlatformMetaRules::requiredMetaViolation(Platform::InstagramFacebook, $trialWithCollaborators, ContentType::InstagramReel)[0] ?? null)->toBe('trial_graduation')
+        ->and(PostPlatformMetaRules::requiredMetaViolation(Platform::Instagram, $music, 'instagram_reel')[0] ?? null)->toBe('audio')
+        ->and(PostPlatformMetaRules::requiredMetaViolation(Platform::InstagramFacebook, ['audio' => ['title' => 'Song']], 'instagram_reel')[0] ?? null)->toBe('audio.id')
+        ->and(PostPlatformMetaRules::requiredMetaViolation(Platform::LinkedIn, ['audio' => ['title' => 'Song']], ContentType::LinkedInPost))->toBeNull()
+        ->and(PostPlatformMetaRules::requiredMetaViolation(Platform::InstagramFacebook, $trialWithCollaborators, ContentType::InstagramFeed))->toBeNull()
+        ->and(PostPlatformMetaRules::requiredMetaViolation(Platform::Instagram, $music, ContentType::InstagramStory))->toBeNull();
 });

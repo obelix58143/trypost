@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router, useForm, usePage } from '@inertiajs/vue3';
+import { router, useForm } from '@inertiajs/vue3';
 import {
     IconCheck,
     IconChevronDown,
@@ -39,12 +39,12 @@ import {
     type MediaImportStarted,
     useMediaImport,
 } from '@/composables/useMediaImport';
-import { useMediaUpload } from '@/composables/useMediaUpload';
+import { mediaUploadLimits, useMediaUpload } from '@/composables/useMediaUpload';
 import { editorTabsFor, rulesFor } from '@/lib/mediaEditor';
 import { isGooglePickerOpen } from '@/lib/mediaSources/googleDrive';
 import { acceptAttribute } from '@/lib/mediaType';
+import { filterBySearch, matchesSearch } from '@/lib/search';
 import { store, update } from '@/routes/app/create/ideas';
-import type { MediaUploadLimits, SharedData } from '@/types';
 import {
     columnKey,
     type IdeaDraft,
@@ -80,14 +80,6 @@ const form = useForm({
 const media = ref<MediaItem[]>([...(idea?.media ?? [])]);
 const submittedMediaIds = ref<string[]>([]);
 
-const page = usePage<SharedData>();
-const mediaUploadLimits = (): MediaUploadLimits =>
-    page.props.mediaUploadLimits ?? {
-        max_bytes: { image: 0, video: 0, document: 0 },
-        extensions: { image: [], video: [], document: [] },
-        upload_retention_hours: 0,
-        heic: false,
-    };
 const appendMedia = (
     item: MediaItem,
     _key?: string,
@@ -195,15 +187,9 @@ const currentStage = computed(
         props.stages.find((stage) => stage.id === form.idea_stage_id) ?? null,
 );
 
-const filteredStages = computed(() => {
-    const query = stageSearch.value.trim().toLocaleLowerCase();
-
-    return query
-        ? props.stages.filter((stage) =>
-              stage.name.toLocaleLowerCase().includes(query),
-          )
-        : props.stages;
-});
+const filteredStages = computed(() =>
+    filterBySearch(props.stages, stageSearch.value, (stage) => [stage.name]),
+);
 
 const availableLabels = ref([...props.labels]);
 
@@ -445,6 +431,7 @@ const iconButtonClass =
                                 <input
                                     v-model="stageSearch"
                                     type="search"
+                                    data-testid="idea-editor-stage-search"
                                     :aria-label="$t('create.ideas.stages_search')"
                                     :placeholder="
                                         $t('create.ideas.stages_search')
@@ -461,7 +448,11 @@ const iconButtonClass =
                             >
                                 <button
                                     v-for="option in [
-                                        null,
+                                        ...(matchesSearch(stageSearch, [
+                                            $t('create.ideas.unassigned'),
+                                        ])
+                                            ? [null]
+                                            : []),
                                         ...filteredStages.map(
                                             (stage) => stage.id,
                                         ),

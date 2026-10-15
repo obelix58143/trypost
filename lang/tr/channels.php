@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => 'Yayın yapmaya devam etmek için bu kanalı yeniden bağlayın.',
     'reconnect' => 'Yeniden bağla',
     'refresh_connection' => 'Bağlantıyı yenile',
+    'link_facebook_page' => 'Bir Facebook Sayfasına bağla',
     'view_profile' => 'Profili görüntüle',
     'disconnect' => 'Bağlantıyı kes',
     'actions' => 'Kanal işlemleri',
 
     'reorder' => [
         'handle' => ':name öğesini sürükleyerek sırala',
-        'move_up' => 'Yukarı taşı',
-        'move_down' => 'Aşağı taşı',
         'failed' => 'Kanallarınız yeniden sıralanamadı. Tekrar deneyin.',
         'stale' => 'Sayfayı yüklediğinizden beri kanallarınız değişti. Yenileyip tekrar deneyin.',
     ],

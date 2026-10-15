@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => 'Reconnect this channel to keep publishing.',
     'reconnect' => 'Reconnect',
     'refresh_connection' => 'Refresh connection',
+    'link_facebook_page' => 'Link to a Facebook Page',
     'view_profile' => 'View profile',
     'disconnect' => 'Disconnect',
     'actions' => 'Channel actions',
 
     'reorder' => [
         'handle' => 'Drag to reorder :name',
-        'move_up' => 'Move up',
-        'move_down' => 'Move down',
         'failed' => 'Could not reorder your channels. Try again.',
         'stale' => 'Your channels changed since you loaded the page. Refresh and try again.',
     ],

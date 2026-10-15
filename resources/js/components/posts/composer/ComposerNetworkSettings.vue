@@ -42,7 +42,10 @@ const props = withDefaults(
     },
 );
 
-const emit = defineEmits<{ 'update:meta': [value: Record<string, any>] }>();
+const emit = defineEmits<{
+    'update:meta': [value: Record<string, any>];
+    'link-facebook': [];
+}>();
 
 const { accountLoaded } = useComposerLiveState();
 
@@ -62,6 +65,7 @@ const videoDurationSec = computed(
 );
 
 const update = (meta: Record<string, any>): void => emit('update:meta', meta);
+const linkFacebook = (): void => emit('link-facebook');
 
 const AI_GENERATED_ROWS: Partial<
     Record<string, { metaKey: string; testId: string }>
@@ -109,10 +113,14 @@ const aiGenerated = computed({
                 account.platform === Platform.Instagram ||
                 account.platform === Platform.InstagramFacebook
             "
+            :account-id="account.id"
+            :platform="account.platform"
+            :platform-index="platformIndex"
             :content-type="destination.content_type"
             :meta="destination.meta"
             :disabled="disabled"
             @update:meta="update"
+            @link-facebook="linkFacebook"
         />
         <ThreadsSettings
             v-else-if="

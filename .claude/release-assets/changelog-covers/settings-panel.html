@@ -1,0 +1,26 @@
+<!--
+  TEMPLATE 1 · SETTINGS PANEL (default): the composer-like panel with the new
+  settings and the network's badge centered above it. Rendered example:
+  examples/settings-panel.png (Instagram reels gain collaborators, music and
+  trial reels).
+  Fixed: the panel's place and width, the badge above it, rows of equal height.
+  Swap: the badge (brand color + brand icon), the 2–4 rows (icon, label as on
+  screen, real control) and the background tint.
+-->
+<div class="canvas bg-violet">
+    <div class="surface panel has-badge at" style="left: 190px; top: 252px; width: 820px">
+        <div class="badge" style="background: #e1306c"><i data-icon="brand-instagram"></i></div>
+        <div class="setting">
+            <i data-icon="users"></i>Collaborators
+            <span class="control"><span class="handle">@paulocastellano</span><span class="handle">@luizmazini</span></span>
+        </div>
+        <div class="setting">
+            <i data-icon="music"></i>Music
+            <span class="control"><span class="track" style="padding-left: 18px"><span class="eq"><i style="height: 12px"></i><i style="height: 24px"></i><i style="height: 16px"></i><i style="height: 28px"></i><i style="height: 10px"></i></span>Bohemian Rhapsody<span class="artist">· Queen</span></span></span>
+        </div>
+        <div class="setting">
+            <i data-icon="movie"></i>Trial Reels
+            <span class="control"><span class="switch"></span></span>
+        </div>
+    </div>
+</div>

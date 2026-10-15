@@ -6,6 +6,8 @@ use App\Enums\Analytics\ExportFormat;
 use App\Http\Controllers\App\ApiKeyController;
 use App\Http\Controllers\App\BillingController;
 use App\Http\Controllers\App\CanvaController;
+use App\Http\Controllers\App\ChangelogEntryReactionController;
+use App\Http\Controllers\App\ChangelogEntryViewController;
 use App\Http\Controllers\App\ChannelController;
 use App\Http\Controllers\App\ChannelPostingScheduleController;
 use App\Http\Controllers\App\ChannelQueueController;
@@ -18,6 +20,7 @@ use App\Http\Controllers\App\IdeaController;
 use App\Http\Controllers\App\IdeaGenerateController;
 use App\Http\Controllers\App\IdeaStageController;
 use App\Http\Controllers\App\InsightsController;
+use App\Http\Controllers\App\InstagramAudioController;
 use App\Http\Controllers\App\LibraryTemplateController;
 use App\Http\Controllers\App\LinkPreviewController;
 use App\Http\Controllers\App\LinkPreviewMediaController;
@@ -42,10 +45,12 @@ use App\Http\Controllers\App\RepurposeController;
 use App\Http\Controllers\App\RssFeedCollectionController;
 use App\Http\Controllers\App\RssFeedController;
 use App\Http\Controllers\App\RssFeedItemController;
-use App\Http\Controllers\App\Settings\AuthenticationController;
+use App\Http\Controllers\App\Settings\ConnectedAccountController;
 use App\Http\Controllers\App\Settings\NotificationPreferenceController;
+use App\Http\Controllers\App\Settings\PasswordController;
 use App\Http\Controllers\App\Settings\PreferencesController;
 use App\Http\Controllers\App\Settings\ProfileController;
+use App\Http\Controllers\App\Settings\SessionController;
 use App\Http\Controllers\App\UnsplashController;
 use App\Http\Controllers\App\WebdavMediaController;
 use App\Http\Controllers\App\WebhookController;
@@ -88,13 +93,26 @@ Route::middleware(['auth'])->group(function () {
     Route::post('welcome/persona', [WelcomeController::class, 'storePersona'])->name('app.welcome.persona.store');
     Route::get('welcome/goals', [WelcomeController::class, 'goals'])->name('app.welcome.goals');
     Route::post('welcome/goals', [WelcomeController::class, 'storeGoals'])->name('app.welcome.goals.store');
+    Route::get('welcome/software', [WelcomeController::class, 'software'])->name('app.welcome.software');
+    Route::post('welcome/software', [WelcomeController::class, 'storeSoftware'])->name('app.welcome.software.store');
     Route::get('welcome/plan', [WelcomeController::class, 'plan'])->name('app.welcome.plan');
     Route::post('welcome/plan', [WelcomeController::class, 'storePlan'])
         ->middleware('throttle:6,1')
         ->name('app.welcome.plan.store');
+    Route::get('welcome/mcp', [WelcomeController::class, 'mcp'])->name('app.welcome.mcp');
+    Route::post('welcome/mcp/connect-click', [WelcomeController::class, 'storeMcpConnectClick'])
+        ->middleware('throttle:30,1')
+        ->name('app.welcome.mcp.connect-click');
+    Route::get('welcome/mcp/skip', [WelcomeController::class, 'skipMcp'])->name('app.welcome.mcp.skip');
     Route::post('referral-source', [ReferralSourceController::class, 'store'])
         ->middleware('throttle:6,1')
         ->name('app.referral-source.store');
+    Route::post('changelog/{changelogEntry}/views', [ChangelogEntryViewController::class, 'store'])
+        ->middleware('throttle:60,1')
+        ->name('app.changelog.views.store');
+    Route::put('changelog/{changelogEntry}/reaction', [ChangelogEntryReactionController::class, 'update'])
+        ->middleware('throttle:60,1')
+        ->name('app.changelog.reaction.update');
     Route::get('welcome/subscription-required', [WelcomeController::class, 'subscriptionRequired'])->name('app.welcome.subscription-required');
     Route::get('billing/processing', [BillingController::class, 'processing'])->name('app.billing.processing');
 
@@ -172,6 +190,14 @@ Route::middleware(['auth', EnsureAccountReady::class, EnsureHasWorkspace::class]
     Route::get('discord/accounts/{account}/mentions', [AppDiscordController::class, 'mentions'])
         ->middleware('throttle:60,1')
         ->name('app.discord.mentions');
+
+    Route::get('instagram/accounts/{account}/audio', [InstagramAudioController::class, 'index'])
+        ->middleware('throttle:60,1')
+        ->name('app.instagram.audio.index');
+    Route::get('instagram/accounts/{account}/audio/{audioId}', [InstagramAudioController::class, 'show'])
+        ->whereNumber('audioId')
+        ->middleware('throttle:60,1')
+        ->name('app.instagram.audio.show');
 
     Route::get('pinterest/accounts/{account}/boards', [PinterestBoardController::class, 'index'])
         ->middleware('throttle:30,1')
@@ -404,16 +430,15 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::delete('settings/profile', [ProfileController::class, 'destroy'])->name('app.profile.destroy');
 
-    Route::get('settings/authentication', [AuthenticationController::class, 'edit'])->name('app.authentication.edit');
-    Route::put('settings/authentication/password', [AuthenticationController::class, 'updatePassword'])
+    Route::put('settings/profile/password', [PasswordController::class, 'update'])
         ->middleware('throttle:6,1')
-        ->name('app.authentication.update-password');
-    Route::delete('settings/authentication/sessions', [AuthenticationController::class, 'destroyOtherSessions'])
-        ->name('app.authentication.destroy-other-sessions');
-    Route::get('settings/authentication/providers/{provider}/connect', [AuthenticationController::class, 'connectProvider'])
-        ->name('app.authentication.connect-provider');
-    Route::delete('settings/authentication/providers/{provider}', [AuthenticationController::class, 'disconnectProvider'])
-        ->name('app.authentication.disconnect-provider');
+        ->name('app.profile.password.update');
+    Route::delete('settings/profile/sessions', [SessionController::class, 'destroyOthers'])
+        ->name('app.profile.sessions.destroy-others');
+    Route::get('settings/profile/connected-accounts/{provider}/connect', [ConnectedAccountController::class, 'connect'])
+        ->name('app.profile.connected-accounts.connect');
+    Route::delete('settings/profile/connected-accounts/{provider}', [ConnectedAccountController::class, 'destroy'])
+        ->name('app.profile.connected-accounts.destroy');
 
     Route::get('settings/profile/notifications', [NotificationPreferenceController::class, 'edit'])->name('app.notifications.preferences');
     Route::patch('settings/profile/notifications', [NotificationPreferenceController::class, 'update'])->name('app.notifications.preferences.update');

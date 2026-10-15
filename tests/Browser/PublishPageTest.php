@@ -8,6 +8,7 @@ use App\Enums\Post\ScheduleMode;
 use App\Enums\Post\Status as PostStatus;
 use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
+use App\Enums\User\Locale;
 use App\Models\AnalyticsPublication;
 use App\Models\AnalyticsPublicationDailySnapshot;
 use App\Models\Post;
@@ -145,7 +146,7 @@ test('a draft is added to the queue from the drafts tab', function () {
     $page->assertNoJavaScriptErrors();
 });
 
-test('add to queue is disabled for a draft whose channel has no posting times', function () {
+test('add to queue explains how to set up the queue when the channel has no posting times', function () {
     [$user, $workspace] = publishPageSetup();
     $channel = SocialAccount::factory()->linkedin()->create([
         'workspace_id' => $workspace->id,
@@ -158,9 +159,60 @@ test('add to queue is disabled for a draft whose channel has no posting times', 
     $page = visit(route('app.channels.publish', ['account' => $channel, 'tab' => 'drafts']));
     waitForPublishPageTestId($page, "post-add-to-queue-{$draft->id}");
 
-    $page->assertAttribute("@post-add-to-queue-{$draft->id}", 'disabled', '')
+    $page->assertEnabled("@post-add-to-queue-{$draft->id}")
+        ->click("@post-add-to-queue-{$draft->id}");
+    waitForPublishPageTestId($page, "post-queue-setup-{$draft->id}");
+
+    $page->assertVisible("@post-queue-setup-illustration-{$draft->id}")
+        ->assertSeeIn("@post-queue-setup-{$draft->id}", __('posts.publish.actions.queue_setup.title'))
+        ->assertSeeIn("@post-queue-setup-{$draft->id}", __('posts.publish.actions.queue_setup.body'))
         ->assertNoJavaScriptErrors();
     expect($draft->refresh()->status)->toBe(PostStatus::Draft);
+
+    $page->click("@post-queue-setup-action-{$draft->id}");
+    waitForPublishPageTestId($page, 'channel-settings-page');
+
+    $page->assertPathIs(parse_url(route('app.channels.settings', $channel), PHP_URL_PATH))
+        ->assertNoJavaScriptErrors();
+});
+
+test('a member who cannot manage channels is told to ask an admin for posting times', function () {
+    [$owner, $workspace] = publishPageSetup();
+    $member = User::factory()->create(['account_id' => $owner->account_id, 'current_workspace_id' => $workspace->id]);
+    $workspace->members()->attach($member->id, membershipPivot('member'));
+    $channel = SocialAccount::factory()->linkedin()->create([
+        'workspace_id' => $workspace->id,
+        'timezone' => 'UTC',
+        'posting_schedule' => null,
+    ]);
+    $draft = publishPagePost($owner, $workspace, $channel, ['status' => 'draft', 'queue' => null]);
+    $this->actingAs($member);
+
+    $page = visit(route('app.posts.index', ['tab' => 'drafts']));
+    waitForPublishPageTestId($page, "post-add-to-queue-{$draft->id}");
+    $page->click("@post-add-to-queue-{$draft->id}");
+    waitForPublishPageTestId($page, "post-queue-setup-{$draft->id}");
+
+    $page->assertSeeIn("@post-queue-setup-{$draft->id}", __('posts.publish.actions.queue_setup.body_member'))
+        ->assertMissing("@post-queue-setup-action-{$draft->id}")
+        ->click("@post-queue-setup-not-now-{$draft->id}");
+
+    $page->assertMissing("@post-queue-setup-{$draft->id}")
+        ->assertNoJavaScriptErrors();
+});
+
+test('add to queue explains where the post goes when the channel has posting times', function () {
+    [$user, $workspace, $channel] = publishPageSetup();
+    $draft = publishPagePost($user, $workspace, $channel, ['status' => 'draft', 'queue' => null]);
+    $this->actingAs($user);
+
+    $page = visit(route('app.channels.publish', ['account' => $channel, 'tab' => 'drafts']));
+    waitForPublishPageTestId($page, "post-add-to-queue-{$draft->id}");
+    $page->hover("@post-add-to-queue-{$draft->id}");
+    waitForPublishPageTestId($page, "post-add-to-queue-tooltip-{$draft->id}");
+
+    $page->assertSeeIn("@post-add-to-queue-tooltip-{$draft->id}", __('posts.publish.actions.add_to_queue_hint'))
+        ->assertNoJavaScriptErrors();
 });
 
 test('editing a draft from a channel page keeps the channel page and tab', function () {
@@ -466,8 +518,8 @@ test('the channel page adapts its filters, tabs, calendar link and notes button 
     expect($page->script($notes))->toBe(['inside' => true, 'beside' => false]);
 
     $page->resize(1280, 800);
-    waitForPublishPageScript($page, 'document.querySelector(\'[data-testid^="post-notes-trigger-"]\').getBoundingClientRect().left >= document.querySelector(\'[data-testid^="post-card-"] article\').getBoundingClientRect().right');
-    expect($page->script($notes))->toBe(['inside' => false, 'beside' => true]);
+    waitForPublishPageTestId($page, "post-notes-trigger-{$post->id}");
+    expect($page->script($notes))->toBe(['inside' => true, 'beside' => false]);
 
     $page->resize(390, 844);
     waitForPublishPageTestId($page, 'publish-tabs-mobile-trigger');
@@ -554,3 +606,63 @@ test('the channel page adapts its filters, tabs, calendar link and notes button 
 
     $page->assertNoJavaScriptErrors();
 });
+
+test('a draft without a channel shows no add to queue button', function () {
+    [$user, $workspace] = publishPageSetup();
+    $draft = Post::factory()->create([
+        'workspace_id' => $workspace->id,
+        'user_id' => $user->id,
+        'content' => 'Draft without a channel',
+        'status' => PostStatus::Draft,
+    ]);
+    $draft->forceFill(['social_account_id' => null, 'platform' => null, 'content_type' => null])->save();
+    $this->actingAs($user);
+
+    $page = visit(route('app.posts.index', ['tab' => 'drafts']));
+    waitForPublishPageTestId($page, "post-card-{$draft->id}");
+
+    $page->assertVisible("@post-card-{$draft->id}")
+        ->assertMissing("@post-add-to-queue-{$draft->id}")
+        ->assertNoJavaScriptErrors();
+});
+
+test('on a phone the view switch and the new post button fit inside the card, on all channels and on a channel', function (bool $allChannels, string $tab) {
+    [$user, $workspace, $channel] = publishPageSetup();
+    $user->update(['locale' => Locale::from('pt-BR')]);
+    SocialAccount::factory()->instagram()->create(['workspace_id' => $workspace->id]);
+    $this->actingAs($user->fresh());
+
+    $url = $allChannels ? route('app.posts.index', ['tab' => $tab]) : route('app.channels.publish', ['account' => $channel, 'tab' => $tab]);
+    $page = visit($url)->resize(390, 844);
+    waitForPublishPageTestId($page, 'posts-new-post');
+
+    $fits = $page->script(<<<'JS'
+        (() => {
+            const card = document.querySelector('[data-testid="publish-page"]').getBoundingClientRect();
+            return ['posts-new-post', 'schedule-view-calendar'].every((testId) => {
+                const box = document.querySelector(`[data-testid="${testId}"]`).getBoundingClientRect();
+                return box.width > 0 && box.left >= card.left && box.right <= card.right;
+            });
+        })()
+    JS);
+
+    expect($fits)->toBeTrue();
+    $page->assertScript('document.documentElement.scrollWidth <= window.innerWidth', true)
+        ->assertNoJavaScriptErrors();
+})->with([
+    'all channels' => [true],
+    'a channel' => [false],
+])->with(['approvals', 'sent']);
+
+test('the reel and story badges on a post card show a 16px icon', function (ContentType $contentType) {
+    [$user, $workspace] = publishPageSetup();
+    $instagram = SocialAccount::factory()->instagram()->create(['workspace_id' => $workspace->id]);
+    $post = Post::factory()->forAccount($instagram, $contentType)->create(['user_id' => $user->id, 'content' => 'Badge']);
+    $this->actingAs($user);
+
+    $page = visit(route('app.posts.index', ['tab' => 'drafts']));
+    waitForPublishPageTestId($page, "post-content-type-icon-{$post->id}");
+
+    expect($page->script("(() => { const box = document.querySelector('[data-testid=\"post-content-type-icon-{$post->id}\"]').getBoundingClientRect(); return [Math.round(box.width), Math.round(box.height)]; })()"))->toBe([16, 16]);
+    $page->assertNoJavaScriptErrors();
+})->with([ContentType::InstagramReel, ContentType::InstagramStory]);

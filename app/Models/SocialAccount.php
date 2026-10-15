@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Actions\Analytics\DispatchAccountAnalytics;
+use App\Actions\Analytics\MoveAnalyticsIdentity;
 use App\Actions\SocialAccount\ApplyChannelDefaults;
 use App\Casts\PostingScheduleCast;
 use App\Enums\Notification\Type;
@@ -196,19 +197,24 @@ class SocialAccount extends Model
             $reconnect?->workspace_id === $workspace->id
             && $reconnect->platform->network() === $platform->network()
         ) {
-            if ((string) $reconnect->platform_user_id !== $platformUserId) {
+            if (! $reconnect->isIdentity($platform, $platformUserId, data_get($values, 'meta.ig_user_id'))) {
                 throw NetworkAlreadyConnectedException::identityMismatch($platform);
             }
 
             $previousPlatform = $reconnect->platform;
+            $previousPlatformUserId = (string) $reconnect->platform_user_id;
 
             try {
                 // The card and the targets that still have to publish through it
                 // move together or not at all.
-                DB::transaction(function () use ($reconnect, $values, $previousPlatform, $platform): void {
+                DB::transaction(function () use ($reconnect, $values, $previousPlatform, $previousPlatformUserId, $platform): void {
                     $reconnect->update($values);
 
                     static::realignUnpublishedTargets($reconnect, $previousPlatform, $platform);
+
+                    if ($previousPlatform !== $platform) {
+                        app(MoveAnalyticsIdentity::class)->handle($reconnect, $previousPlatformUserId);
+                    }
                 });
             } catch (UniqueConstraintViolationException) {
                 throw new NetworkAlreadyConnectedException($platform);
@@ -231,6 +237,46 @@ class SocialAccount extends Model
         }
 
         return $account;
+    }
+
+    /**
+     * Whether an identity a provider returned is this account: the same
+     * platform user id, or, across the two Instagram platforms, the same
+     * Instagram professional account id, since Instagram Login reports an
+     * app-scoped id where Facebook reports the account id.
+     */
+    public function isIdentity(SocialPlatform $platform, string $platformUserId, mixed $instagramUserId = null): bool
+    {
+        if ((string) $this->platform_user_id === $platformUserId) {
+            return true;
+        }
+
+        if ($platform === $this->platform) {
+            return false;
+        }
+
+        $identityAccountId = match ($platform) {
+            SocialPlatform::InstagramFacebook => $platformUserId,
+            SocialPlatform::Instagram => filled($instagramUserId) ? (string) $instagramUserId : null,
+            default => null,
+        };
+
+        return filled($identityAccountId) && $identityAccountId === $this->instagramAccountId();
+    }
+
+    /**
+     * The Instagram professional account id: the platform user id when
+     * connected through Facebook, `meta.ig_user_id` when connected through
+     * Instagram Login (stored on connect, and filled in for older accounts by
+     * the daily connection check).
+     */
+    private function instagramAccountId(): ?string
+    {
+        return match ($this->platform) {
+            SocialPlatform::InstagramFacebook => (string) $this->platform_user_id,
+            SocialPlatform::Instagram => transform(data_get($this->meta, 'ig_user_id'), fn (mixed $id): string => (string) $id),
+            default => null,
+        };
     }
 
     /**

@@ -306,21 +306,35 @@ class SocialController extends Controller
         if ($reconnect !== null) {
             return array_values(array_filter(
                 $identities,
-                fn (array $identity): bool => data_get($identity, 'platform_user_id') === (string) $reconnect->platform_user_id,
+                fn (array $identity): bool => self::isIdentityOf($reconnect, $identity),
             ));
         }
 
         $seated = $workspace->socialAccounts()
             ->whereIn('platform', $this->platform->networkPlatformValues())
-            ->get(['platform', 'platform_user_id']);
+            ->get(['platform', 'platform_user_id', 'meta']);
 
         return array_values(array_filter(
             $identities,
             fn (array $identity): bool => ! $seated->contains(
-                fn (SocialAccount $account): bool => (string) $account->platform_user_id === data_get($identity, 'platform_user_id')
-                    && $account->platform->value !== data_get($identity, 'platform'),
+                fn (SocialAccount $account): bool => $account->platform->value !== data_get($identity, 'platform')
+                    && self::isIdentityOf($account, $identity),
             ),
         ));
+    }
+
+    /**
+     * Whether an offered identity is this account (see SocialAccount::isIdentity()).
+     *
+     * @param  array<string, mixed>  $identity
+     */
+    private static function isIdentityOf(SocialAccount $account, array $identity): bool
+    {
+        return $account->isIdentity(
+            SocialPlatform::from((string) data_get($identity, 'platform')),
+            (string) data_get($identity, 'platform_user_id'),
+            data_get($identity, 'attributes.meta.ig_user_id'),
+        );
     }
 
     /**

@@ -38,6 +38,7 @@ function fullPostRouter(): Closure
         $facebook = config('trypost.platforms.facebook.graph_api');
         $rupload = config('trypost.platforms.facebook.rupload_host');
         $instagram = config('trypost.platforms.instagram.graph_api');
+        $instagramFacebook = config('trypost.platforms.instagram-facebook.graph_api');
         $threads = config('trypost.platforms.threads.graph_api');
         $linkedin = config('trypost.platforms.linkedin.api');
         $pinterest = config('trypost.platforms.pinterest.api');
@@ -62,6 +63,9 @@ function fullPostRouter(): Closure
             str_starts_with($url, $instagram) && str_ends_with(parse_url($url, PHP_URL_PATH), '/media') => Http::response(['id' => "ig-container-{$counter}"], 200),
             str_starts_with($url, $instagram) && str_ends_with(parse_url($url, PHP_URL_PATH), '/media_publish') => Http::response(['id' => "ig-media-{$counter}"], 200),
             str_starts_with($url, $instagram) => Http::response(['status_code' => 'FINISHED', 'status' => 'Finished', 'permalink' => 'https://www.instagram.com/p/1/'], 200),
+            str_starts_with($url, "{$instagramFacebook}/igf_user/media_publish") => Http::response(['id' => "ig-media-{$counter}"], 200),
+            str_starts_with($url, "{$instagramFacebook}/igf_user/media") => Http::response(['id' => "ig-container-{$counter}"], 200),
+            str_starts_with($url, "{$instagramFacebook}/ig-") => Http::response(['status_code' => 'FINISHED', 'status' => 'Finished', 'permalink' => 'https://www.instagram.com/reel/1/'], 200),
             str_contains($url, $rupload) => Http::response(['success' => true], 200),
             str_starts_with($url, $facebook) && data_get($data, 'upload_phase') === 'start' => Http::response(['video_id' => "fb-video-{$counter}", 'upload_url' => "https://{$rupload}/video-upload/v25.0/fb-video-{$counter}"], 200),
             str_starts_with($url, $facebook) && data_get($data, 'upload_phase') === 'finish' => Http::response(['success' => true, 'id' => "fb-reel-{$counter}", 'post_id' => "fb-story-{$counter}"], 200),
@@ -247,14 +251,25 @@ function fullPostCase(string $name): array
                 ['upload_token' => fullPostImage()->upload_token, 'alt' => 'First alt', 'meta' => ['user_tags' => [['username' => 'friend.one', 'x' => 0.25, 'y' => 0.75]]]],
                 ['upload_token' => fullPostImage()->upload_token, 'alt' => 'Second alt'],
             ],
-            'meta' => ['is_ai_generated' => true],
+            'meta' => ['is_ai_generated' => true, 'collaborators' => ['@friend.two']],
         ],
         'instagram reel' => [
             'account' => $account('instagram', ['platform_user_id' => 'ig_user']),
             'content_type' => 'instagram_reel',
             'content' => 'Reel caption',
             'media' => [['upload_token' => fullPostVideo()->upload_token, 'meta' => ['cover_offset_ms' => 3500]]],
-            'meta' => ['is_ai_generated' => true, 'share_to_feed' => false],
+            'meta' => ['is_ai_generated' => true, 'share_to_feed' => false, 'trial_graduation' => 'SS_PERFORMANCE'],
+        ],
+        'instagram via facebook reel with music' => [
+            'account' => $account('instagram', [
+                'platform' => 'instagram-facebook',
+                'platform_user_id' => 'igf_user',
+                'scopes' => ['instagram_basic', 'instagram_content_publish', 'pages_read_engagement'],
+            ]),
+            'content_type' => 'instagram_reel',
+            'content' => 'Reel with music',
+            'media' => [['upload_token' => fullPostVideo()->upload_token]],
+            'meta' => ['collaborators' => ['friend.three'], 'audio' => ['id' => '1122334455', 'title' => 'Song', 'audio_volume' => 100, 'video_volume' => 0]],
         ],
         'instagram story' => [
             'account' => $account('instagram', ['platform_user_id' => 'ig_user']),
@@ -354,7 +369,6 @@ function fullPostCase(string $name): array
             'media' => [['upload_token' => fullPostImage()->upload_token, 'alt' => 'Discord alt']],
             'meta' => [
                 'channel_id' => '444555666',
-                'channel_name' => 'general',
                 'mentions' => [['token' => '@everyone', 'label' => 'everyone']],
                 'embeds' => [['title' => 'Embed title', 'description' => 'Embed body', 'url' => 'https://example.com', 'image' => 'https://example.com/i.png', 'color' => '#FF8800']],
             ],
@@ -748,6 +762,7 @@ function fullPostExpected(string $name): array
                     'caption' => 'Carousel caption #one',
                     'children' => 'ig-container-#,ig-container-#',
                     'is_ai_generated' => 'true',
+                    'collaborators' => '["friend.two"]',
                 ],
             ],
             [
@@ -769,11 +784,33 @@ function fullPostExpected(string $name): array
                     'thumb_offset' => 3500,
                     'is_ai_generated' => 'true',
                     'share_to_feed' => 'false',
+                    'trial_params' => '{"graduation_strategy":"SS_PERFORMANCE"}',
                 ],
             ],
             [
                 'POST',
                 'https://graph.instagram.com/v25.0/ig_user/media_publish',
+                [
+                    'creation_id' => 'ig-container-#',
+                ],
+            ],
+        ],
+        'instagram via facebook reel with music' => [
+            [
+                'POST',
+                'https://graph.facebook.com/v25.0/igf_user/media',
+                [
+                    'video_url' => '/storage/media/{month}/{uuid}.mp4',
+                    'caption' => 'Reel with music',
+                    'media_type' => 'REELS',
+                    'collaborators' => '["friend.three"]',
+                    'share_to_feed' => 'true',
+                    'audio_configuration' => '{"audio_id":"1122334455","audio_volume":100,"video_volume":0}',
+                ],
+            ],
+            [
+                'POST',
+                'https://graph.facebook.com/v25.0/igf_user/media_publish',
                 [
                     'creation_id' => 'ig-container-#',
                 ],
@@ -1248,6 +1285,7 @@ dataset('complete posts', [
     'threads ghost post',
     'instagram carousel',
     'instagram reel',
+    'instagram via facebook reel with music',
     'instagram story',
     'facebook post',
     'facebook link without preview',

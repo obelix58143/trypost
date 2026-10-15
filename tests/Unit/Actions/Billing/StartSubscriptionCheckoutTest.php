@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Billing\StartSubscriptionCheckout;
 use App\Enums\Plan\Slug;
 use App\Enums\User\Persona;
+use App\Enums\User\PreviousSoftware;
 use App\Enums\User\ReferralSource;
 use App\Models\Account;
 use App\Models\Plan;
@@ -55,7 +56,7 @@ afterEach(function () {
     ApiRequestor::setHttpClient(null);
 });
 
-test('redirect applies checkout configuration and attribution metadata before opening the stripe session', function () {
+test('redirect keeps the attribution metadata on the stripe customer, not on the subscription', function () {
     config([
         'trypost.billing.require_card_for_trial' => true,
         'cashier.trial_days' => 8,
@@ -83,6 +84,7 @@ test('redirect applies checkout configuration and attribution metadata before op
         'epik' => 'dj0yepik',
         'persona' => Persona::Agency,
         'goals' => ['grow_audience', 'save_time'],
+        'previous_software' => PreviousSoftware::Metricool,
         'referral_source' => ReferralSource::ProductHunt,
     ]);
     $account->refresh();
@@ -90,25 +92,7 @@ test('redirect applies checkout configuration and attribution metadata before op
     $cancelUrl = route('app.welcome');
 
     $builder = Mockery::mock(SubscriptionBuilder::class);
-    $builder->shouldReceive('withMetadata')
-        ->once()
-        ->with([
-            'utm_source' => 'google',
-            'utm_medium' => 'cpc',
-            'utm_campaign' => 'launch',
-            'utm_term' => 'social scheduler',
-            'utm_content' => 'headline-b',
-            'gclid' => 'Cj0KCQgclid',
-            'fbclid' => 'IwAR0fbclid',
-            'li_fat_id' => '9f2li-fat-id',
-            'ttclid' => 'E.C.Pttclid',
-            'rdt_cid' => 'rdt-cid-value',
-            'epik' => 'dj0yepik',
-            'persona' => 'agency',
-            'goals' => 'grow_audience,save_time',
-            'referral_source' => 'product_hunt',
-        ])
-        ->andReturnSelf();
+    $builder->shouldReceive('withMetadata')->once()->with([])->andReturnSelf();
     $builder->shouldReceive('trialDays')->once()->with(8)->andReturnSelf();
     $builder->shouldReceive('withCoupon')->never();
     $builder->shouldReceive('allowPromotionCodes')->never();
@@ -122,7 +106,25 @@ test('redirect applies checkout configuration and attribution metadata before op
 
     /** @var Account&MockInterface $accountMock */
     $accountMock = Mockery::mock($account)->makePartial();
-    $accountMock->shouldReceive('createOrGetStripeCustomer')->once()->andReturnNull();
+    $accountMock->shouldReceive('syncOrCreateStripeCustomer')->once()->andReturnNull();
+
+    expect($account->stripeMetadata())->toBe([
+        'utm_source' => 'google',
+        'utm_medium' => 'cpc',
+        'utm_campaign' => 'launch',
+        'utm_term' => 'social scheduler',
+        'utm_content' => 'headline-b',
+        'gclid' => 'Cj0KCQgclid',
+        'fbclid' => 'IwAR0fbclid',
+        'li_fat_id' => '9f2li-fat-id',
+        'ttclid' => 'E.C.Pttclid',
+        'rdt_cid' => 'rdt-cid-value',
+        'epik' => 'dj0yepik',
+        'persona' => 'agency',
+        'goals' => 'grow_audience,save_time',
+        'previous_software' => 'metricool',
+        'referral_source' => 'product_hunt',
+    ]);
     $accountMock->shouldReceive('newSubscription')
         ->once()
         ->with(Account::SUBSCRIPTION_NAME, 'price_monthly_test')
@@ -165,7 +167,9 @@ test('redirect sends no metadata for an account whose owner left every field emp
 
     /** @var Account&MockInterface $accountMock */
     $accountMock = Mockery::mock($account)->makePartial();
-    $accountMock->shouldReceive('createOrGetStripeCustomer')->once()->andReturnNull();
+    $accountMock->shouldReceive('syncOrCreateStripeCustomer')->once()->andReturnNull();
+
+    expect($account->stripeMetadata())->toBe([]);
     $accountMock->shouldReceive('newSubscription')->once()->andReturn($builder);
 
     app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', $cancelUrl);
@@ -191,20 +195,12 @@ test('redirect cuts an oversized click id to the stripe metadata limit', functio
     ]);
     $account->refresh();
 
-    $builder = Mockery::mock(SubscriptionBuilder::class);
-    $builder->shouldReceive('withMetadata')
-        ->once()
-        ->with(['fbclid' => str_repeat('a', 500)])
-        ->andReturnSelf();
-    $builder->shouldReceive('trialDays')->once()->andReturnSelf();
-    $builder->shouldReceive('checkout')
-        ->once()
-        ->andReturn((object) ['url' => 'https://checkout.stripe.test/session']);
-
     /** @var Account&MockInterface $accountMock */
     $accountMock = Mockery::mock($account)->makePartial();
-    $accountMock->shouldReceive('createOrGetStripeCustomer')->once()->andReturnNull();
-    $accountMock->shouldReceive('newSubscription')->once()->andReturn($builder);
+    $accountMock->shouldReceive('syncOrCreateStripeCustomer')->once()->andReturnNull();
+
+    expect($account->stripeMetadata())->toBe(['fbclid' => str_repeat('a', 500)]);
+    $accountMock->shouldReceive('newSubscription')->once()->andReturn(checkoutCustomerBuilder());
 
     app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome'));
 });
@@ -247,13 +243,13 @@ test('redirect applies the plan first-month coupon on a monthly price', function
 
     /** @var Account&MockInterface $accountMock */
     $accountMock = Mockery::mock($account)->makePartial();
-    $accountMock->shouldReceive('createOrGetStripeCustomer')->once()->andReturnNull();
+    $accountMock->shouldReceive('syncOrCreateStripeCustomer')->once()->andReturnNull();
     $accountMock->shouldReceive('newSubscription')->once()->andReturn($builder);
 
     app(StartSubscriptionCheckout::class)->redirect(
         $accountMock,
         'price_socials_monthly',
-        route('app.welcome.plan'),
+        route('app.welcome.software'),
         $plan,
     );
 });
@@ -287,13 +283,13 @@ test('redirect skips the first-month coupon on a yearly price', function () {
 
     /** @var Account&MockInterface $accountMock */
     $accountMock = Mockery::mock($account)->makePartial();
-    $accountMock->shouldReceive('createOrGetStripeCustomer')->once()->andReturnNull();
+    $accountMock->shouldReceive('syncOrCreateStripeCustomer')->once()->andReturnNull();
     $accountMock->shouldReceive('newSubscription')->once()->andReturn($builder);
 
     app(StartSubscriptionCheckout::class)->redirect(
         $accountMock,
         'price_workspaces_yearly',
-        route('app.welcome.plan'),
+        route('app.welcome.software'),
         $plan,
     );
 });
@@ -324,15 +320,15 @@ test('redirect clears a leftover plan_id before opening checkout', function () {
 
     /** @var Account&MockInterface $accountMock */
     $accountMock = Mockery::mock($account)->makePartial();
-    $accountMock->shouldReceive('createOrGetStripeCustomer')->once()->andReturnNull();
+    $accountMock->shouldReceive('syncOrCreateStripeCustomer')->once()->andReturnNull();
     $accountMock->shouldReceive('newSubscription')->once()->andReturn($builder);
 
-    app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome.plan'));
+    app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome.software'));
 
     expect($account->fresh()->plan_id)->toBeNull();
 });
 
-test('redirect creates a new stripe customer with the owner email and the account name', function () {
+test('redirect creates a new stripe customer with the owner email, the owner name and the metadata', function () {
     config([
         'cashier.secret' => 'sk_test_fake',
         'trypost.billing.require_card_for_trial' => true,
@@ -343,7 +339,14 @@ test('redirect creates a new stripe customer with the owner email and the accoun
     $client = fakeStripeCustomerClient();
 
     $account = Account::factory()->create(['name' => "Ada's Account"]);
-    $owner = User::factory()->create(['account_id' => $account->id, 'email' => 'ada@example.test', 'referral_source' => null]);
+    $owner = User::factory()->create([
+        'account_id' => $account->id,
+        'name' => 'Ada Lovelace',
+        'email' => 'ada@example.test',
+        'utm_source' => 'google',
+        'previous_software' => PreviousSoftware::Metricool,
+        'referral_source' => null,
+    ]);
     $account->update(['owner_id' => $owner->id]);
     $account->refresh();
 
@@ -351,16 +354,20 @@ test('redirect creates a new stripe customer with the owner email and the accoun
     $accountMock = Mockery::mock($account)->makePartial();
     $accountMock->shouldReceive('newSubscription')->once()->andReturn(checkoutCustomerBuilder());
 
-    app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome.plan'));
+    app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome.software'));
 
     expect($client->requests)->toHaveCount(1)
         ->and($client->requests[0]['method'])->toBe('post')
         ->and($client->requests[0]['url'])->toEndWith('/v1/customers')
-        ->and($client->requests[0]['params'])->toMatchArray(['email' => 'ada@example.test', 'name' => "Ada's Account"])
+        ->and($client->requests[0]['params'])->toMatchArray([
+            'email' => 'ada@example.test',
+            'name' => 'Ada Lovelace',
+            'metadata' => ['utm_source' => 'google', 'previous_software' => 'metricool'],
+        ])
         ->and($account->fresh()->stripe_id)->toBe('cus_new');
 });
 
-test('redirect leaves an existing stripe customer untouched', function () {
+test('redirect updates an existing stripe customer with the current details and metadata', function () {
     config([
         'cashier.secret' => 'sk_test_fake',
         'trypost.billing.require_card_for_trial' => true,
@@ -370,8 +377,14 @@ test('redirect leaves an existing stripe customer untouched', function () {
     ]);
     $client = fakeStripeCustomerClient();
 
-    $account = Account::factory()->create(['stripe_id' => 'cus_existing']);
-    $owner = User::factory()->create(['account_id' => $account->id, 'email' => 'new-owner@example.test', 'referral_source' => null]);
+    $account = Account::factory()->create(['name' => "Ada's Account", 'stripe_id' => 'cus_existing']);
+    $owner = User::factory()->create([
+        'account_id' => $account->id,
+        'name' => 'New Owner',
+        'email' => 'new-owner@example.test',
+        'persona' => Persona::Agency,
+        'referral_source' => null,
+    ]);
     $account->update(['owner_id' => $owner->id]);
     $account->refresh();
 
@@ -379,9 +392,15 @@ test('redirect leaves an existing stripe customer untouched', function () {
     $accountMock = Mockery::mock($account)->makePartial();
     $accountMock->shouldReceive('newSubscription')->once()->andReturn(checkoutCustomerBuilder());
 
-    app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome.plan'));
+    app(StartSubscriptionCheckout::class)->redirect($accountMock, 'price_monthly_test', route('app.welcome.software'));
 
-    expect(collect($client->requests)->pluck('method')->all())->toBe(['get'])
+    expect($client->requests)->toHaveCount(1)
+        ->and($client->requests[0]['method'])->toBe('post')
         ->and($client->requests[0]['url'])->toEndWith('/v1/customers/cus_existing')
+        ->and($client->requests[0]['params'])->toMatchArray([
+            'email' => 'new-owner@example.test',
+            'name' => 'New Owner',
+        ])
+        ->and($client->requests[0]['params']['metadata'])->toMatchArray(['persona' => 'agency', 'referral_source' => ''])
         ->and($account->fresh()->stripe_id)->toBe('cus_existing');
 });

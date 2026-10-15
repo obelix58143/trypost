@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => 'Koppel dit kanaal opnieuw om te blijven publiceren.',
     'reconnect' => 'Opnieuw koppelen',
     'refresh_connection' => 'Verbinding vernieuwen',
+    'link_facebook_page' => 'Koppelen aan een Facebook-pagina',
     'view_profile' => 'Profiel bekijken',
     'disconnect' => 'Loskoppelen',
     'actions' => 'Kanaalacties',
 
     'reorder' => [
         'handle' => 'Sleep om :name te verplaatsen',
-        'move_up' => 'Omhoog',
-        'move_down' => 'Omlaag',
         'failed' => 'Je kanalen konden niet opnieuw worden geordend. Probeer het opnieuw.',
         'stale' => 'Je kanalen zijn gewijzigd sinds je de pagina hebt geladen. Vernieuw en probeer het opnieuw.',
     ],

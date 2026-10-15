@@ -7,6 +7,16 @@ return [
 
     'back' => 'Back',
 
+    'unsaved_changes' => [
+
+        'title' => 'Discard changes?',
+
+        'description' => 'Your changes to this post haven\'t been saved. If you leave now, they\'ll be lost.',
+
+        'discard' => 'Discard',
+
+    ],
+
     'confirm_modal' => [
         'type' => 'Type',
         'to_confirm' => 'to confirm.',
@@ -59,6 +69,7 @@ return [
     'clear' => 'Clear',
     'close' => 'Close',
     'more' => 'More',
+    'learn_more' => 'Learn more',
     'play' => 'Play',
     'loading' => 'Loading...',
     'loading_more' => 'Loading more...',

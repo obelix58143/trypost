@@ -706,3 +706,42 @@ test('an active repurpose cannot drop the meta its destination needs to publish'
 
     expect(data_get($repurpose->fresh()->destinations, '0.meta.privacy_level'))->toBe(PrivacyLevel::PublicToEveryone->value);
 });
+
+test('a repurpose refuses music on an instagram login reel destination when it is updated or activated', function () {
+    $user = User::factory()->create();
+    $workspace = Workspace::factory()->create([
+        'account_id' => $user->account_id,
+        'user_id' => $user->id,
+    ]);
+    $user->update(['current_workspace_id' => $workspace->id]);
+
+    $source = SocialAccount::factory()->for($workspace)->create(['platform' => Platform::TikTok]);
+    $instagram = SocialAccount::factory()->for($workspace)->create(['platform' => Platform::Instagram]);
+    $destination = [
+        'social_account_id' => $instagram->id,
+        'content_type' => ContentType::InstagramReel->value,
+        'meta' => ['audio' => ['id' => '1234567890']],
+    ];
+
+    $active = Repurpose::factory()->for($workspace)->create([
+        'source_social_account_id' => $source->id,
+        'status' => Status::Active,
+        'destinations' => [[...$destination, 'meta' => []]],
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('app.repurposes.update', $active), ['destinations' => [$destination]])
+        ->assertSessionHasErrors(['destinations.0.meta.audio' => __('posts.form.instagram.music.requires_facebook')]);
+
+    $draft = Repurpose::factory()->for($workspace)->create([
+        'source_social_account_id' => SocialAccount::factory()->for($workspace)->create(['platform' => Platform::TikTok])->id,
+        'status' => Status::Draft,
+        'destinations' => [$destination],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('app.repurposes.activate', $draft))
+        ->assertSessionHasErrors(['destinations' => __('posts.form.instagram.music.requires_facebook')]);
+
+    expect($draft->fresh()->status)->toBe(Status::Draft);
+});

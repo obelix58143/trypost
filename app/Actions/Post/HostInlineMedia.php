@@ -189,7 +189,7 @@ class HostInlineMedia
      * @param  array<string, mixed>  $reference
      * @return array<string, mixed>
      */
-    private static function item(Media $row, array $reference): array
+    public static function item(Media $row, array $reference): array
     {
         $item = MediaItem::fromMedia($row)->toArray();
         $edits = array_intersect_key((array) data_get($reference, 'meta', []), array_flip(SyncOwnedMedia::EDITABLE_META));

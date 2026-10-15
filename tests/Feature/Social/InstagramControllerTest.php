@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Enums\Post\Status as PostStatus;
+use App\Enums\PostPlatform\ContentType;
 use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
+use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
@@ -187,6 +190,36 @@ test('instagram callback refuses an identity already connected via the facebook 
     expect($this->workspace->socialAccounts()->where('platform_user_id', 'shared-ig-id')->count())->toBe(1);
 });
 
+test('instagram callback refuses an account seated through facebook under its professional account id', function () {
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::InstagramFacebook,
+        'platform_user_id' => '17841400000000001',
+        'username' => 'brand',
+    ]);
+
+    startSocialConnect($this->workspace->id, Platform::Instagram);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('app-scoped-1');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('brand');
+    $socialiteUser->shouldReceive('getName')->andReturn('Brand');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'test-access-token';
+    $socialiteUser->refreshToken = null;
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS', 'user_id' => 17841400000000001];
+
+    Socialite::shouldReceive('driver')->with('instagram')->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.instagram.callback'))
+        ->assertRedirect(route('app.social.connect.show', Platform::Instagram));
+
+    expect(socialConnectFailure())->toBe('all_connected')
+        ->and($this->workspace->socialAccounts()->count())->toBe(1);
+});
+
 test('instagram callback reconnects the original card', function () {
     $account = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -298,4 +331,67 @@ test('a connect racing another on the same network says it is busy without filin
     expect($this->workspace->socialAccounts()->count())->toBe(0);
 
     Log::shouldNotHaveReceived('error');
+});
+
+test('instagram callback stores the professional account id', function () {
+    startSocialConnect($this->workspace->id, Platform::Instagram);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('app-scoped-1');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('testuser');
+    $socialiteUser->shouldReceive('getName')->andReturn('Test User');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'test-access-token';
+    $socialiteUser->refreshToken = null;
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS', 'user_id' => 17841400000000001];
+
+    Socialite::shouldReceive('driver')->with('instagram')->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $this->actingAs($this->user)->get(route('app.social.instagram.callback'));
+    finishSocialConnect(Platform::Instagram)->assertRedirect();
+
+    expect(SocialAccount::where('platform_user_id', 'app-scoped-1')->sole()->meta)
+        ->toEqual(['account_type' => 'BUSINESS', 'ig_user_id' => '17841400000000001']);
+});
+
+test('instagram callback moves a card connected through facebook back to instagram login', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::InstagramFacebook,
+        'platform_user_id' => '17841400000000001',
+        'username' => 'old',
+    ]);
+    $reel = Post::factory()->forAccount($account, ContentType::InstagramReel)->create([
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Scheduled,
+        'scheduled_at' => now()->addDay(),
+        'meta' => ['audio' => ['id' => '123', 'title' => 'Song']],
+    ]);
+
+    startSocialConnect($this->workspace->id, Platform::Instagram, $account->id);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('app-scoped-1');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('testuser');
+    $socialiteUser->shouldReceive('getName')->andReturn('Test User');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'fresh-access-token';
+    $socialiteUser->refreshToken = null;
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS', 'user_id' => '17841400000000001'];
+
+    Socialite::shouldReceive('driver')->with('instagram')->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.instagram.callback'))
+        ->assertRedirect(route('app.social.connect.show', Platform::Instagram));
+    finishSocialConnect(Platform::Instagram)->assertRedirect();
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform)->toBe(Platform::Instagram)
+        ->and($account->fresh()->platform_user_id)->toBe('app-scoped-1')
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($reel->fresh()->platform)->toBe(Platform::Instagram)
+        ->and(data_get($reel->fresh()->meta, 'audio.id'))->toBe('123');
 });

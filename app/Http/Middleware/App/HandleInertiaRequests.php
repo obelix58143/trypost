@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware\App;
 
+use App\Actions\Changelog\BuildChangelogProps;
 use App\Enums\Auth\SocialAuthProvider;
 use App\Enums\Media\Source as MediaSource;
 use App\Enums\Media\Type as MediaType;
@@ -18,11 +19,14 @@ use App\Http\Resources\App\HandleInertiaRequests\AuthWorkspaceResource;
 use App\Http\Resources\App\HandleInertiaRequests\ComposerResource;
 use App\Http\Resources\App\HandleInertiaRequests\SidebarChannelResource;
 use App\Http\Resources\App\PlanResource;
+use App\Models\Account;
 use App\Models\Plan;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Support\HeicConverter;
 use App\Support\LinkTlds;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -62,14 +66,12 @@ class HandleInertiaRequests extends Middleware
             'channels' => fn (): array => $user?->currentWorkspace
                 ? SidebarChannelResource::collection($user->currentWorkspace)
                 : [],
-            'referralSources' => fn (): ?array => $user !== null
-                && ! $isSelfHosted
-                && $account?->hasAppAccess()
-                && $user->getRawOriginal('referral_source') === null
+            'referralSources' => fn (): ?array => $this->showsReferralSources($user, $account, $isSelfHosted)
                     ? array_map(fn (ReferralSource $source): string => $source->value, ReferralSource::cases())
                     : null,
             'usage' => fn (): ?array => $account && ! $isSelfHosted ? $account->usage() : null,
             'features' => fn (): ?array => $account && ! $isSelfHosted ? $account->featureLimits() : null,
+            ...($user ? BuildChangelogProps::execute($user) : []),
             'flash' => $request->session()->get('flash', []),
             'applicationUrl' => config('app.url'),
             'env' => config('app.env'),
@@ -92,7 +94,7 @@ class HandleInertiaRequests extends Middleware
             'contentTypeMediaRules' => fn (): array => ContentType::mediaRulesForFrontend(),
             'defaultCropPresets' => fn (): array => ContentType::defaultCropPresets(),
             'plans' => function (): array {
-                if (config('trypost.self_hosted') || auth()->user()?->account === null) {
+                if (config('trypost.self_hosted') || blank(auth()->user()?->account)) {
                     return [];
                 }
 
@@ -108,7 +110,7 @@ class HandleInertiaRequests extends Middleware
             'aiEnabled' => fn (): bool => filled(config('ai.providers.'.config('ai.default').'.key')),
             'googleAuthEnabled' => fn (): bool => SocialAuthProvider::Google->isEnabled(),
             'githubAuthEnabled' => fn (): bool => SocialAuthProvider::GitHub->isEnabled(),
-            ...($user !== null ? [
+            ...(filled($user) ? [
                 'mediaSources' => fn (): array => ['menu' => MediaSource::menu()],
                 'mediaUploadLimits' => fn (): array => [
                     'max_bytes' => [
@@ -125,8 +127,29 @@ class HandleInertiaRequests extends Middleware
                     'heic' => HeicConverter::available(),
                 ],
             ] : []),
-            ...($workspace !== null ? ['composer' => ComposerResource::once($workspace)] : []),
-            ...($user !== null && config('trypost.platforms.x.defuse_links') ? ['xLinkTlds' => fn (): array => LinkTlds::all()] : []),
+            ...(filled($workspace) ? ['composer' => ComposerResource::once($workspace)] : []),
+            ...(filled($user) && config('trypost.platforms.x.defuse_links') ? ['xLinkTlds' => fn (): array => LinkTlds::all()] : []),
         ];
+    }
+
+    public static function referralSourcesCacheKey(User $user): string
+    {
+        return "referral-sources.{$user->id}";
+    }
+
+    private function showsReferralSources(?User $user, ?Account $account, bool $isSelfHosted): bool
+    {
+        if (blank($user)) {
+            return false;
+        }
+
+        return Cache::remember(
+            self::referralSourcesCacheKey($user),
+            now()->addMinutes(5),
+            fn (): bool => ! $isSelfHosted
+                && blank($user->getRawOriginal('referral_source'))
+                && $user->created_at?->lte(now()->subHour()) === true
+                && $account?->hasAppAccess() === true,
+        );
     }
 }

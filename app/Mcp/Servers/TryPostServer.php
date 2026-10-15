@@ -66,6 +66,7 @@ use App\Mcp\Tools\Signature\UpdateSignatureTool;
 use App\Mcp\Tools\SocialAccount\CopyPostingScheduleTool;
 use App\Mcp\Tools\SocialAccount\CreatePinterestBoardTool;
 use App\Mcp\Tools\SocialAccount\GeneratePostingScheduleTool;
+use App\Mcp\Tools\SocialAccount\GetInstagramAudioTool;
 use App\Mcp\Tools\SocialAccount\GetPostingScheduleTool;
 use App\Mcp\Tools\SocialAccount\GetTikTokCreatorInfoTool;
 use App\Mcp\Tools\SocialAccount\ListDiscordChannelsTool;
@@ -74,6 +75,7 @@ use App\Mcp\Tools\SocialAccount\ListPinterestBoardsTool;
 use App\Mcp\Tools\SocialAccount\ListSocialAccountsTool;
 use App\Mcp\Tools\SocialAccount\MovePostToSlotTool;
 use App\Mcp\Tools\SocialAccount\ReorderQueueTool;
+use App\Mcp\Tools\SocialAccount\SearchInstagramAudioTool;
 use App\Mcp\Tools\SocialAccount\UpdatePostingScheduleTool;
 use App\Mcp\Tools\Webhook\CreateWebhookTool;
 use App\Mcp\Tools\Webhook\DeleteWebhookTool;
@@ -163,6 +165,8 @@ class TryPostServer extends Server
         ListPinterestBoardsTool::class,
         CreatePinterestBoardTool::class,
         ListDiscordChannelsTool::class,
+        SearchInstagramAudioTool::class,
+        GetInstagramAudioTool::class,
         GetTikTokCreatorInfoTool::class,
         ListRepurposesTool::class,
         CreateRepurposeTool::class,

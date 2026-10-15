@@ -5,14 +5,15 @@ declare(strict_types=1);
 return [
     'placeholder' => 'Bir not yazın...',
     'title' => 'Notlar',
+    'show' => 'Notları göster',
+    'hide' => 'Notları gizle',
     'edit' => 'Düzenle',
     'delete' => 'Sil',
     'edited' => 'düzenlendi',
     'save' => 'Kaydet',
     'cancel' => 'İptal',
     'send' => 'Gönder',
-    'empty_title' => 'Henüz not yok',
-    'empty_description' => 'Sohbeti başlatın.',
+    'empty' => 'Henüz not yok. Notları yalnızca ekibin görür.',
     'actions' => 'Not işlemleri',
     'load_more' => 'Daha eski notları yükle',
 ];

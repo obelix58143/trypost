@@ -5,18 +5,21 @@ declare(strict_types=1);
 return [
     'title' => 'MCP',
     'subtitle' => 'Συνδέστε βοηθούς AI στον χώρο σας.',
-    'copy_step' => 'Αντίγραψε το URL του διακομιστή TryPost',
-    'open_step' => 'Άνοιξε τον βοηθό AI σου',
-    'copy' => 'Αντιγραφή URL',
+    'copy' => 'Αντιγραφή',
     'connect' => 'Σύνδεση :client',
-    'step_add' => 'Επικολλήστε το όνομα, το URL ή το config παρακάτω στην εφαρμογή σας. Η σύνδεση ανοίγει στο πρόγραμμα περιήγησης την πρώτη φορά.',
     'name_label' => 'Όνομα',
     'url_label' => 'URL διακομιστή',
     'config_label' => 'Config',
-    'connected_title' => 'Συνδεδεμένες εφαρμογές',
+    'tabs' => [
+        'connected' => 'Συνδεδεμένες εφαρμογές',
+        'connect' => 'Σύνδεση εφαρμογής',
+    ],
+    'connect_other' => 'Σύνδεση',
+    'other_hint' => 'Οποιαδήποτε εφαρμογή υποστηρίζει MCP.',
+    'other_dialog_title' => 'Συνδέστε το TryPost με άλλη εφαρμογή',
     'connected_description' => 'Βοηθοί στους οποίους έχετε συνδεθεί. Μπορείτε να αποσυνδέσετε όσους δεν χρησιμοποιείτε πλέον.',
     'connected_empty_title' => 'Καμία συνδεδεμένη εφαρμογή',
-    'connected_empty' => 'Χρησιμοποιήστε Claude, ChatGPT ή άλλο client παραπάνω.',
+    'connected_empty' => 'Συνδέστε το Claude, το ChatGPT ή άλλη εφαρμογή για να τη δείτε εδώ.',
     'disconnect' => 'Αποσύνδεση',
     'disconnect_title' => 'Αποσύνδεση εφαρμογής',
     'disconnect_confirm' => 'Αυτό αποσυνδέει την εφαρμογή από το TryPost. Θα χρειαστεί να συνδεθεί ξανά πριν χρησιμοποιήσει το MCP.',
@@ -24,9 +27,6 @@ return [
     'copied' => 'Αντιγράφηκε',
     'last_used' => 'Τελευταία χρήση',
     'never' => 'Ποτέ',
-    'documentation_title' => 'Τεκμηρίωση',
-    'documentation_description' => 'Οδηγοί ανά client, διαθέσιμα tools και αντιμετώπιση προβλημάτων.',
-    'view_docs' => 'Δείτε την τεκμηρίωση',
     'connector_name' => 'TryPost',
 
     'authorize' => [
@@ -53,18 +53,29 @@ return [
     ],
 
     'other_clients_title' => 'Άλλες εφαρμογές',
-    'other_clients_description' => 'Cursor, VS Code, Claude Code και ό,τι άλλο μιλάει MCP.',
 
-    'clients' => [
-        'claude' => 'Άνοιξε Settings → Connectors, πρόσθεσε έναν προσαρμοσμένο connector και επικόλλησε το παραπάνω URL.',
-        'chatgpt' => 'Άνοιξε Settings → Apps & Connectors, δημιούργησε έναν προσαρμοσμένο connector και επικόλλησε το παραπάνω URL.',
-        'cursor' => 'Προσθέστε το TryPost ως απομακρυσμένο MCP server στο Cursor.',
-        'cursor_name' => 'Cursor',
-        'vscode' => 'Επικολλήστε το config παρακάτω στις ρυθμίσεις MCP του VS Code.',
-        'vscode_name' => 'VS Code',
-        'claude_code' => 'Επικολλήστε το config παρακάτω στις ρυθμίσεις MCP του Claude Code.',
-        'claude_code_name' => 'Claude Code',
-        'other' => 'Λειτουργεί με κάθε client που διαβάζει config mcpServers.',
-        'other_name' => 'Άλλα',
+    'dialog' => [
+        'title' => 'Συνδέστε το TryPost με το :client',
+        'description' => 'Χρειάζεται περίπου ένα λεπτό. Η σελίδα θα ενημερωθεί μόλις συνδεθείτε.',
+        'open' => 'Άνοιγμα του :client',
+        'steps' => [
+            'claude' => [
+                'paste' => 'Επικολλήστε το URL στο πεδίο URL του connector',
+                'add' => 'Πατήστε Προσθήκη και μετά Σύνδεση',
+                'login' => 'Συνδεθείτε στο TryPost και επιλέξτε workspace',
+            ],
+            'chatgpt' => [
+                'developer' => 'Ενεργοποιήστε τη λειτουργία προγραμματιστή στις ρυθμίσεις του ChatGPT',
+                'create' => 'Δημιουργήστε μια εφαρμογή με όνομα TryPost και επικολλήστε το URL',
+                'login' => 'Συνδεθείτε στο TryPost και επιλέξτε workspace',
+            ],
+            'other' => [
+                'add' => 'Προσθέστε έναν προσαρμοσμένο διακομιστή MCP στην εφαρμογή σας',
+                'paste' => 'Επικολλήστε το όνομα και το URL ή τις ρυθμίσεις',
+                'login' => 'Συνδεθείτε στο TryPost και επιλέξτε workspace',
+            ],
+        ],
+        'waiting' => 'Αναμονή για σύνδεση του AI σας…',
     ],
+
 ];

@@ -5,14 +5,15 @@ declare(strict_types=1);
 return [
     'placeholder' => 'Escribe una nota...',
     'title' => 'Notas',
+    'show' => 'Mostrar notas',
+    'hide' => 'Ocultar notas',
     'edit' => 'Editar',
     'delete' => 'Eliminar',
     'edited' => 'editado',
     'save' => 'Guardar',
     'cancel' => 'Cancelar',
     'send' => 'Enviar',
-    'empty_title' => 'Todavía no hay notas',
-    'empty_description' => 'Inicia la conversación.',
+    'empty' => 'Todavía no hay notas. Solo tu equipo las ve.',
     'actions' => 'Acciones de la nota',
     'load_more' => 'Cargar notas anteriores',
 ];

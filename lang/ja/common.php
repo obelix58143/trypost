@@ -7,6 +7,16 @@ return [
 
     'back' => '戻る',
 
+    'unsaved_changes' => [
+
+        'title' => '変更を破棄しますか？',
+
+        'description' => 'この投稿の変更は保存されていません。今移動すると変更は失われます。',
+
+        'discard' => '破棄',
+
+    ],
+
     'confirm_modal' => [
         'type' => '入力',
         'to_confirm' => 'で確認してください。',
@@ -59,6 +69,7 @@ return [
     'clear' => 'クリア',
     'close' => '閉じる',
     'more' => 'その他',
+    'learn_more' => '詳細を見る',
     'play' => '再生',
     'loading' => '読み込み中...',
     'loading_more' => 'さらに読み込み中...',

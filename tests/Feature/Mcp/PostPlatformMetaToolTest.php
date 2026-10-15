@@ -166,20 +166,22 @@ test('update post merges per-platform meta', function () {
     $post = Post::factory()->forAccount($this->discordAccount)->create([
         'user_id' => $this->user->id,
         'status' => PostStatus::Draft,
-        'meta' => ['channel_name' => 'general'],
+        'meta' => ['channel_id' => '444555666', 'embeds' => [['title' => 'Release']]],
     ]);
 
     $response = TryPostServer::actingAs($this->user)
         ->tool(UpdatePostTool::class, [
             'post_id' => $post->id,
-            'meta' => ['channel_id' => '444555666'],
+            'meta' => ['mentions' => [['token' => '@everyone', 'label' => '@everyone']]],
         ]);
 
     $response->assertOk();
 
-    $meta = $post->fresh()->meta;
-    expect($meta['channel_id'])->toBe('444555666')
-        ->and($meta['channel_name'])->toBe('general'); // merged, not overwritten
+    expect($post->fresh()->meta)->toMatchArray([
+        'channel_id' => '444555666',
+        'embeds' => [['title' => 'Release']],
+        'mentions' => [['token' => '@everyone', 'label' => '@everyone']],
+    ]);
 });
 
 test('publish post rejects a Discord platform without a channel', function () {
@@ -1033,4 +1035,33 @@ test('publishing a youtube post with neither a title nor text is rejected in MCP
     TryPostServer::actingAs($this->user)->tool(PublishPostTool::class, ['post_id' => $post->id])
         ->assertHasErrors([__('posts.form.youtube.title_required')]);
     Queue::assertNotPushed(PublishPost::class);
+});
+
+test('create post persists instagram collaborators and trial reel meta', function () {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+
+    TryPostServer::actingAs($this->user)
+        ->tool(CreatePostTool::class, [
+            'content' => 'Reel',
+            'social_account_id' => $instagram->id,
+            'content_type' => ContentType::InstagramReel->value,
+            'meta' => ['collaborators' => ['@alice'], 'trial_graduation' => 'SS_PERFORMANCE'],
+        ])
+        ->assertOk();
+
+    expect(Post::where('social_account_id', $instagram->id)->sole()->meta)
+        ->toEqual(['collaborators' => ['alice'], 'trial_graduation' => 'SS_PERFORMANCE']);
+});
+
+test('publish post rejects instagram music on an account not connected through Facebook', function () {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+    $post = Post::factory()->forAccount($instagram, ContentType::InstagramReel)->create([
+        'user_id' => $this->user->id,
+        'status' => PostStatus::Draft,
+        'meta' => ['audio' => ['id' => '1234567890']],
+    ]);
+
+    TryPostServer::actingAs($this->user)
+        ->tool(PublishPostTool::class, ['post_id' => $post->id])
+        ->assertHasErrors([__('posts.form.instagram.music.requires_facebook')]);
 });

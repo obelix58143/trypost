@@ -32,12 +32,14 @@ use App\Models\Workspace;
 use App\Services\Post\MediaAttacher;
 use App\Services\Repurpose\CaptionAdapter;
 use App\Services\Social\ContentSanitizer;
+use App\Services\Social\Discord\DiscordClient;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Mockery\MockInterface;
 
 beforeEach(function () {
     Queue::fake([BootstrapAccountAnalytics::class, CollectAccountDailySnapshot::class]);
@@ -211,6 +213,23 @@ test('a mastodon caption leaves room for the content warning', function () {
 
     expect(mb_strlen($caption))->toBeGreaterThan(300)
         ->and($account->contentOverflow($caption, Platform::Mastodon->reservedLength(['spoiler_text' => $warning])))->toBe(0);
+});
+
+test('a discord destination stores the channel name from the cached list, not the one it was saved with', function () {
+    Bus::fake([PublishPost::class]);
+    fakeVideoDownload();
+    $this->mock(DiscordClient::class, function (MockInterface $client): void {
+        $client->shouldReceive('cachedChannels')->andReturn([['id' => '111', 'name' => 'general']]);
+        $client->shouldNotReceive('channels');
+    });
+
+    $account = SocialAccount::factory()->create(['platform' => Platform::Discord, 'platform_user_id' => '999']);
+    $item = repurposeItemTo($account, ['channel_id' => '111', 'channel_name' => 'sent-by-client']);
+
+    processItem($item);
+
+    expect(Post::query()->where('repurpose_item_id', $item->id)->sole()->meta)
+        ->toEqual(['channel_id' => '111', 'channel_name' => 'general']);
 });
 
 test('a failed download throws so the job retries, leaving no post behind', function () {

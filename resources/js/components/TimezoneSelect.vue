@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { orderChannels } from '@/composables/useChannelOrder';
+import { matchesSearch } from '@/lib/search';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { channelName, type SidebarChannel } from '@/types/channel';
@@ -80,11 +81,8 @@ const suggestions = computed<Suggestion[]>(() => {
     return [...rows.values()];
 });
 
-const matches = (option: TimezoneOption): boolean => {
-    const term = search.value.trim().toLowerCase();
-
-    return term === '' || `${option.label} ${option.value} ${option.offset}`.toLowerCase().includes(term);
-};
+const matches = (option: TimezoneOption): boolean =>
+    matchesSearch(search.value, [option.label, option.value, option.offset]);
 
 const suggestedValues = computed(() => new Set(suggestions.value.map((suggestion) => suggestion.option.value)));
 const visibleSuggestions = computed(() => suggestions.value.filter((suggestion) => matches(suggestion.option)));

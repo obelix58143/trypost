@@ -67,6 +67,11 @@ function waitForChannelSettingsTestId(mixed $page, string $testId): void
     );
 }
 
+function channelSettingsEventDay(int $daysAfterStart): string
+{
+    return now()->addYear()->startOfDay()->addDays($daysAfterStart)->toDateString();
+}
+
 function waitForChannelSettingsClosedMenu(mixed $page): void
 {
     waitForChannelSettingsCondition($page, "!document.querySelector('[role=\"listbox\"]')");
@@ -214,7 +219,7 @@ test('the pinterest board picker searches, refreshes and creates boards', functi
         ->assertVisible('@pinterest-board-option-board_2');
     expect($page->script("!!document.querySelector('[data-testid=\"pinterest-board-option-board_1\"] img')"))->toBeTrue();
 
-    $page->fill('@pinterest-board-search', 'dis');
+    $page->fill('@pinterest-board-search', 'DÍS');
     waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"pinterest-board-option-board_2\"]')");
     $page->assertMissing('@pinterest-board-option-board_2')
         ->assertVisible('@pinterest-board-option-board_1')
@@ -335,7 +340,7 @@ test('the google business panel shows a server validation error under its field'
 test('the google business event shows start and end time fields beside the dates when add time is on', function () {
     fakeChannelSettingsApis();
     $post = seedChannelSettingsPost(Platform::GoogleBusiness, ContentType::GoogleBusinessPost);
-    $post->update(['meta' => ['topic_type' => 'EVENT', 'event' => ['title' => 'Launch night', 'start_date' => '2037-03-10', 'end_date' => '2037-03-12']]]);
+    $post->update(['meta' => ['topic_type' => 'EVENT', 'event' => ['title' => 'Launch night', 'start_date' => channelSettingsEventDay(0), 'end_date' => channelSettingsEventDay(2)]]]);
 
     $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
     waitForChannelSettingsTestId($page, 'google-business-add-time');
@@ -366,8 +371,8 @@ test('the google business event shows start and end time fields beside the dates
 
     expect(data_get($post->fresh()->meta, 'event'))->toEqual([
         'title' => 'Launch night',
-        'start_date' => '2037-03-10',
-        'end_date' => '2037-03-12',
+        'start_date' => channelSettingsEventDay(0),
+        'end_date' => channelSettingsEventDay(2),
         'start_time' => '18:30',
         'end_time' => '21:00',
     ]);
@@ -532,6 +537,295 @@ test('the instagram card shows share to feed on reels, the AI label last and on 
     expect($post->fresh()->meta)->toEqual([
         'share_to_feed' => false,
         'is_ai_generated' => true,
+    ]);
+});
+
+test('the instagram reel card adds collaborators and a checked trial reel, and asks to link Facebook for music', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-link-facebook');
+    $page->assertPresent('@instagram-music-save-and-link')
+        ->click('@instagram-music-maybe-later');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"instagram-music-link-facebook\"]')");
+
+    $page->type('@instagram-collaborator-input', '@alice')
+        ->keys('@instagram-collaborator-input', 'Enter');
+    waitForChannelSettingsTestId($page, 'instagram-collaborators-notice');
+    $page->assertPresent('@instagram-collaborator-alice')
+        ->assertPresent('@instagram-trial-reel-unavailable')
+        ->click('@instagram-collaborators-notice-dismiss');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"instagram-collaborators-notice\"]')");
+
+    $page->type('@instagram-collaborator-input', 'bob')
+        ->click('@instagram-collaborator-add');
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-bob');
+
+    $page->click('@instagram-collaborator-remove-alice')
+        ->click('@instagram-collaborator-remove-bob');
+    waitForChannelSettingsTestId($page, 'instagram-trial-reel-MANUAL');
+    $page->click('@instagram-trial-reel-MANUAL');
+    waitForChannelSettingsTestId($page, 'instagram-trial-reel-check');
+    $page->assertVisible('@instagram-trial-reel-illustration')
+        ->click('@instagram-trial-reel-check-no');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"instagram-trial-reel-check\"]')");
+    $page->assertAttribute('@instagram-trial-reel-off', 'aria-checked', 'true')
+        ->click('@instagram-trial-reel-MANUAL');
+    waitForChannelSettingsTestId($page, 'instagram-trial-reel-check');
+    $page->click('@instagram-trial-reel-check-yes');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-trial-reel-MANUAL\"]')?.getAttribute('aria-checked') === 'true'");
+    $page->assertNoJavaScriptErrors();
+
+    $page->click('@composer-save-draft')->assertMissing('@post-composer-dialog');
+
+    expect(data_get($post->fresh()->meta, 'trial_graduation'))->toBe('MANUAL')
+        ->and(data_get($post->fresh()->meta, 'collaborators'))->toBe([]);
+});
+
+test('save and link keeps a scheduled reel scheduled and opens the Facebook requirements to reconnect the account', function () {
+    fakeChannelSettingsApis();
+    $video = [['id' => (string) Str::uuid(), 'type' => 'video', 'path' => 'medias/clip.mp4', 'url' => 'https://example.com/clip.mp4', 'mime_type' => 'video/mp4', 'original_filename' => 'clip.mp4']];
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel, $video);
+    $post->update(['status' => Status::Scheduled, 'scheduled_at' => now()->addDay()]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link');
+    $page->click('@instagram-music-save-and-link');
+    waitForChannelSettingsTestId($page, 'instagram-facebook-requirements');
+
+    $page->assertMissing('@post-composer-dialog')
+        ->assertPresent('@instagram-facebook-requirements-connect')
+        ->assertNoJavaScriptErrors();
+    expect($post->fresh()->status)->toBe(Status::Scheduled);
+
+    $page->script(<<<'JS'
+        document.addEventListener('inertia:before', (event) => {
+            window.__connectUrl = event.detail.visit.url.href;
+            event.preventDefault();
+        });
+    JS);
+    $page->click('@instagram-facebook-requirements-connect');
+    waitForChannelSettingsCondition($page, 'window.__connectUrl !== undefined');
+
+    expect($page->script('window.__connectUrl'))->toContain("reconnect={$post->social_account_id}");
+});
+
+test('save and link never publishes a scheduled reel switched to share now', function () {
+    fakeChannelSettingsApis();
+    $video = [['id' => (string) Str::uuid(), 'type' => 'video', 'path' => 'medias/clip.mp4', 'url' => 'https://example.com/clip.mp4', 'mime_type' => 'video/mp4', 'original_filename' => 'clip.mp4']];
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel, $video);
+    $post->update(['status' => Status::Scheduled, 'scheduled_at' => now()->addDay()]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'composer-schedule-trigger');
+    $page->click('@composer-schedule-trigger');
+    waitForChannelSettingsTestId($page, 'composer-schedule-more-actions');
+    $page->click('@composer-schedule-more-actions');
+    waitForChannelSettingsTestId($page, 'composer-schedule-now');
+    $page->click('@composer-schedule-now');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"composer-submit\"]')?.dataset.scheduleMode === 'now'");
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link');
+    $page->click('@instagram-music-save-and-link');
+    waitForChannelSettingsTestId($page, 'instagram-facebook-requirements');
+
+    $page->assertNoJavaScriptErrors();
+    expect($post->fresh()->status)->toBe(Status::Draft);
+});
+
+test('save and link explains why a scheduled reel that cannot be saved stays open', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+    $post->update(['status' => Status::Scheduled, 'scheduled_at' => now()->addDay()]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link');
+    $page->click('@instagram-music-save-and-link');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link-blocked');
+
+    $page->assertSee(__('posts.form.instagram.music.save_and_link_blocked'))
+        ->assertVisible('@post-composer-dialog')
+        ->assertMissing('@instagram-facebook-requirements')
+        ->assertNoJavaScriptErrors();
+    expect($post->fresh()->status)->toBe(Status::Scheduled);
+});
+
+test('save and link keeps a pending reel pending for a member who needs approval', function () {
+    fakeChannelSettingsApis();
+    $video = [['id' => (string) Str::uuid(), 'type' => 'video', 'path' => 'medias/clip.mp4', 'url' => 'https://example.com/clip.mp4', 'mime_type' => 'video/mp4', 'original_filename' => 'clip.mp4']];
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel, $video);
+    $post->workspace->members()->updateExistingPivot($post->user_id, membershipPivot('approval'));
+    $post->update(['status' => Status::PendingApproval, 'scheduled_at' => now()->addDay()]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link');
+    $page->click('@instagram-music-save-and-link');
+    waitForChannelSettingsTestId($page, 'instagram-facebook-requirements');
+
+    $page->assertNoJavaScriptErrors();
+    expect($post->fresh()->status)->toBe(Status::PendingApproval);
+});
+
+test('save and link asks an approver to decide on a pending reel first', function () {
+    fakeChannelSettingsApis();
+    $video = [['id' => (string) Str::uuid(), 'type' => 'video', 'path' => 'medias/clip.mp4', 'url' => 'https://example.com/clip.mp4', 'mime_type' => 'video/mp4', 'original_filename' => 'clip.mp4']];
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel, $video);
+    $post->update(['status' => Status::PendingApproval, 'scheduled_at' => now()->addDay()]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link');
+    $page->click('@instagram-music-save-and-link');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link-pending');
+
+    $page->assertSee(__('posts.form.instagram.music.save_and_link_pending'))
+        ->assertVisible('@post-composer-dialog')
+        ->assertNoJavaScriptErrors();
+    expect($post->fresh()->status)->toBe(Status::PendingApproval);
+});
+
+test('save and link saves a draft reel as a draft before linking Facebook', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-save-and-link');
+    $page->click('@instagram-music-save-and-link');
+    waitForChannelSettingsTestId($page, 'instagram-facebook-requirements');
+
+    $page->assertMissing('@post-composer-dialog')->assertNoJavaScriptErrors();
+    expect($post->fresh()->status)->toBe(Status::Draft);
+});
+
+test('an invalid collaborator in any position shows its error', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-input');
+
+    $page->type('@instagram-collaborator-input', 'good_user')
+        ->keys('@instagram-collaborator-input', 'Enter');
+    waitForChannelSettingsTestId($page, 'instagram-collaborators-notice');
+    $page->click('@instagram-collaborators-notice-dismiss')
+        ->type('@instagram-collaborator-input', 'bad-name!')
+        ->click('@instagram-collaborator-add');
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-bad-name!');
+
+    $page->click('@composer-save-draft');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-collaborators\"]')?.closest('[data-testid=\"channel-settings-row\"]')?.textContent.includes(".json_encode(__('posts.form.instagram.collaborators.invalid')).')');
+
+    $page->assertSee(__('posts.form.instagram.collaborators.invalid'))->assertNoJavaScriptErrors();
+    expect(data_get($post->fresh()->meta, 'collaborators'))->toBeNull();
+});
+
+test('a picked track whose cover link expired gets a fresh cover from instagram', function () {
+    $freshCover = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    Http::fake([config('trypost.platforms.instagram-facebook.graph_api').'/846373660299207*' => Http::response([
+        'audio_id' => '846373660299207',
+        'title' => 'Summer Song',
+        'audio_type' => 'music',
+        'cover_artwork_thumbnail_url' => $freshCover,
+    ])]);
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel);
+    $post->update(['meta' => ['audio' => [
+        'id' => '846373660299207',
+        'title' => 'Summer Song',
+        'cover_url' => 'http://127.0.0.1:9/expired-cover.jpg',
+        'preview_url' => null,
+    ]]]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-selected');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-music-selected-cover\"]')?.getAttribute('src')?.startsWith('data:image/gif')");
+
+    expect($page->script("document.querySelector('[data-testid=\"instagram-music-selected-cover\"]')?.getAttribute('src')"))->toBe($freshCover);
+    $page->assertNoJavaScriptErrors();
+});
+
+test('a picked track whose cover cannot be refreshed shows the music icon instead', function () {
+    Http::fake([config('trypost.platforms.instagram-facebook.graph_api').'/846373660299207*' => Http::response(['error' => ['code' => 100]], 400)]);
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel);
+    $post->update(['meta' => ['audio' => [
+        'id' => '846373660299207',
+        'title' => 'Summer Song',
+        'cover_url' => 'http://127.0.0.1:9/expired-cover.jpg',
+        'preview_url' => null,
+    ]]]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-selected');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"instagram-music-selected-cover\"]')");
+
+    $page->assertMissing('@instagram-music-selected-cover')
+        ->assertSeeIn('@instagram-music-selected', 'Summer Song');
+});
+
+test('the instagram reel card picks music for an account connected through Facebook', function () {
+    Http::fake([config('trypost.platforms.instagram-facebook.graph_api').'/ig_audio*' => Http::response(['audio' => [[
+        'audio_id' => '1234567890',
+        'title' => 'Summer Song',
+        'display_artist' => 'The Band',
+        'cover_artwork_thumbnail_uri' => null,
+        'download_url' => null,
+    ]]])]);
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-track-1234567890');
+    $page->click('@instagram-music-track-1234567890');
+    waitForChannelSettingsTestId($page, 'instagram-music-selected');
+    $page->assertSeeIn('@instagram-music-selected', 'Summer Song')
+        ->assertSeeIn('@instagram-preview-audio', 'Summer Song')
+        ->assertPresent('@instagram-music-part-hint')
+        ->assertNoJavaScriptErrors();
+
+    $page->click('@instagram-music-volume');
+    waitForChannelSettingsTestId($page, 'instagram-music-video_volume');
+    $page->script(<<<'JS'
+        (() => {
+            const slider = document.querySelector('[data-testid="instagram-music-video_volume"]');
+            slider.value = '30';
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+        })()
+    JS);
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-music-volume-panel\"]')?.textContent.includes('30%')");
+    $page->assertSeeIn('@instagram-music-volume-panel', '30%')
+        ->keys('@instagram-music-video_volume', 'Escape');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"instagram-music-volume-panel\"]')");
+
+    $page->click('@composer-save-draft')->assertMissing('@post-composer-dialog');
+
+    expect(data_get($post->fresh()->meta, 'audio'))->toEqual([
+        'id' => '1234567890',
+        'title' => 'Summer Song',
+        'artist' => 'The Band',
+        'cover_url' => null,
+        'preview_url' => null,
+        'video_volume' => 30,
     ]);
 });
 
@@ -1055,7 +1349,7 @@ test('the google business event times follow the user clock and pick from a list
     fakeChannelSettingsApis();
     $post = seedChannelSettingsPost(Platform::GoogleBusiness, ContentType::GoogleBusinessPost);
     auth()->user()->update(['time_format' => $format]);
-    $post->update(['meta' => ['topic_type' => 'EVENT', 'event' => ['title' => 'Launch night', 'start_date' => '2037-03-10', 'end_date' => '2037-03-12', 'start_time' => '09:00']]]);
+    $post->update(['meta' => ['topic_type' => 'EVENT', 'event' => ['title' => 'Launch night', 'start_date' => channelSettingsEventDay(0), 'end_date' => channelSettingsEventDay(2), 'start_time' => '09:00']]]);
 
     $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
     waitForChannelSettingsTestId($page, 'google-business-start-time');
@@ -1154,3 +1448,224 @@ test('every character counter in the composer shares one design', function (Plat
 })->with([
     'characters left' => [Platform::X, ContentType::XPost, 'composer-char-count-{id}'],
 ]);
+
+test('a failed instagram music search says so and lets the picker close', function () {
+    Http::fake([config('trypost.platforms.instagram-facebook.graph_api').'/ig_audio*' => Http::response(['error' => ['code' => 2]], 500)]);
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-failed');
+
+    $page->assertSeeIn('@instagram-music-failed', __('posts.form.instagram.music.search_failed'))
+        ->keys('@instagram-music-search', 'Escape');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"instagram-music-picker\"]')");
+
+    $page->assertNoJavaScriptErrors();
+});
+
+test('searching instagram music asks instagram once the typing stops', function () {
+    $graph = config('trypost.platforms.instagram-facebook.graph_api');
+    Http::fake(["{$graph}/ig_audio*" => fn (Request $request) => Http::response(['audio' => str_contains($request->url(), 'search_query=grudge')
+        ? [['audio_id' => 'audio-grudge', 'title' => 'Grudge', 'display_artist' => 'Tash']]
+        : [['audio_id' => 'audio-trending', 'title' => 'Trending', 'display_artist' => 'Band']]])]);
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+    $page->click('@instagram-music-add');
+    waitForChannelSettingsTestId($page, 'instagram-music-track-audio-trending');
+
+    $page->type('@instagram-music-search', 'grudge');
+    waitForChannelSettingsTestId($page, 'instagram-music-track-audio-grudge');
+
+    $page->assertMissing('@instagram-music-track-audio-trending')->assertNoJavaScriptErrors();
+    $musicSearches = collect(Http::recorded())
+        ->map(fn (array $pair): string => $pair[0]->url())
+        ->filter(fn (string $url): bool => str_contains($url, 'audio_type=music') && str_contains($url, 'search_query='))
+        ->values();
+
+    expect($musicSearches)->toHaveCount(1)
+        ->and($musicSearches->first())->toContain('search_query=grudge');
+});
+
+test('the picked track plays and pauses from its card and can be removed', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel);
+    $post->update(['meta' => ['audio' => [
+        'id' => '1234567890',
+        'title' => 'Summer Song',
+        'preview_url' => 'https://example.com/preview.mp3',
+    ]]]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-selected-preview');
+    $page->script('HTMLMediaElement.prototype.play = function () { return Promise.resolve(); }; HTMLMediaElement.prototype.pause = function () {};');
+
+    $page->click('@instagram-music-selected-preview');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-music-selected-preview\"]')?.getAttribute('aria-label') === '".__('posts.form.instagram.music.pause')."'");
+    $page->assertAttribute('@instagram-music-selected-preview', 'aria-label', __('posts.form.instagram.music.pause'));
+
+    $page->click('@instagram-music-selected-preview');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-music-selected-preview\"]')?.getAttribute('aria-label') === '".__('posts.form.instagram.music.play')."'");
+    $page->assertAttribute('@instagram-music-selected-preview', 'aria-label', __('posts.form.instagram.music.play'));
+
+    $page->click('@instagram-music-remove');
+    waitForChannelSettingsTestId($page, 'instagram-music-add');
+    $page->assertMissing('@instagram-music-selected')
+        ->click('@composer-save-draft');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"post-composer-dialog\"]')");
+
+    $page->assertNoJavaScriptErrors();
+    expect(data_get($post->fresh()->meta, 'audio'))->toBeNull();
+});
+
+test('a trial reel shows its explanation under the options and its badge on the preview', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+    $post->update(['meta' => ['trial_graduation' => 'MANUAL']]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-trial-reel-hint');
+
+    $page->assertSeeIn('@instagram-trial-reel-hint', __('posts.form.instagram.trial_reel.manual_hint'))
+        ->assertSeeIn('@instagram-preview-trial', __('posts.form.instagram.trial_reel.badge'))
+        ->assertNoJavaScriptErrors();
+});
+
+test('collaborators added on the instagram card are saved with the post', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-input');
+    $page->type('@instagram-collaborator-input', '@alice')
+        ->keys('@instagram-collaborator-input', 'Enter');
+    waitForChannelSettingsTestId($page, 'instagram-collaborators-notice');
+    $page->click('@instagram-collaborators-notice-dismiss')
+        ->type('@instagram-collaborator-input', 'bob')
+        ->click('@instagram-collaborator-add');
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-bob');
+
+    $page->click('@composer-save-draft');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"post-composer-dialog\"]')");
+
+    $page->assertNoJavaScriptErrors();
+    expect(data_get($post->fresh()->meta, 'collaborators'))->toBe(['alice', 'bob']);
+});
+
+test('a collaborator typed without pressing Enter is added when the field loses focus and saved with the post', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-input');
+    $page->type('@instagram-collaborator-input', '@alice')
+        ->click('@composer-save-draft');
+    waitForChannelSettingsCondition($page, "!document.querySelector('[data-testid=\"post-composer-dialog\"]')");
+
+    $page->assertNoJavaScriptErrors();
+    expect(data_get($post->fresh()->meta, 'collaborators'))->toBe(['alice']);
+});
+
+test('playing the reel preview video plays the picked track at the chosen music volume and pausing it stops the track', function () {
+    fakeChannelSettingsApis();
+    $video = [['id' => (string) Str::uuid(), 'type' => 'video', 'path' => 'medias/clip.mp4', 'url' => 'https://example.com/clip.mp4', 'mime_type' => 'video/mp4', 'original_filename' => 'clip.mp4']];
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel, $video);
+    $post->update(['meta' => ['audio' => [
+        'id' => '1234567890',
+        'title' => 'Summer Song',
+        'artist' => 'The Band',
+        'preview_url' => 'https://example.com/preview.mp3',
+        'audio_volume' => 40,
+        'video_volume' => 30,
+    ]]]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-selected-preview');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-reel-preview\"] video')");
+    $page->script(<<<'JS'
+        (() => {
+            const where = (media, suffix = '') => `${media.closest?.('[data-testid="instagram-reel-preview"]') ? 'PREVIEW' : media.tagName}${suffix}`;
+            window.__played = [];
+            window.__audioVolume = null;
+            HTMLMediaElement.prototype.play = function () {
+                window.__played.push(where(this));
+                if (this.tagName === 'AUDIO') window.__audioVolume = Math.round(this.volume * 100);
+                Object.defineProperty(this, 'paused', { value: false, configurable: true });
+                this.dispatchEvent(new Event('play'));
+                return Promise.resolve();
+            };
+            HTMLMediaElement.prototype.pause = function () {
+                window.__played.push(where(this, ':paused'));
+                Object.defineProperty(this, 'paused', { value: true, configurable: true });
+                this.dispatchEvent(new Event('pause'));
+            };
+            return true;
+        })()
+    JS);
+
+    $page->script("document.querySelector('[data-testid=\"instagram-reel-preview\"] video').parentElement.click()");
+    waitForChannelSettingsCondition($page, "window.__played.includes('AUDIO')");
+
+    expect($page->script('window.__played'))->toBe(['PREVIEW', 'AUDIO'])
+        ->and($page->script('window.__audioVolume'))->toBe(40)
+        ->and($page->script("Math.round(document.querySelector('[data-testid=\"instagram-reel-preview\"] video').volume * 100)"))->toBe(30);
+
+    $page->script("document.querySelector('[data-testid=\"instagram-reel-preview\"] video').parentElement.click()");
+    waitForChannelSettingsCondition($page, "window.__played.includes('AUDIO:paused')");
+
+    expect($page->script("window.__played.includes('PREVIEW:paused') && window.__played.includes('AUDIO:paused')"))->toBeTrue();
+    $page->assertNoJavaScriptErrors();
+});
+
+test('playing the picked track from its card plays the music only and leaves the reel preview video still', function () {
+    fakeChannelSettingsApis();
+    $video = [['id' => (string) Str::uuid(), 'type' => 'video', 'path' => 'medias/clip.mp4', 'url' => 'https://example.com/clip.mp4', 'mime_type' => 'video/mp4', 'original_filename' => 'clip.mp4']];
+    $post = seedChannelSettingsPost(Platform::InstagramFacebook, ContentType::InstagramReel, $video);
+    $post->update(['meta' => ['audio' => [
+        'id' => '1234567890',
+        'title' => 'Summer Song',
+        'artist' => 'The Band',
+        'preview_url' => 'https://example.com/preview.mp3',
+        'video_volume' => 30,
+    ]]]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-music-selected-preview');
+    waitForChannelSettingsCondition($page, "document.querySelector('[data-testid=\"instagram-reel-preview\"] video')");
+    $page->script(<<<'JS'
+        (() => {
+            const where = (media, suffix = '') => `${media.closest?.('[data-testid="instagram-reel-preview"]') ? 'PREVIEW' : media.tagName}${suffix}`;
+            window.__played = [];
+            HTMLMediaElement.prototype.play = function () { window.__played.push(where(this)); return Promise.resolve(); };
+            HTMLMediaElement.prototype.pause = function () { window.__played.push(where(this, ':paused')); };
+            return true;
+        })()
+    JS);
+
+    $page->assertSeeIn('@instagram-preview-audio', 'Summer Song · The Band')
+        ->click('@instagram-music-selected-preview');
+    waitForChannelSettingsCondition($page, "window.__played.includes('AUDIO')");
+    $page->script('new Promise((resolve) => setTimeout(resolve, 300))');
+
+    expect($page->script('window.__played'))->not->toContain('PREVIEW');
+    $page->assertNoJavaScriptErrors();
+});
+
+test('a collaborator link shows the link cursor of a link that opens a new tab', function () {
+    fakeChannelSettingsApis();
+    $post = seedChannelSettingsPost(Platform::Instagram, ContentType::InstagramReel);
+    $post->update(['meta' => ['collaborators' => ['alice']]]);
+
+    $page = visit(route('app.posts.edit', $post))->resize(1280, 900);
+    waitForChannelSettingsTestId($page, 'instagram-collaborator-alice');
+
+    expect($page->script("getComputedStyle(document.querySelector('[data-testid=\"instagram-collaborator-alice\"]')).cursor"))->toBe('alias')
+        ->and($page->script("document.querySelector('[data-testid=\"instagram-collaborator-alice\"]').target"))->toBe('_blank');
+    $page->assertNoJavaScriptErrors();
+});

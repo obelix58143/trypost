@@ -119,6 +119,7 @@ test('a queued card shows publish now, edit and the menu in order', function () 
     JS);
 
     expect($footer)->toBe([
+        "post-notes-trigger-{$queued->id}",
         "post-publish-now-{$queued->id}",
         "post-edit-{$queued->id}",
         "post-card-menu-{$queued->id}",
@@ -268,10 +269,52 @@ test('draft and sent menus only offer the actions valid for their status', funct
     expect(cardActionsMenuItems($page, $published->id))->toBe([
         'post-duplicate',
         'post-details-open',
+        '---',
+        'post-share-link',
+        'post-copy-link',
     ]);
     $page->assertMissing("@post-publish-now-{$published->id}")
         ->assertMissing("@post-copy-id-{$published->id}")
         ->assertMissing("@post-move-drafts-{$published->id}")
         ->assertMissing("@post-edit-{$published->id}")
+        ->assertNoJavaScriptErrors();
+});
+
+test('a sent post with a link offers to share it in a new post and to copy it', function () {
+    [$user, $workspace, $channel] = cardActionsSetup();
+    $url = 'https://www.instagram.com/p/DeUigjqFOr_/';
+    $published = Post::factory()->forAccount($channel)->published()->create([
+        'user_id' => $user->id,
+        'published_at' => now()->subHour(),
+    ]);
+    $published->forceFill(['platform_url' => $url])->save();
+    $this->actingAs($user);
+
+    $page = visit(route('app.posts.index', ['tab' => 'sent']));
+    openCardActionsMenu($page, $published->id);
+
+    expect(cardActionsMenuItems($page, $published->id))->toBe([
+        'post-duplicate',
+        'post-details-open',
+        '---',
+        'post-share-link',
+        'post-copy-link',
+    ]);
+
+    $page->script('window.__copied = null; navigator.clipboard.writeText = async (text) => { window.__copied = text; };');
+    $page->click("@post-copy-link-{$published->id}");
+    waitForCardActionsCondition($page, 'window.__copied !== null');
+    expect($page->script('window.__copied'))->toBe($url);
+
+    openCardActionsMenu($page, $published->id);
+    $page->click("@post-share-link-{$published->id}");
+    waitForCardActionsTestId($page, 'post-composer-dialog');
+    waitForCardActionsTestId($page, "composer-account-{$channel->id}");
+    waitForCardActionsTestId($page, "composer-caption-{$channel->id}");
+
+    $page->assertVisible("@composer-account-{$channel->id}")
+        ->assertValue("@composer-caption-{$channel->id}", $url)
+        ->assertSeeIn('@composer-header', __('posts.create.title'))
+        ->assertDontSeeIn('@composer-header', __('posts.edit.title'))
         ->assertNoJavaScriptErrors();
 });

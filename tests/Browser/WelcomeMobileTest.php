@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\User\Goal;
 use App\Enums\User\Persona;
-use App\Enums\User\ReferralSource;
+use App\Enums\User\PreviousSoftware;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
@@ -51,7 +51,7 @@ function welcomeMobileHeaderProblems(mixed $page): array
     return $page->script(<<<'JS'
         (() => {
             const header = document.querySelector('header');
-            const items = [...header.querySelectorAll('[data-testid="welcome-back"], [data-testid="app-logo"], [data-testid="welcome-language-trigger"], [data-testid="theme-toggle-cycle"]')]
+            const items = [...header.querySelectorAll('[data-testid="welcome-back"], [data-testid="app-logo"], [data-testid="welcome-language-trigger"], [data-testid="theme-toggle"]')]
                 .filter((element) => element.getClientRects().length > 0)
                 .map((element) => ({ id: element.dataset.testid, rect: element.getBoundingClientRect() }));
             const problems = [];
@@ -73,7 +73,7 @@ function welcomeMobileHeaderProblems(mixed $page): array
                     }
                 }
             }
-            if (!['app-logo', 'welcome-language-trigger', 'theme-toggle-cycle'].every((id) => items.some((item) => item.id === id))) {
+            if (!['app-logo', 'welcome-language-trigger', 'theme-toggle'].every((id) => items.some((item) => item.id === id))) {
                 problems.push('missing header items: ' + items.map((item) => item.id).join(','));
             }
             if (header.querySelector('[data-testid^="welcome-step-"]')) {
@@ -119,7 +119,7 @@ test('the welcome header fits a phone and the continue button stays on screen', 
     $this->actingAs(welcomeMobileOwner($attributes));
 
     $page = visit(route($route))->resize(390, 844);
-    waitForWelcomeMobileTestId($page, 'theme-toggle-cycle');
+    waitForWelcomeMobileTestId($page, 'theme-toggle');
     waitForWelcomeMobileTestId($page, $hasBack ? 'welcome-back' : 'welcome-step-persona');
 
     $result = welcomeMobileHeaderProblems($page);
@@ -138,48 +138,18 @@ test('the welcome header fits a phone and the continue button stays on screen', 
         $page->assertVisible('@welcome-back');
     }
 
-    $page->assertMissing('@theme-toggle')
+    $page->assertVisible('@theme-toggle')
         ->assertNoJavaScriptErrors();
 })->with([
     'persona' => ['app.welcome.persona', [], 'welcome-persona-continue', 'welcome-persona-', false],
     'goals' => ['app.welcome.goals', ['persona' => Persona::Agency->value], 'welcome-goals-continue', 'welcome-goal-', true],
+    'software' => ['app.welcome.software', [
+        'persona' => Persona::Agency->value,
+        'goals' => [Goal::SaveTime->value],
+    ], 'welcome-software-continue', 'welcome-software-', true],
     'plan' => ['app.welcome.plan', [
         'persona' => Persona::Agency->value,
         'goals' => [Goal::SaveTime->value],
-        'referral_source' => ReferralSource::ProductHunt->value,
-    ], null, null, true],
+        'previous_software' => PreviousSoftware::Buffer->value,
+    ], 'welcome-plan-continue', 'plan-card-', true],
 ]);
-
-test('the plan step lists the features once on a phone and per plan on desktop', function () {
-    config(['trypost.self_hosted' => false]);
-
-    $this->actingAs(welcomeMobileOwner([
-        'persona' => Persona::Agency->value,
-        'goals' => [Goal::SaveTime->value],
-        'referral_source' => ReferralSource::ProductHunt->value,
-    ]));
-
-    $countLists = <<<'JS'
-        [...document.querySelectorAll('[data-testid^="plan-feature-list-"]')]
-            .filter((element) => element.getClientRects().length > 0)
-            .map((element) => element.dataset.testid)
-    JS;
-
-    $page = visit(route('app.welcome.plan'))->resize(390, 844);
-    waitForWelcomeMobileTestId($page, 'plan-feature-list-all');
-
-    expect($page->script($countLists))->toBe(['plan-feature-list-all']);
-
-    $page->assertVisible('@plan-select-socials')
-        ->assertVisible('@plan-highlight-workspaces')
-        ->assertNoJavaScriptErrors();
-
-    $page->resize(1280, 900);
-    waitForWelcomeMobileTestId($page, 'plan-feature-list-socials');
-
-    expect($page->script($countLists))->toBe(['plan-feature-list-socials', 'plan-feature-list-workspaces']);
-
-    $page->assertVisible('@theme-toggle')
-        ->assertMissing('@theme-toggle-cycle')
-        ->assertNoJavaScriptErrors();
-});

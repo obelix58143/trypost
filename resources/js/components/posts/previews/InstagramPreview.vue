@@ -4,8 +4,10 @@ import {
     IconBrandInstagram,
     IconDots,
     IconDotsVertical,
+    IconFlask,
     IconHeart,
     IconMessageCircle,
+    IconMusic,
     IconRepeat,
     IconSend,
 } from '@tabler/icons-vue';
@@ -16,7 +18,12 @@ import PreviewAvatar from '@/components/posts/previews/PreviewAvatar.vue';
 import PreviewStoryHeader from '@/components/posts/previews/PreviewStoryHeader.vue';
 import PreviewText from '@/components/posts/previews/PreviewText.vue';
 import PreviewVerticalCard from '@/components/posts/previews/PreviewVerticalCard.vue';
+import {
+    providePreviewSoundtrack,
+    soundtrackLabel,
+} from '@/composables/composer/useReelSoundtrack';
 import { ContentType } from '@/types/content-type';
+import type { InstagramAudio } from '@/types/instagram';
 
 import type { PreviewProps } from './types';
 
@@ -27,6 +34,16 @@ const feedAspectPadding = computed((): number => {
 
     return width > 0 && height > 0 ? (height / width) * 100 : 100;
 });
+
+const selectedAudio = computed(
+    () => (props.meta?.audio as InstagramAudio | null | undefined) ?? null,
+);
+
+const audioLabel = computed(() => soundtrackLabel(selectedAudio.value));
+
+const isTrialReel = computed(() => Boolean(props.meta?.trial_graduation));
+
+providePreviewSoundtrack(() => selectedAudio.value);
 
 const CAPTION_LIMIT = 100;
 
@@ -50,6 +67,16 @@ const caption = computed((): string =>
             { icon: IconDots },
         ]"
     >
+        <template #top>
+            <span
+                v-if="isTrialReel"
+                class="absolute top-3 left-3 inline-flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-xs font-medium"
+                data-testid="instagram-preview-trial"
+            >
+                <IconFlask class="size-3.5" />
+                {{ $t('posts.form.instagram.trial_reel.badge') }}
+            </span>
+        </template>
         <template #footer>
             <div
                 class="flex items-center gap-2 font-semibold"
@@ -59,6 +86,14 @@ const caption = computed((): string =>
                 <span class="truncate">{{ socialAccount.handle_label }}</span>
             </div>
             <p v-if="content" class="truncate">{{ content }}</p>
+            <p
+                v-if="audioLabel"
+                class="flex items-center gap-1 truncate text-xs"
+                data-testid="instagram-preview-audio"
+            >
+                <IconMusic class="size-3.5 shrink-0" />
+                <span class="truncate">{{ audioLabel }}</span>
+            </p>
         </template>
         <template #corner>
             <PreviewAvatar
@@ -105,7 +140,7 @@ const caption = computed((): string =>
             <IconDotsVertical class="size-[18px]" />
         </div>
         <div
-            class="relative w-full bg-black"
+            class="relative w-full bg-muted"
             :style="{ paddingBottom: `${feedAspectPadding}%` }"
             data-testid="instagram-feed-media"
         >

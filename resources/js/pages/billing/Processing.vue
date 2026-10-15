@@ -3,8 +3,10 @@ import { Head, router, usePage, usePoll } from '@inertiajs/vue3';
 import { IconLoader2 } from '@tabler/icons-vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
-import AppLogo from '@/components/AppLogo.vue';
+import { useBelowBreakpoint } from '@/composables/useBreakpoint';
+import AuthSplitLayout from '@/layouts/auth/AuthSplitLayout.vue';
 import { index as postsIndex } from '@/routes/app/posts';
+import { mcp } from '@/routes/app/welcome';
 import type { SharedData } from '@/types';
 
 const props = defineProps<{
@@ -24,8 +26,11 @@ const purchaseReady = computed(
     (): boolean => props.subscriptionActive && page.props.auth.plan !== null,
 );
 
+const isPhone = useBelowBreakpoint('sm');
+
+/** Connecting an AI is a desktop task, so phones go straight to the schedule. */
 const goNext = (): void => {
-    router.visit(postsIndex.url());
+    router.visit(isPhone.value ? postsIndex.url() : mcp.url());
 };
 
 // Card-required trials are already `subscribed()` (`trialing`) on first paint.
@@ -54,28 +59,15 @@ onMounted(() => {
 <template>
     <Head :title="$t('billing.processing.page_title')" />
 
-    <section
-        class="flex min-h-svh flex-col items-center bg-muted px-4 pt-13 pb-8 sm:justify-center sm:px-8"
+    <AuthSplitLayout
+        :title="$t('billing.processing.title')"
+        :description="$t('billing.processing.description')"
     >
-        <div
-            class="flex w-full max-w-[360px] flex-col items-center gap-6 text-center"
-            data-testid="billing-processing"
-        >
-            <AppLogo variant="mark" class="motion-auth-logo text-[38px]" />
-            <div class="flex flex-col gap-4">
-                <h1
-                    class="font-heading text-xl leading-tight font-medium text-balance text-foreground"
-                >
-                    {{ $t('billing.processing.title') }}
-                </h1>
-                <p class="text-base text-balance text-foreground">
-                    {{ $t('billing.processing.description') }}
-                </p>
-            </div>
+        <div class="flex justify-center" data-testid="billing-processing">
             <IconLoader2
                 class="size-6 animate-spin text-primary-strong motion-reduce:animate-none"
                 aria-hidden="true"
             />
         </div>
-    </section>
+    </AuthSplitLayout>
 </template>

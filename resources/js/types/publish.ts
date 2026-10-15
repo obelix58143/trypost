@@ -141,6 +141,8 @@ export type PostCardMenuAction =
     | 'recurrence'
     | 'move_drafts'
     | 'details'
+    | 'share_link'
+    | 'copy_link'
     | 'delete';
 
 export interface CalendarPost extends PostCard {

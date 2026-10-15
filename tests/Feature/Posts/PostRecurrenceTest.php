@@ -17,9 +17,11 @@ use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceLabel;
+use App\Services\Social\Discord\DiscordClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
+use Mockery\MockInterface;
 
 beforeEach(function () {
     Queue::fake();
@@ -316,6 +318,34 @@ test('the last occurrence carries no rule and ends the series', function () {
 
     expect(Post::count())->toBe(2);
 });
+
+test('the next occurrence of a Discord post reads the channel name from the cached list', function (?array $cached, array $expected) {
+    $discord = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Discord,
+        'platform_user_id' => '999',
+        'timezone' => 'UTC',
+    ]);
+    $this->mock(DiscordClient::class, function (MockInterface $client) use ($cached): void {
+        $client->shouldReceive('cachedChannels')->andReturn($cached);
+        $client->shouldNotReceive('channels');
+    });
+    $post = recurringPost($discord, $this->user, [
+        'content_type' => ContentType::DiscordMessage,
+        'scheduled_at' => now()->subMinute(),
+        'recurrence_interval' => 1,
+        'recurrence_frequency' => RecurrenceFrequency::Day,
+        'recurrence_remaining' => 3,
+        'meta' => ['channel_id' => '111', 'channel_name' => 'old-name'],
+    ]);
+
+    publishRecurringPost($post);
+
+    expect(nextOccurrence($post)->meta)->toEqual($expected);
+})->with([
+    'cached list' => [[['id' => '111', 'name' => 'general']], ['channel_id' => '111', 'channel_name' => 'general']],
+    'nothing cached' => [null, ['channel_id' => '111']],
+]);
 
 test('a retried settlement never creates a second occurrence', function () {
     $post = recurringPost($this->channel, $this->user, [

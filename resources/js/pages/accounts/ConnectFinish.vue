@@ -470,6 +470,7 @@ const identityCardClass = (identity: ConnectIdentity): string =>
                 v-else-if="isSelecting"
                 size="lg"
                 :disabled="selectedCount === 0 || form.processing"
+                :loading="form.processing"
                 data-testid="connect-finish"
                 @click="finishConnection"
             >

@@ -63,6 +63,7 @@ class DestinationMetaRules
             $violation = PostPlatformMetaRules::requiredMetaViolation(
                 $platforms->get(data_get($destination, 'social_account_id')),
                 data_get($destination, 'meta'),
+                data_get($destination, 'content_type'),
             );
 
             if ($violation !== null) {

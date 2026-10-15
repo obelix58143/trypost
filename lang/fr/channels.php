@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => 'Reconnectez ce canal pour continuer à publier.',
     'reconnect' => 'Reconnecter',
     'refresh_connection' => 'Actualiser la connexion',
+    'link_facebook_page' => 'Associer à une Page Facebook',
     'view_profile' => 'Voir le profil',
     'disconnect' => 'Déconnecter',
     'actions' => 'Actions du canal',
 
     'reorder' => [
         'handle' => 'Glisser pour réorganiser :name',
-        'move_up' => 'Monter',
-        'move_down' => 'Descendre',
         'failed' => 'Impossible de réorganiser vos canaux. Réessayez.',
         'stale' => 'Vos canaux ont changé depuis le chargement de la page. Actualisez et réessayez.',
     ],

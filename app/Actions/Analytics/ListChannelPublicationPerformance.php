@@ -54,7 +54,7 @@ class ListChannelPublicationPerformance
             ->when($filter !== null, fn (Builder $filtered): Builder => $filter->apply($filtered))
             ->select([
                 'publication.id', 'publication.post_id', 'publication.excerpt', 'publication.preview_metadata', 'publication.permalink',
-                'publication.provider_published_at', 'publication.content_type',
+                'publication.provider_published_at', 'publication.content_type', 'destination.media as post_media',
                 'metric.reactions_count', 'metric.comments_count', 'metric.views_count', 'metric.shares_count',
                 'metric.saves_count', 'metric.reach_count', 'metric.engagement_count', 'metric.exposure_count',
                 'metric.impressions_count', 'metric.watch_time_milliseconds', 'metric.average_watch_time_milliseconds', 'metric.metrics',
@@ -79,17 +79,19 @@ class ListChannelPublicationPerformance
     }
 
     /**
-     * @return array{id: string, rank: int, excerpt: ?string, thumbnail_url: ?string, permalink: ?string, published_at: string, content_type: ?string, metrics: array{reactions: ?int, comments: ?int, engagement_rate: ?float, views: ?int, impressions: ?int, shares: ?int, reposts: ?int, quotes: ?int, saves: ?int, clicks: ?int, follows_gained: ?int, reach: ?int, watch_time_minutes: ?float, average_watch_time_seconds: ?float}, post_id: ?string}
+     * @return array{id: string, rank: int, excerpt: ?string, thumbnail_url: ?string, media: ?array<string, mixed>, permalink: ?string, published_at: string, content_type: ?string, metrics: array{reactions: ?int, comments: ?int, engagement_rate: ?float, views: ?int, impressions: ?int, shares: ?int, reposts: ?int, quotes: ?int, saves: ?int, clicks: ?int, follows_gained: ?int, reach: ?int, watch_time_minutes: ?float, average_watch_time_seconds: ?float}, post_id: ?string}
      */
     private function row(object $row, int $rank): array
     {
         $measured = $row->metrics === null ? [] : (array) json_decode((string) $row->metrics, true);
+        $media = (new Post)->newFromBuilder(['media' => $row->post_media])->coverMedia();
 
         return [
             'id' => $row->id,
             'rank' => $rank,
             'excerpt' => $row->excerpt,
-            'thumbnail_url' => $this->thumbnail($row->preview_metadata),
+            'thumbnail_url' => $media?->isImage() ? $media->url : $this->thumbnail($row->preview_metadata),
+            'media' => $media?->toArray(),
             'permalink' => $row->permalink,
             'published_at' => CarbonImmutable::parse($row->provider_published_at, 'UTC')->toIso8601String(),
             'content_type' => $row->content_type,

@@ -21,6 +21,7 @@ use App\Models\Workspace;
 use App\Support\Media\MediaCopyBatch;
 use App\Support\PostApproval;
 use App\Support\PostCompositionValidator;
+use App\Support\PostMeta;
 use App\Support\PostPlatformMetaRules;
 use App\Support\PostStatusRules;
 use Carbon\Carbon;
@@ -205,7 +206,7 @@ class UpdatePost
                 'schedule_mode' => $mode,
                 ...PostApproval::transition($previousStatus, $storedStatus, $actor, $pending ? $position : null),
                 'content_type' => $destination['content_type'],
-                'meta' => PostPlatformMetaRules::forStorage($post->meta ?? [], $destination['meta']),
+                'meta' => PostMeta::forChannel($channel, $destination['meta'], $post->meta ?? []),
             ]);
             SyncOwnedMedia::execute($post, $destination['media'], $batch);
 

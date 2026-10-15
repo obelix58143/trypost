@@ -2,6 +2,8 @@
 import { IconPlayerPlayFilled } from '@tabler/icons-vue';
 import { ref } from 'vue';
 
+import { useSoundtrackVideo } from '@/composables/composer/useReelSoundtrack';
+
 const props = withDefaults(
     defineProps<{
         src: string;
@@ -15,12 +17,16 @@ const props = withDefaults(
 const videoRef = ref<HTMLVideoElement | null>(null);
 const isPlaying = ref(false);
 
+const soundtrack = useSoundtrackVideo(videoRef);
+
 const markPlaying = (): void => {
     isPlaying.value = true;
+    soundtrack.onVideoPlay();
 };
 
 const markPaused = (): void => {
     isPlaying.value = false;
+    soundtrack.onVideoPause();
 };
 
 const toggle = () => {

@@ -18,6 +18,7 @@ import { useAnalyticsCoveragePoll } from '@/composables/useAnalyticsCoveragePoll
 import { getPlatformLabel } from '@/composables/usePlatformLogo';
 import date from '@/date';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { showsPostTypeFilter } from '@/lib/channelInsights';
 import { insights } from '@/routes/app/channels';
 import type {
     AnalyticsReport,
@@ -56,6 +57,11 @@ const span = (range: { start: string; end: string }): string =>
 const selectedLabelIds = ref<string[]>(props.filters?.labels ?? []);
 const selectedUntagged = ref<boolean>(props.filters?.untagged ?? false);
 const selectedTypes = ref<string[]>(props.filters?.types ?? []);
+const showsTypeFilter = computed(
+    () =>
+        showsPostTypeFilter(props.channel.platform) ||
+        selectedTypes.value.length > 0,
+);
 const publicationFilters = computed(
     (): Record<string, string | string[]> => ({
         ...(selectedLabelIds.value.length
@@ -204,6 +210,7 @@ watch(selectedTypes, applyFilters, { deep: true });
                             test-id="insights-label"
                         />
                         <PostTypeFilter
+                            v-if="showsTypeFilter"
                             v-model="selectedTypes"
                             :types="contentTypes ?? []"
                         />

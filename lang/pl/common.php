@@ -7,6 +7,16 @@ return [
 
     'back' => 'Wstecz',
 
+    'unsaved_changes' => [
+
+        'title' => 'Odrzucić zmiany?',
+
+        'description' => 'Zmiany w tym poście nie zostały zapisane. Jeśli teraz wyjdziesz, zostaną utracone.',
+
+        'discard' => 'Odrzuć',
+
+    ],
+
     'confirm_modal' => [
         'type' => 'Wpisz',
         'to_confirm' => 'aby potwierdzić.',
@@ -59,6 +69,7 @@ return [
     'clear' => 'Wyczyść',
     'close' => 'Zamknij',
     'more' => 'Więcej',
+    'learn_more' => 'Dowiedz się więcej',
     'play' => 'Odtwórz',
     'loading' => 'Wczytywanie...',
     'loading_more' => 'Wczytywanie kolejnych...',

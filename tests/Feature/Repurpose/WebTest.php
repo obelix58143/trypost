@@ -339,7 +339,6 @@ test('every per-platform meta key the web surface accepts is stored, not strippe
 
     $meta = [
         'channel_id' => '9001',
-        'channel_name' => 'reels',
         'embeds' => [['title' => 'Watch', 'url' => 'https://trypost.it', 'color' => '#ff8800']],
     ];
 

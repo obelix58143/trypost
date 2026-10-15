@@ -9,6 +9,7 @@ use App\Enums\Notification\Type as NotificationType;
 use App\Enums\User\DefaultPostAction;
 use App\Enums\User\Locale;
 use App\Enums\User\Persona;
+use App\Enums\User\PreviousSoftware;
 use App\Enums\User\ReferralSource;
 use App\Enums\User\Theme;
 use App\Enums\User\TimeFormat;
@@ -16,6 +17,7 @@ use App\Enums\User\WeekStart;
 use App\Models\Traits\HasAccount;
 use App\Models\Traits\HasMedia;
 use App\Models\Traits\HasWorkspace;
+use App\Models\Traits\SyncsStripeCustomer;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Contracts\Translation\HasLocalePreference;
@@ -33,7 +35,7 @@ use Laravel\Passport\HasApiTokens;
 class User extends Authenticatable implements HasLocalePreference, MustVerifyEmail, OAuthenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasAccount, HasApiTokens, HasFactory, HasMedia, HasUuids, HasWorkspace, RoutesNotifications;
+    use HasAccount, HasApiTokens, HasFactory, HasMedia, HasUuids, HasWorkspace, RoutesNotifications, SyncsStripeCustomer;
 
     /**
      * @var list<string>
@@ -61,6 +63,7 @@ class User extends Authenticatable implements HasLocalePreference, MustVerifyEma
         'registration_ip',
         'persona',
         'goals',
+        'previous_software',
         'referral_source',
         'locale',
         'timezone',
@@ -131,6 +134,7 @@ class User extends Authenticatable implements HasLocalePreference, MustVerifyEma
             'two_factor_confirmed_at' => 'datetime',
             'persona' => Persona::class,
             'goals' => 'array',
+            'previous_software' => PreviousSoftware::class,
             'referral_source' => ReferralSource::class,
             'locale' => Locale::class,
             'theme' => Theme::class,
@@ -172,5 +176,20 @@ class User extends Authenticatable implements HasLocalePreference, MustVerifyEma
     public function isConnectedTo(SocialAuthProvider $provider): bool
     {
         return (bool) $this->{"{$provider->value}_id"};
+    }
+
+    /**
+     * Whether unlinking this provider still leaves the user a way to sign in:
+     * a password or another connected provider.
+     */
+    public function canDisconnectFrom(SocialAuthProvider $provider): bool
+    {
+        if ($this->password) {
+            return true;
+        }
+
+        return collect(SocialAuthProvider::cases())
+            ->reject(fn (SocialAuthProvider $other): bool => $other === $provider)
+            ->contains(fn (SocialAuthProvider $other): bool => $this->isConnectedTo($other));
     }
 }

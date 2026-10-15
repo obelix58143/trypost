@@ -7,8 +7,10 @@ import {
     IconCopyPlus,
     IconDotsVertical,
     IconFileArrowLeft,
+    IconLink,
     IconRepeat,
     IconSend,
+    IconShare3,
     IconTrash,
 } from '@tabler/icons-vue';
 import { computed } from 'vue';
@@ -122,6 +124,23 @@ const isQueued = computed(
                         <IconArrowsMaximize class="size-4" />
                         {{ $t('posts.show.title') }}
                     </DropdownMenuItem>
+                    <template v-if="post.platform_url">
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            :data-testid="`post-share-link-${testKey}`"
+                            @click="emit('select', 'share_link')"
+                        >
+                            <IconShare3 class="size-4" />
+                            {{ $t('posts.publish.actions.share_link') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            :data-testid="`post-copy-link-${testKey}`"
+                            @click="emit('select', 'copy_link')"
+                        >
+                            <IconLink class="size-4" />
+                            {{ $t('posts.publish.actions.copy_link') }}
+                        </DropdownMenuItem>
+                    </template>
                     <template v-if="isQueued">
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

@@ -33,7 +33,7 @@ import {
 import { cancelDragOnEscape } from '@/lib/dragPlaceholder';
 import { editorTabsFor, rulesFor, type EditorTab } from '@/lib/mediaEditor';
 import { canvaDesignId, editInCanva } from '@/lib/mediaSources/canva';
-import { acceptAttribute, isImage, isVideo } from '@/lib/mediaType';
+import { acceptAttribute, isImage, isVideo, mediaKey } from '@/lib/mediaType';
 import type { MediaUploadLimits, SharedData } from '@/types';
 import type { MediaItem } from '@/types/media';
 
@@ -193,7 +193,7 @@ const tileKeys = computed(() => {
     const seen = new Map<string, number>();
 
     return props.items.map((item) => {
-        const id = item.upload_token ?? item.id;
+        const id = mediaKey(item);
         const occurrence = seen.get(id) ?? 0;
         seen.set(id, occurrence + 1);
 
@@ -556,7 +556,7 @@ const vSortableTile: Directive<HTMLElement> = {
             <div class="flex flex-wrap gap-2">
                 <button
                     v-for="(item, index) in suggested"
-                    :key="`${item.upload_token ?? item.id}-${index}`"
+                    :key="`${mediaKey(item)}-${index}`"
                     type="button"
                     class="size-16 shrink-0 overflow-hidden rounded-md border border-border bg-background transition-control hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:opacity-50"
                     :aria-label="item.original_filename ?? $t('posts.composer.suggested_media')"

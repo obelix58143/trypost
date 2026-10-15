@@ -16,14 +16,13 @@ return [
     'connection_lost_hint' => 'Połącz ten kanał ponownie, aby dalej publikować.',
     'reconnect' => 'Połącz ponownie',
     'refresh_connection' => 'Odśwież połączenie',
+    'link_facebook_page' => 'Połącz ze stroną na Facebooku',
     'view_profile' => 'Zobacz profil',
     'disconnect' => 'Rozłącz',
     'actions' => 'Akcje kanału',
 
     'reorder' => [
         'handle' => 'Przeciągnij, aby zmienić kolejność: :name',
-        'move_up' => 'Przenieś w górę',
-        'move_down' => 'Przenieś w dół',
         'failed' => 'Nie udało się zmienić kolejności kanałów. Spróbuj ponownie.',
         'stale' => 'Twoje kanały zmieniły się od załadowania strony. Odśwież i spróbuj ponownie.',
     ],

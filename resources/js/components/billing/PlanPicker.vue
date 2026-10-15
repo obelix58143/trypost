@@ -1,17 +1,12 @@
 <script setup lang="ts">
-import { IconBuilding, IconInfoCircle } from '@tabler/icons-vue';
+import { IconBuilding } from '@tabler/icons-vue';
 import { trans } from 'laravel-vue-i18n';
 import { computed } from 'vue';
 
+import PlanFeatureInfo from '@/components/billing/PlanFeatureInfo.vue';
 import PlanFeatureList from '@/components/billing/PlanFeatureList.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
     PLAN_CHANGE_LABELS,
     planChangeAction,
@@ -29,18 +24,12 @@ const props = withDefaults(
         currentInterval?: BillingInterval | null;
         disabledPlanIds?: string[];
         processing?: boolean;
-        allowYearly?: boolean;
-        offerFirstMonth?: boolean;
-        sharedFeaturesOnMobile?: boolean;
     }>(),
     {
         currentPlanId: null,
         currentInterval: null,
         disabledPlanIds: () => [],
         processing: false,
-        allowYearly: true,
-        offerFirstMonth: false,
-        sharedFeaturesOnMobile: false,
     },
 );
 
@@ -80,13 +69,6 @@ const isDisabled = (plan: PlanOption): boolean =>
 
 const isFeatured = (plan: PlanOption): boolean => plan.slug === 'workspaces';
 
-const firstMonthPrice = (): string =>
-    trans('billing.subscribe.prices.first_month');
-
-const showsFirstMonthOffer = computed(
-    (): boolean => props.offerFirstMonth && props.interval === 'monthly',
-);
-
 const billingNote = (plan: PlanOption): string =>
     props.interval === 'yearly'
         ? trans('billing.plans.billed_yearly_total', {
@@ -95,12 +77,6 @@ const billingNote = (plan: PlanOption): string =>
         : trans('billing.subscribe.billed_monthly');
 
 const selectLabel = (plan: PlanOption): string => {
-    if (props.offerFirstMonth) {
-        return trans('billing.plans.start_first_month', {
-            price: firstMonthPrice(),
-        });
-    }
-
     if (isCurrentSelection(plan)) {
         return trans('billing.plans.current');
     }
@@ -130,10 +106,7 @@ const workspaceLabel = (plan: PlanOption): string =>
 
 <template>
     <div class="@container space-y-6">
-        <div
-            v-if="allowYearly"
-            class="grid grid-cols-[1fr_auto_1fr] items-center gap-x-4"
-        >
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-x-4">
             <div
                 class="col-start-2 inline-flex gap-1 justify-self-center rounded-lg border border-border-strong bg-card p-[3px]"
             >
@@ -191,31 +164,7 @@ const workspaceLabel = (plan: PlanOption): string =>
                     </p>
                 </div>
 
-                <div v-if="showsFirstMonthOffer" class="flex flex-col gap-1">
-                    <p class="flex items-baseline gap-2">
-                        <span
-                            class="text-2xl leading-9 font-strong tabular-nums"
-                            :data-testid="`plan-price-first-month-${plan.slug}`"
-                            >{{ firstMonthPrice() }}</span
-                        >
-                        <span
-                            class="text-base text-foreground"
-                            :data-testid="`plan-price-suffix-${plan.slug}`"
-                            >{{ $t('billing.plans.per_first_month') }}</span
-                        >
-                    </p>
-                    <p
-                        class="text-sm text-muted-foreground"
-                        :data-testid="`plan-price-note-${plan.slug}`"
-                    >
-                        {{
-                            $t('billing.plans.then_monthly', {
-                                price: price(plan),
-                            })
-                        }}
-                    </p>
-                </div>
-                <div v-else class="flex flex-col gap-1">
+                <div class="flex flex-col gap-1">
                     <p class="flex items-baseline gap-2">
                         <span
                             class="text-2xl leading-9 font-strong tabular-nums"
@@ -256,51 +205,21 @@ const workspaceLabel = (plan: PlanOption): string =>
                         <IconBuilding class="size-4" />
                     </span>
                     <p
-                        class="inline-flex items-center gap-1.5 text-sm font-medium text-foreground"
+                        class="inline-flex items-start gap-1.5 text-sm leading-5 font-medium text-foreground"
                     >
                         <span>{{ workspaceLabel(plan) }}</span>
-                        <TooltipProvider :delay-duration="200">
-                            <Tooltip>
-                                <TooltipTrigger as-child>
-                                    <button
-                                        type="button"
-                                        class="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-control hover:text-foreground"
-                                        :aria-label="
-                                            $t(
-                                                'billing.plans.workspaces_tooltip',
-                                            )
-                                        "
-                                        :data-testid="`plan-workspaces-info-${plan.slug}`"
-                                    >
-                                        <IconInfoCircle class="size-4" />
-                                    </button>
-                                </TooltipTrigger>
-                                <TooltipContent
-                                    side="top"
-                                    :side-offset="8"
-                                    class="max-w-64 text-start"
-                                >
-                                    {{ $t('billing.plans.workspaces_tooltip') }}
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <PlanFeatureInfo
+                            :label="$t('billing.plans.workspaces_tooltip')"
+                            :testid="`plan-workspaces-info-${plan.slug}`"
+                        />
                     </p>
                 </div>
 
                 <PlanFeatureList
                     :scope="plan.slug"
-                    :class="[
-                        'flex-1 border-t border-border pt-4',
-                        sharedFeaturesOnMobile && 'max-sm:hidden',
-                    ]"
+                    class="flex-1 border-t border-border pt-4"
                 />
             </article>
         </div>
-
-        <PlanFeatureList
-            v-if="sharedFeaturesOnMobile"
-            scope="all"
-            class="rounded-xl border border-border bg-card p-5 sm:hidden"
-        />
     </div>
 </template>

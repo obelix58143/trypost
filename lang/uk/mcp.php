@@ -5,18 +5,21 @@ declare(strict_types=1);
 return [
     'title' => 'MCP',
     'subtitle' => 'Підключіть ШІ-асистентів до простору.',
-    'copy_step' => 'Скопіюйте URL сервера TryPost',
-    'open_step' => 'Відкрийте свого ІІ-асистента',
-    'copy' => 'Скопіювати URL',
+    'copy' => 'Копіювати',
     'connect' => 'Підключити :client',
-    'step_add' => 'Вставте назву, URL або config нижче у свій застосунок. Вхід відкриється в браузері під час першого підключення.',
     'name_label' => 'Назва',
     'url_label' => 'URL сервера',
     'config_label' => 'Config',
-    'connected_title' => 'Підключені застосунки',
+    'tabs' => [
+        'connected' => 'Підключені застосунки',
+        'connect' => 'Підключити застосунок',
+    ],
+    'connect_other' => 'Підключити',
+    'other_hint' => 'Будь-який застосунок із підтримкою MCP.',
+    'other_dialog_title' => 'Підключіть TryPost до іншого застосунку',
     'connected_description' => 'Асистенти, у які ви увійшли. Від’єднайте ті, якими більше не користуєтесь.',
     'connected_empty_title' => 'Немає підключених застосунків',
-    'connected_empty' => 'Скористайтеся Claude, ChatGPT або іншим клієнтом вище.',
+    'connected_empty' => 'Підключіть Claude, ChatGPT або інший застосунок, щоб побачити його тут.',
     'disconnect' => 'Від’єднати',
     'disconnect_title' => 'Від’єднати застосунок',
     'disconnect_confirm' => 'Це вийде з TryPost у застосунку. Потрібно буде підключитися знову, щоб знову використовувати MCP.',
@@ -24,9 +27,6 @@ return [
     'copied' => 'Скопійовано',
     'last_used' => 'Востаннє використано',
     'never' => 'Ніколи',
-    'documentation_title' => 'Документація',
-    'documentation_description' => 'Гайди клієнтів, доступні tools і усунення несправностей.',
-    'view_docs' => 'Відкрити документацію',
     'connector_name' => 'TryPost',
 
     'authorize' => [
@@ -53,18 +53,29 @@ return [
     ],
 
     'other_clients_title' => 'Інші застосунки',
-    'other_clients_description' => 'Cursor, VS Code, Claude Code і все, що підтримує MCP.',
 
-    'clients' => [
-        'claude' => 'Відкрийте Settings → Connectors, додайте власний connector і вставте URL вище.',
-        'chatgpt' => 'Відкрийте Settings → Apps & Connectors, створіть власний connector і вставте URL вище.',
-        'cursor' => 'Додайте TryPost як віддалений MCP-сервер у Cursor.',
-        'cursor_name' => 'Cursor',
-        'vscode' => 'Вставте config нижче в налаштування MCP VS Code.',
-        'vscode_name' => 'VS Code',
-        'claude_code' => 'Вставте config нижче в налаштування MCP Claude Code.',
-        'claude_code_name' => 'Claude Code',
-        'other' => 'Працює з будь-яким клієнтом, що читає config mcpServers.',
-        'other_name' => 'Інше',
+    'dialog' => [
+        'title' => 'Підключіть TryPost до :client',
+        'description' => 'Це займе близько хвилини. Сторінка оновиться, щойно ви підключитеся.',
+        'open' => 'Відкрити :client',
+        'steps' => [
+            'claude' => [
+                'paste' => 'Вставте URL у поле URL конектора',
+                'add' => 'Натисніть «Додати», потім «Підключити»',
+                'login' => 'Увійдіть у TryPost і виберіть workspace',
+            ],
+            'chatgpt' => [
+                'developer' => 'Увімкніть режим розробника в налаштуваннях ChatGPT',
+                'create' => 'Створіть застосунок TryPost і вставте URL',
+                'login' => 'Увійдіть у TryPost і виберіть workspace',
+            ],
+            'other' => [
+                'add' => 'Додайте власний MCP-сервер у застосунку',
+                'paste' => 'Вставте назву й URL або конфігурацію',
+                'login' => 'Увійдіть у TryPost і виберіть workspace',
+            ],
+        ],
+        'waiting' => 'Чекаємо на підключення вашого ШІ…',
     ],
+
 ];
